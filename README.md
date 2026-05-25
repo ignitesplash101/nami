@@ -50,7 +50,7 @@ User flow:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Cloud Run (Streamlit container, min=0, max=2)                   │
-│ ├── Auth: Identity-Aware Proxy (whitelist of Google accounts)   │
+│ ├── Access: app-level visitor/admin controls                    │
 │ └── App                                                          │
 │     ├── UI: Streamlit (Portfolio | Scenario | Results | Method) │
 │     ├── LLM: Vertex AI → gemini-3.5-flash (search grounding)    │
@@ -78,7 +78,7 @@ User flow:
 - **pytest** (unit tests)
 - **ruff** + **black** (lint + format)
 
-GCP services: Cloud Run, Vertex AI, Cloud Storage, Secret Manager, Cloud Build, Artifact Registry, IAP, Cloud Billing.
+GCP services: Cloud Run, Vertex AI, Cloud Storage, Secret Manager, Cloud Build, Artifact Registry, Cloud Billing.
 
 ---
 
@@ -142,7 +142,7 @@ Build in this order. Each phase must be functional and tested before moving to t
 ### Phase 0 — Prerequisites (manual, ~30min)
 Done by the human before invoking the agent. Do **not** automate.
 - [x] GCP project created, billing linked, budget alert set at $20/month
-- [x] APIs enabled: Cloud Run, Vertex AI, Cloud Storage, Secret Manager, Cloud Build, Artifact Registry, IAP
+- [x] APIs enabled: Cloud Run, Vertex AI, Cloud Storage, Secret Manager, Cloud Build, Artifact Registry
 - [x] Service account created with roles: `roles/aiplatform.user`, `roles/storage.objectAdmin`, `roles/secretmanager.secretAccessor`
 - [x] Service account JSON downloaded to local machine
 - [x] Cache bucket created: `gs://nami-cache-<project-id>`
@@ -228,8 +228,8 @@ Done by the human before invoking the agent. Do **not** automate.
 - [x] `Dockerfile` for Cloud Run (single-stage slim Python 3.12; uv + `--no-install-project` + `PYTHONPATH=/app`)
 - [x] `cloudbuild.yaml`: build → push to Artifact Registry → deploy to Cloud Run (with `dynamicSubstitutions`)
 - [x] Cloud Run config: `min-instances=0`, `max-instances=2`, memory=2Gi, timeout=300s, `--session-affinity`, `--concurrency=20`
-- [ ] IAP setup: enable on Cloud Run service, configure whitelist (deferred — we use `--no-allow-unauthenticated` + IAM role binding for personal-portfolio scale; full IAP requires a load balancer and isn't worth the complexity at v1)
-- [x] Cloud Run runtime SA (`nami-sa`) attached via `--service-account`; Vertex AI + GCS clients use ADC (no JSON key file in container, Secret Manager NOT involved)
+- [ ] IAP setup: deferred — hosted access uses lightweight app-level visitor/admin controls; full IAP requires a load balancer and remains optional hardening
+- [x] Cloud Run runtime SA (`nami-sa`) attached via `--service-account`; Vertex AI + GCS clients use ADC (no JSON key file in container)
 - [x] Cloud Billing budget alert at $20/month
 - [x] Cloud Build 2nd-gen trigger on push to `main` (`nami-main-push` in `asia-northeast1`)
 
@@ -267,8 +267,8 @@ Core factors capture systematic risk that hits all stocks via beta exposure (~70
 ### Why yfinance (not Polygon) in v1?
 Lowest-friction start. yfinance is free, zero infra. Aggressive Cloud Storage caching mitigates rate-limit risk for portfolio-traffic levels. Migration path to Polygon ($29/mo) is one file change in `app/data/market.py` when reliability becomes a concern.
 
-### Why IAP (not custom auth)?
-Public repo + private deployed app. IAP lets anyone clone and run locally with their own Vertex API key, while gating the hosted instance to a whitelist of Google accounts. Zero auth code to write, fully managed by GCP.
+### Why lightweight hosted access controls first?
+The v1 hosted app is intentionally low-friction: visitors can exercise the sample workflow, while unrestricted controls stay behind an app-level admin gate. Full IAP remains a later hardening option if the audience or threat model grows.
 
 ### Why "scenario explorer" framing?
 The phrase "stress testing" is regulated under Basel and triggers compliance scrutiny. "Scenario explorer" or "scenario engine" describes the same functionality with no regulatory tripwire on a public-facing tool.
@@ -308,7 +308,7 @@ black --check .
 # One-time setup
 gcloud config set project <PROJECT_ID>
 gcloud services enable run.googleapis.com aiplatform.googleapis.com \
-  artifactregistry.googleapis.com cloudbuild.googleapis.com iap.googleapis.com
+  artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
 
 # Create artifact registry repo
 gcloud artifacts repositories create nami \
@@ -319,10 +319,6 @@ gsutil mb -l asia-northeast1 gs://<your-cache-bucket>
 
 # Deploy
 gcloud builds submit --config cloudbuild.yaml
-
-# Enable IAP on the deployed service
-gcloud run services add-iam-policy-binding nami \
-  --region=asia-northeast1 --member=user:<email> --role=roles/run.invoker
 
 # Set budget alert
 # (manually via Cloud Console → Billing → Budgets & alerts → $20/month alert. GCP budgets do NOT auto-cap spending.)

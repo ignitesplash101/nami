@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, get_portfolio
+from app.ui import auth
+
 SAMPLES: dict[str, str] = {
     "(choose…)": "",
     "COVID-like pandemic shock": (
@@ -25,33 +28,63 @@ SAMPLES: dict[str, str] = {
 
 def render() -> None:
     st.header("Scenario")
-    st.write("Describe a forward-looking market scenario in natural language.")
+    mode = auth.get_access_mode()
+    is_admin = auth.is_admin(mode)
 
-    sample = st.selectbox("Sample scenarios", list(SAMPLES.keys()))
-    scenario_text = st.text_area(
-        "Describe the scenario",
-        value=SAMPLES[sample],
-        height=140,
-        placeholder="e.g. 'BoJ raises rates 50bps; yen surges to 130; global risk-off.'",
-    )
+    if auth.can_use_free_text_scenario(mode):
+        st.write("Describe a forward-looking market scenario in natural language.")
+        sample = st.selectbox("Sample scenarios", list(SAMPLES.keys()), key="admin_scenario_sample")
+        scenario_text = st.text_area(
+            "Describe the scenario",
+            value=SAMPLES[sample],
+            height=140,
+            placeholder="e.g. 'BoJ raises rates 50bps; yen surges to 130; global risk-off.'",
+        )
+    else:
+        st.write("Choose one of the sample scenarios.")
+        sample = st.selectbox(
+            "Sample scenarios",
+            list(SAMPLES.keys()),
+            key="visitor_scenario_sample",
+        )
+        scenario_text = SAMPLES[sample]
+        st.text_area(
+            "Scenario preview",
+            value=scenario_text,
+            height=140,
+            disabled=True,
+            placeholder="Choose a sample scenario to preview it.",
+        )
+        st.info(
+            "Visitor mode runs sample scenarios only. Enter the admin passcode for custom text."
+        )
 
     portfolio = st.session_state.get("portfolio")
     portfolio_key = st.session_state.get("portfolio_key")
+    if not is_admin and portfolio_key not in SAMPLE_PORTFOLIOS:
+        portfolio_key = next(iter(SAMPLE_PORTFOLIOS))
+        portfolio = get_portfolio(portfolio_key)
+        st.session_state["portfolio"] = portfolio
+        st.session_state["portfolio_key"] = portfolio_key
+
     if portfolio is None and portfolio_key is None:
         st.warning("Pick or build a portfolio on the Portfolio tab first.", icon="⚠️")
     elif portfolio is not None:
         st.caption(f"Using portfolio: **{portfolio.name}** ({len(portfolio.holdings)} holdings)")
 
-    decompose = st.checkbox(
-        "Also compute experimental narrative decomposition",
-        value=False,
-        help=(
-            "(Experimental) Splits the scenario into 2-4 sub-narratives and runs "
-            "2^N (up to 16) scenario evaluations to assign per-sub-narrative Shapley "
-            "values. This is counterfactual PIPELINE attribution, not a causal "
-            "decomposition. Costs ~$0.02 and ~3-4 min runtime. Don't close the tab."
-        ),
-    )
+    if auth.can_use_narrative_decomposition(mode):
+        decompose = st.checkbox(
+            "Also compute experimental narrative decomposition",
+            value=False,
+            help=(
+                "(Experimental) Splits the scenario into 2-4 sub-narratives and runs "
+                "2^N (up to 16) scenario evaluations to assign per-sub-narrative Shapley "
+                "values. This is counterfactual PIPELINE attribution, not a causal "
+                "decomposition. Costs ~$0.02 and ~3-4 min runtime. Don't close the tab."
+            ),
+        )
+    else:
+        decompose = False
 
     can_run = bool(scenario_text and (portfolio is not None or portfolio_key is not None))
     run = st.button("Run Scenario", type="primary", disabled=not can_run)

@@ -6,12 +6,19 @@ import pandas as pd
 import streamlit as st
 
 from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio, get_portfolio
+from app.ui import auth
 
 _CHOICES = list(SAMPLE_PORTFOLIOS.keys()) + ["custom"]
 
 
 def render() -> None:
     st.header("Portfolio")
+    mode = auth.get_access_mode()
+
+    if not auth.can_use_custom_portfolio(mode):
+        _render_visitor_portfolio()
+        return
+
     st.write("Pick a sample, upload a CSV (`ticker,weight`), or edit holdings inline.")
 
     choice = st.selectbox(
@@ -94,6 +101,31 @@ def render() -> None:
         st.session_state["portfolio"] = portfolio
         st.session_state["portfolio_key"] = choice if name != "Custom" else "custom"
         st.success(f"Saved {len(holdings)} holdings as '{name}'. Ready to run scenarios.")
+
+
+def _render_visitor_portfolio() -> None:
+    st.write("Choose one of the sample portfolios.")
+
+    choice = st.selectbox(
+        "Sample portfolio",
+        list(SAMPLE_PORTFOLIOS.keys()),
+        format_func=lambda k: SAMPLE_PORTFOLIOS[k].name,
+        key="visitor_portfolio_choice",
+    )
+    portfolio = get_portfolio(choice)
+    st.session_state["portfolio"] = portfolio
+    st.session_state["portfolio_key"] = choice
+
+    st.markdown(f"**{portfolio.name}**")
+    st.caption(portfolio.description)
+    st.dataframe(
+        pd.DataFrame(
+            [{"ticker": ticker, "weight": weight} for ticker, weight in portfolio.holdings.items()]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.info("Visitor mode uses sample portfolios only. Enter the admin passcode to edit or upload.")
 
 
 def _normalize_ticker(raw: object) -> str:

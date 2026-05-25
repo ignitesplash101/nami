@@ -40,8 +40,9 @@ steps:
       - --max-instances=2
       - --concurrency=20
       - --session-affinity
-      - --no-allow-unauthenticated
+      - --allow-unauthenticated
       - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},VERTEX_AI_LOCATION=global,GCS_BUCKET=nami-cache-${PROJECT_ID},ENVIRONMENT=prod,LOG_LEVEL=INFO
+      - --set-secrets=PASSCODE=nami-passcode:latest
 
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
