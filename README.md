@@ -68,17 +68,7 @@ User flow:
 - **google-cloud-aiplatform** (Vertex AI SDK, `gemini-3.5-flash`)
 - **yfinance** (market data, v1)
 - **pandas**, **numpy**, **statsmodels** (factor regression)
-- **pyarrow** (parquet caching)PS C:\Users\ignit\OneDrive\Desktop\github\nami> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& c:\Users\ignit\OneDrive\Desktop\github\nami\.venv\Scripts\Activate.ps1)
-(nami) PS C:\Users\ignit\OneDrive\Desktop\github\nami> uv run python -c "from app.data.market import fetch_weekly_prices; df = fetch_weekly_prices(['AAPL', 'MSFT'], lookback_weeks=8); print(df.tail())"
->> 
-                  AAPL        MSFT
-2026-04-20  270.810486  423.702301
-2026-04-27  279.882141  413.544312
-2026-05-04  293.050018  414.222839
-2026-05-11  299.953644  421.008148
-2026-05-18  308.820007  417.665405
-(nami) PS C:\Users\ignit\OneDrive\Desktop\github\nami> 
-
+- **pyarrow** (parquet caching)
 - **google-cloud-storage** (cache backend)
 - **pydantic** v2 (structured LLM output validation)
 - **pytest** (unit tests)

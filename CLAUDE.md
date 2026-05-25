@@ -53,7 +53,7 @@ tests/                       # pytest unit tests, in sync with the implementatio
 ## Commands you'll actually use
 
 ```powershell
-# from c:\Users\ignit\OneDrive\Desktop\github\nami\
+# from <repo root>
 
 uv sync                            # install/update deps from pyproject.toml
 uv run streamlit run app/main.py   # start the UI on http://localhost:8501
@@ -113,7 +113,9 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 
 ## What NOT to do
 
-- **Never commit `.env` or any `*.json` that looks like a service-account key.** `.gitignore` covers common patterns; the real mitigation is keeping keys outside the repo (`C:\Users\ignit\.gcp\nami-sa.json`).
+- **Never commit `.env` or any `*.json` that looks like a service-account key.** `.gitignore` covers common patterns; the real mitigation is keeping keys outside the repo (e.g., `~/.gcp/nami-sa.json` or `C:/Users/<you>/.gcp/nami-sa.json`).
+- **Never paste terminal output, shell prompts, or absolute filesystem paths into committed files** (README, CLAUDE.md, code comments, anywhere). Such pastes leak the user's Windows username, repo location, and project tree layout — and look unprofessional in a public repo. If you need to show example output, strip prompts (`PS C:\...>`, `$`) and replace paths with `<repo root>` / `~/path/`. The repo had a real incident where a 10-line yfinance session pasted into README's Tech Stack section; the `git grep -n 'PS C:\|OneDrive\|<your-username-pattern>' -- README.md CLAUDE.md` check below catches recurrences.
+- **Before any `git push`, run the pre-commit content scan** (see Quality gates section). It catches accidental pastes, project-ID leaks, and embedded credentials by grepping the *staged diff*, not just filenames.
 - **Never auto-commit on the user's behalf** unless explicitly asked. Stage explicit files (`git add file1 file2`), never `git add .` until ignores are verified.
 - **Don't phase-jump.** README's Implementation Phases are ordered; each phase must be functional + tested before the next. Don't pull Phase 4 LLM work into a Phase 2 PR.
 - **Don't preemptively migrate yfinance → Polygon.** The README has a deliberate one-file-change path in `app/data/market.py` when reliability demands it. Don't introduce abstractions for that swap until it's needed.

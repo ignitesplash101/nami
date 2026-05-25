@@ -2,7 +2,7 @@
 # SECRETS — must never be committed
 # These patterns cover common naming conventions, but GCP downloads can
 # have arbitrary names (e.g. <project>-<hash>.json). PRIMARY MITIGATION:
-# keep service-account JSON files OUTSIDE the repo (e.g. C:\Users\ignit\.gcp\).
+# keep service-account JSON files OUTSIDE the repo (e.g. ~/.gcp/ or C:/Users/<you>/.gcp/).
 # ─────────────────────────────────────────────
 .env
 .env.*
