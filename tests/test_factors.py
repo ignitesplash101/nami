@@ -1,0 +1,176 @@
+"""Unit tests for app.factors.regression and app.factors.shocks. Synthetic data only — no network."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from app.data.sample_portfolios import Portfolio
+from app.factors.regression import estimate_betas
+from app.factors.shocks import apply_shocks, portfolio_pnl
+
+
+def _make_factor_returns(
+    n_weeks: int,
+    n_factors: int,
+    mean: float = 0.0,
+    seed: int = 42,
+) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    data = rng.standard_normal((n_weeks, n_factors)) * 0.02 + mean
+    idx = pd.date_range("2020-01-06", periods=n_weeks, freq="W")
+    cols = [f"F{i}" for i in range(n_factors)]
+    return pd.DataFrame(data, index=idx, columns=cols)
+
+
+def _synth_ticker_returns(
+    factors: pd.DataFrame,
+    true_betas: np.ndarray,
+    noise: float = 0.0001,
+    seed: int = 7,
+) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    n_weeks = factors.shape[0]
+    n_tickers = true_betas.shape[1]
+    Y = factors.to_numpy() @ true_betas + rng.standard_normal((n_weeks, n_tickers)) * noise
+    return pd.DataFrame(Y, index=factors.index, columns=[f"T{i}" for i in range(n_tickers)])
+
+
+def test_estimate_betas_recovers_known_coefficients():
+    factors = _make_factor_returns(n_weeks=200, n_factors=3, mean=0.0)
+    true_betas = np.array(
+        [
+            [1.2, 0.5, -0.3],
+            [0.0, 1.0, 0.4],
+            [-0.5, 0.2, 0.8],
+        ]
+    )
+    tickers = _synth_ticker_returns(factors, true_betas, noise=1e-4)
+
+    estimated = estimate_betas(tickers, factors, alpha=0.001).to_numpy()
+    np.testing.assert_allclose(estimated, true_betas.T, atol=0.05)
+
+
+def test_estimate_betas_handles_nonzero_factor_means():
+    # Mean-centering must absorb a strong drift; without it, betas would be biased.
+    factors = _make_factor_returns(n_weeks=200, n_factors=3, mean=0.05)
+    true_betas = np.array([[0.8, -0.4], [0.3, 0.9], [-0.6, 0.2]])
+    tickers = _synth_ticker_returns(factors, true_betas, noise=1e-4)
+
+    estimated = estimate_betas(tickers, factors, alpha=0.001).to_numpy()
+    np.testing.assert_allclose(estimated, true_betas.T, atol=0.05)
+
+
+def test_ridge_stabilizes_collinear_factors():
+    rng = np.random.default_rng(123)
+    n_weeks = 100
+    f0 = rng.standard_normal(n_weeks) * 0.02
+    f1 = f0.copy()  # perfectly correlated
+    idx = pd.date_range("2020-01-06", periods=n_weeks, freq="W")
+    factors = pd.DataFrame({"F0": f0, "F1": f1}, index=idx)
+    tickers = pd.DataFrame({"T0": f0 * 1.5}, index=idx)
+
+    betas = estimate_betas(tickers, factors, alpha=0.1).to_numpy()
+    assert np.all(np.isfinite(betas))
+    assert np.all(np.abs(betas) < 100)
+
+
+def test_apply_shocks_dot_product():
+    betas = pd.DataFrame(
+        [[1.0, 0.5], [0.2, -0.3]],
+        index=["AAPL", "MSFT"],
+        columns=["SPY", "VIX"],
+    )
+    shocks = {"SPY": -0.10, "VIX": 0.40}
+    expected = pd.Series(
+        [1.0 * -0.10 + 0.5 * 0.40, 0.2 * -0.10 + -0.3 * 0.40],
+        index=["AAPL", "MSFT"],
+        name="expected_return",
+    )
+    result = apply_shocks(betas, shocks)
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_apply_shocks_rejects_unknown_factor():
+    betas = pd.DataFrame([[1.0]], index=["AAPL"], columns=["SPY"])
+    with pytest.raises(ValueError, match="Unknown factors"):
+        apply_shocks(betas, {"NOT_A_FACTOR": 0.5})
+
+
+def test_portfolio_pnl_rejects_missing_ticker():
+    betas = pd.DataFrame([[1.0]], index=["AAPL"], columns=["SPY"])
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 0.5, "GHOST": 0.5})
+    with pytest.raises(RuntimeError, match="missing rows"):
+        portfolio_pnl(portfolio, betas, {"SPY": -0.05})
+
+
+def test_portfolio_pnl_attribution_sums():
+    betas = pd.DataFrame(
+        [[1.0, 0.5], [0.2, -0.3], [-0.4, 0.8]],
+        index=["AAPL", "MSFT", "NVDA"],
+        columns=["SPY", "VIX"],
+    )
+    portfolio = Portfolio(
+        name="test",
+        description="test",
+        holdings={"AAPL": 0.4, "MSFT": 0.3, "NVDA": 0.3},
+    )
+    shocks = {"SPY": -0.07, "VIX": 0.5}
+
+    result = portfolio_pnl(portfolio, betas, shocks)
+
+    assert isinstance(result["total_pnl"], float)
+    np.testing.assert_allclose(
+        sum(result["by_factor"].values()),
+        result["total_pnl"],
+        atol=1e-10,
+    )
+
+
+def test_portfolio_pnl_returns_json_safe_dict():
+    """Phase 4 invariant: every value must be a plain float or dict of floats — no pd.Series."""
+    betas = pd.DataFrame([[1.0, 0.5]], index=["AAPL"], columns=["SPY", "VIX"])
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 1.0})
+    result = portfolio_pnl(portfolio, betas, {"SPY": -0.1, "VIX": 0.3})
+
+    assert isinstance(result["total_pnl"], float)
+    for key in ("by_factor", "by_ticker_factor", "by_ticker_periphery", "by_ticker_total"):
+        assert isinstance(result[key], dict), f"{key} should be a dict, got {type(result[key])}"
+        for v in result[key].values():
+            assert isinstance(v, float), f"{key} values must be float, got {type(v)}"
+
+
+def test_portfolio_pnl_with_periphery_shocks():
+    betas = pd.DataFrame(
+        [[1.0, 0.0], [0.0, 1.0]],
+        index=["AAPL", "MSFT"],
+        columns=["SPY", "VIX"],
+    )
+    portfolio = Portfolio(
+        name="x",
+        description="x",
+        holdings={"AAPL": 0.6, "MSFT": 0.4},
+    )
+    shocks = {"SPY": -0.10, "VIX": 0.50}
+    periphery = {"AAPL": -0.15}
+
+    result = portfolio_pnl(portfolio, betas, shocks, periphery_shocks=periphery)
+
+    # AAPL: factor = 1.0 * -0.10 = -0.10; periphery = -0.15; total = -0.25; weighted = 0.6 * -0.25 = -0.15
+    # MSFT: factor = 0.0 * -0.10 + 1.0 * 0.50 = 0.50; periphery = 0; total = 0.50; weighted = 0.4 * 0.50 = 0.20
+    # total_pnl = -0.15 + 0.20 = 0.05
+    np.testing.assert_allclose(result["total_pnl"], 0.05, atol=1e-10)
+    np.testing.assert_allclose(result["by_ticker_total"]["AAPL"], -0.15, atol=1e-10)
+    np.testing.assert_allclose(result["by_ticker_total"]["MSFT"], 0.20, atol=1e-10)
+    np.testing.assert_allclose(
+        result["by_ticker_periphery"]["AAPL"], -0.09, atol=1e-10
+    )  # 0.6 * -0.15
+    np.testing.assert_allclose(result["by_ticker_periphery"]["MSFT"], 0.0, atol=1e-10)
+
+
+def test_portfolio_pnl_rejects_periphery_for_unknown_ticker():
+    betas = pd.DataFrame([[1.0]], index=["AAPL"], columns=["SPY"])
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 1.0})
+    with pytest.raises(ValueError, match="Periphery shocks for tickers not in portfolio"):
+        portfolio_pnl(portfolio, betas, {"SPY": -0.05}, periphery_shocks={"GHOST": -0.1})

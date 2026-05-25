@@ -1,0 +1,6 @@
+#!include:.gitignore
+
+# Additional excludes for Cloud Build uploads
+.git/
+tests/
+docs/screenshots/

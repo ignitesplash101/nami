@@ -1,0 +1,185 @@
+# nami historical events registry
+#
+# Schema:
+#   events:
+#     <event_id>:               # stable kebab-case identifier (NO DUPLICATES — load_events raises)
+#       name: <string>           # human-readable
+#       start_date: YYYY-MM-DD   # ISO date, inclusive
+#       end_date: YYYY-MM-DD     # ISO date, inclusive (fetch_event_returns adds 1 day before yfinance)
+#       tags: [<tag>, ...]       # subset of VALID_TAGS in app/factors/analogs.py
+#       description: |
+#         What happened, key factor moves observed, why this is a useful analog.
+#
+# Valid tags: trade-war, pandemic, inflation, geopolitical, banking, energy, central-bank, currency
+#
+# Minimum window: end_date >= start_date + 3 days (calendar).
+#
+# Data availability — ETFs that don't exist in a window return NaN in compute_envelope:
+#   Style ETFs (MTUM, QUAL, VLUE, SIZE, USMV) launched in 2013
+#   XLRE launched in 2015
+#   XLC launched in 2018
+#   ACWI launched mid-2008
+events:
+  bnp-paribas-credit-2007:
+    name: BNP Paribas Funds Suspended / Early Credit Freeze
+    start_date: 2007-07-31
+    end_date: 2007-09-15
+    tags: [banking]
+    description: |
+      August 2007: BNP Paribas froze redemptions on three subprime-exposed funds,
+      marking the first acute credit-market freeze of the GFC build-up. Money markets
+      seized, LIBOR-OIS spreads blew out. Equity volatility spiked; SPY pulled back
+      mid-single-digits. Early warning before Bear Stearns / Lehman.
+  lehman-gfc-2008:
+    name: Lehman / GFC Acute Phase
+    start_date: 2008-09-15
+    end_date: 2008-10-31
+    tags: [banking]
+    description: |
+      Lehman Brothers bankruptcy Sept 15 -> TARP enactment Oct 3 -> capitulation
+      through October. ~-25% on SPY, financials (XLF) much worse, VIX peaked above
+      80, 10Y yield collapsed on flight-to-safety, oil began its 2008 crash.
+  gfc-trough-recovery-2009:
+    name: GFC Trough and Initial Recovery
+    start_date: 2009-03-01
+    end_date: 2009-05-31
+    tags: [banking]
+    description: |
+      Market trough Mar 9 2009 (SPY ~$68) and the initial ~+35% rally into May.
+      Useful as a "regime-change off a panic" analog — VIX collapsed, credit
+      reopened, cyclicals rallied harder than defensives.
+  euro-crisis-2010:
+    name: Greek Bailout / Euro Crisis Acute
+    start_date: 2010-04-23
+    end_date: 2010-07-31
+    tags: [banking, currency, geopolitical]
+    description: |
+      First Greek bailout requested Apr 23 -> Flash Crash May 6 -> EUR/USD lows
+      and peripheral spread blow-out through June. SPY ~-15% peak-to-trough,
+      EUR weakness drove DXY up sharply.
+  us-downgrade-2011:
+    name: US Debt Ceiling + S&P Downgrade
+    start_date: 2011-07-22
+    end_date: 2011-09-30
+    tags: [central-bank, geopolitical]
+    description: |
+      Debt-ceiling standoff peaked late July; S&P downgraded US sovereign rating
+      to AA+ on Aug 5. Sharpest single-week SPY loss since 2008. Counterintuitively
+      Treasuries rallied (yields fell) — a flight-to-quality even with the issuer
+      being downgraded.
+  taper-tantrum-2013:
+    name: Fed Taper Tantrum
+    start_date: 2013-05-22
+    end_date: 2013-09-05
+    tags: [central-bank]
+    description: |
+      Bernanke testified May 22 that the Fed might begin reducing QE asset
+      purchases. 10Y yield jumped from ~1.6% to ~3% by early September. Equities
+      wobbled but recovered; the trade was about rates, EMFX, and duration risk.
+  oil-crash-2014:
+    name: Saudi-Russia Oil Crash
+    start_date: 2014-06-15
+    end_date: 2015-01-31
+    tags: [energy]
+    description: |
+      WTI fell from ~$108 in June 2014 to ~$45 by January 2015 (>-55%) as OPEC
+      refused production cuts. Energy sector (XLE) and high-yield credit hit
+      hard; broad equities resilient.
+  china-deval-2015:
+    name: China Yuan Devaluation + Global Selloff
+    start_date: 2015-08-10
+    end_date: 2015-09-30
+    tags: [currency, geopolitical]
+    description: |
+      Aug 11 PBOC widened the yuan trading band, triggering a sharp devaluation
+      and global risk-off. SPY ~-10% in a week, VIX spiked above 40, EM and
+      China-sensitive sectors led the decline.
+  brexit-2016:
+    name: Brexit Referendum
+    start_date: 2016-06-23
+    end_date: 2016-07-22
+    tags: [geopolitical, currency]
+    description: |
+      UK voted Leave on June 23. Sterling collapsed -10% overnight, FTSE and
+      European banks tumbled, but US equities recovered within two weeks.
+      Useful as a "binary geopolitical event" analog where headline shock and
+      recovery happen on different scales.
+  q4-trade-war-2018:
+    name: Q4 2018 US-China Trade War + Risk-Off
+    start_date: 2018-10-01
+    end_date: 2018-12-31
+    tags: [trade-war]
+    description: |
+      Escalating US-China tariffs plus Fed hiking into a slowing economy. SPY
+      ~-14% in Q4 (worst since 2011), tech and small-caps hit hardest.
+      Capitulation low Dec 24.
+  covid-crash-2020:
+    name: COVID-19 Crash
+    start_date: 2020-02-19
+    end_date: 2020-03-23
+    tags: [pandemic]
+    description: |
+      5-week selloff from market peak (Feb 19) to trough (Mar 23). SPY ~-34%,
+      VIX peaked above 80 on Mar 16, 10Y yield collapsed from 1.55% to 0.55%
+      then bounced to 0.85%. Oil briefly went negative. Liquidity vacuum across
+      every asset class simultaneously.
+  covid-liquidity-2020:
+    name: Fed Liquidity Backstop / COVID Recovery
+    start_date: 2020-03-23
+    end_date: 2020-08-31
+    tags: [pandemic, central-bank]
+    description: |
+      Mar 23 the Fed announced unlimited QE + corporate bond facilities. Risk
+      assets ripped: SPY +50% by August, growth/tech-heavy NASDAQ hit new highs
+      while value/cyclicals lagged. Useful as a "policy-backstop reflation"
+      analog.
+  inflation-ukraine-2022:
+    name: Sticky Inflation + Ukraine Invasion
+    start_date: 2022-01-01
+    end_date: 2022-06-30
+    tags: [inflation, geopolitical, energy]
+    description: |
+      H1 2022 saw 40-year-high US inflation, Fed pivot to aggressive hikes,
+      Russia's invasion of Ukraine (Feb 24), and an energy-price spike. SPY
+      ~-21% YTD by end-June, with growth/long-duration hit hardest. Bonds and
+      equities sold off together (rare).
+  uk-gilt-crisis-2022:
+    name: UK Mini-Budget / Gilt Crisis
+    start_date: 2022-09-21
+    end_date: 2022-10-31
+    tags: [banking, currency, central-bank]
+    description: |
+      Sep 23 UK mini-budget triggered a gilt collapse and pension-fund LDI
+      stress. GBP hit an all-time low, 30y gilts moved >100bps in two days.
+      BoE intervened Sep 28. Useful as a "small-economy fiscal credibility
+      shock" analog.
+  svb-banking-2023:
+    name: SVB / Credit Suisse Mini-Crisis
+    start_date: 2023-03-08
+    end_date: 2023-04-07
+    tags: [banking]
+    description: |
+      Silicon Valley Bank failed Mar 10 (largest US bank failure since 2008).
+      Credit Suisse rescued by UBS Mar 19. Regional banks (KRE) crashed,
+      ~+30bp move in 2y yields in a week (flight-to-safety), big-tech
+      outperformed on perceived rate-cut bets.
+  yen-carry-unwind-2024:
+    name: Yen Carry Trade Unwind
+    start_date: 2024-07-31
+    end_date: 2024-08-05
+    tags: [currency]
+    description: |
+      BoJ rate hike Jul 31 -> sharp JPY appreciation -> global yen-funded carry
+      trades unwound. Nikkei -12% on Aug 5 (worst day since 1987), SPY ~-6%
+      intraday, VIX spiked from ~17 to ~65. Recovered most of the move within
+      two weeks — window is intentionally peak-to-trough only.
+  us-tariffs-2025:
+    name: US Tariff Acceleration
+    start_date: 2025-04-01
+    end_date: 2025-05-30
+    tags: [trade-war]
+    description: |
+      Early-April 2025 announcement of broad tariff increases on China and
+      other partners triggered a multi-week equity selloff and yield curve
+      moves. Useful as a recent trade-war analog with current factor structure
+      (XLC, XLRE, all style ETFs available).

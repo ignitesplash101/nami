@@ -1,0 +1,56 @@
+substitutions:
+  _REGION: asia-northeast1
+  _AR_REPO: nami
+  _SERVICE: nami
+  _RUNTIME_SA: nami-sa@${PROJECT_ID}.iam.gserviceaccount.com
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --service-account=${_RUNTIME_SA}
+      - --memory=2Gi
+      - --cpu=1
+      - --timeout=300
+      - --min-instances=0
+      - --max-instances=2
+      - --concurrency=20
+      - --session-affinity
+      - --no-allow-unauthenticated
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},VERTEX_AI_LOCATION=global,GCS_BUCKET=nami-cache-${PROJECT_ID},ENVIRONMENT=prod,LOG_LEVEL=INFO
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:latest
+
+options:
+  # Required so _RUNTIME_SA expands the nested ${PROJECT_ID} during manual
+  # `gcloud builds submit`. Trigger builds get dynamicSubstitutions by default,
+  # but manual runs need this explicit. See:
+  # https://cloud.google.com/build/docs/configuring-builds/substitute-variable-values
+  dynamicSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY

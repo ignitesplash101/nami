@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────
+# SECRETS — must never be committed
+# These patterns cover common naming conventions, but GCP downloads can
+# have arbitrary names (e.g. <project>-<hash>.json). PRIMARY MITIGATION:
+# keep service-account JSON files OUTSIDE the repo (e.g. C:\Users\ignit\.gcp\).
+# ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env.local
+
+# GCP service-account JSON (common naming conventions)
+*-service-account*.json
+*-credentials*.json
+service-account*.json
+credentials*.json
+*-sa.json
+gcp-key*.json
+*-key.json
+gha-creds-*.json
+secrets/
+.streamlit/secrets.toml
+# (Keep .streamlit/config.toml tracked — that's the public Streamlit config.)
+
+# ─────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ─────────────────────────────────────────────
+# Virtualenvs
+# NOTE: .python-version IS tracked — contributors should land on Python 3.12.
+# ─────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# ─────────────────────────────────────────────
+# Package-manager caches (uv and poetry both)
+# NOTE: uv.lock / poetry.lock ARE tracked — do not ignore.
+# ─────────────────────────────────────────────
+.uv-cache/
+.poetry-cache/
+
+# ─────────────────────────────────────────────
+# Testing / linting caches
+# ─────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+nosetests.xml
+.cache
+
+# ─────────────────────────────────────────────
+# Notebooks
+# ─────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ─────────────────────────────────────────────
+# IDE / editor
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# ─────────────────────────────────────────────
+# OS
+# ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
+
+# ─────────────────────────────────────────────
+# Project-local scratch
+# ─────────────────────────────────────────────
+/tmp/
+*.log
+.local/
+scratch/
