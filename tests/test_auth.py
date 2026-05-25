@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from app.ui.auth import (
+from app.api.security import (
     can_use_custom_portfolio,
     can_use_free_text_scenario,
     can_use_narrative_decomposition,
+    create_admin_token,
+    verify_admin_token,
     verify_passcode,
 )
 
@@ -28,3 +30,10 @@ def test_verify_passcode_rejects_wrong_or_empty_values():
     assert not verify_passcode("wrong", "correct horse battery staple")
     assert not verify_passcode("", "correct horse battery staple")
     assert not verify_passcode("correct horse battery staple", "")
+
+
+def test_admin_token_is_signed_and_secret_bound():
+    token = create_admin_token("secret-a")
+    assert token is not None
+    assert verify_admin_token(token, "secret-a")
+    assert not verify_admin_token(token, "secret-b")

@@ -37,6 +37,11 @@ wheels/
 .installed.cfg
 *.egg
 
+# Frontend local artefacts
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
 # Package-manager caches
 .uv-cache/
 .poetry-cache/
