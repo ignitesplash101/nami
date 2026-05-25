@@ -1,10 +1,11 @@
-"""Vertex AI Gemini wrapper for the two scenario calls.
+"""Vertex AI Gemini wrapper for the scenario LLM calls.
 
-Call 1 (`select_analogs`): structured output, no grounding — picks event_ids from the registry.
-Call 2 (`propose_shocks_with_retry`): structured output + Google Search grounding —
-proposes factor + periphery shocks within the empirical envelope, with a validation
-repair loop (one retry max) on semantic violations. Raises if grounding metadata is
-empty on the final attempt — we don't return forward-looking claims without citations.
+Call 1 (`select_analogs`): structured output, no grounding; picks event_ids from the registry.
+Call 2a (`_grounded_narrative`): free-form text, Google Search grounding, no schema.
+Call 2b (`_extract_structured_shocks`): structured output, no grounding tools.
+
+The split avoids the Gemini failure mode where `response_schema` is honored but the
+Google Search tool is not invoked, producing valid JSON with no grounding metadata.
 """
 
 from __future__ import annotations
@@ -14,12 +15,14 @@ import pandas as pd
 from app.config import Config
 from app.data.sample_portfolios import Portfolio
 from app.factors.analogs import HistoricalEvent
-from app.llm.grounding import extract_citations, has_grounding
+from app.llm.grounding import extract_citations
 from app.llm.prompts import (
     ANALOG_SELECTION_PROMPT,
-    SHOCK_PROPOSAL_PROMPT,
+    GROUNDED_NARRATIVE_PROMPT,
+    SHOCK_EXTRACTION_PROMPT,
     format_analog_selection_user_message,
-    format_shock_proposal_user_message,
+    format_grounded_narrative_user_message,
+    format_shock_extraction_user_message,
 )
 from app.llm.schemas import (
     AnalogSelectionOutput,
@@ -71,43 +74,91 @@ class GeminiClient:
         max_retries: int = 1,
     ) -> tuple[ShockProposalOutput, list[Citation]]:
         del events_registry  # currently unused; reserved for future cross-checks
-        prior_errors: list[str] = []
-        last_output: ShockProposalOutput | None = None
-        last_citations: list[Citation] = []
 
+        narrative, citations = self._grounded_narrative(
+            scenario_text=scenario_text,
+            envelope=envelope,
+            factor_universe_descriptions=factor_universe_descriptions,
+            portfolio=portfolio,
+        )
+        if not citations:
+            raise RuntimeError(
+                "Grounded narrative call returned no citations. Gemini did not invoke "
+                "Google Search, so forward-looking claims cannot be returned."
+            )
+
+        prior_errors: list[str] = []
         for attempt in range(max_retries + 1):
-            user_msg = format_shock_proposal_user_message(
-                scenario_text=scenario_text,
+            shock_output = self._extract_structured_shocks(
+                narrative=narrative,
                 envelope=envelope,
                 factor_universe_descriptions=factor_universe_descriptions,
-                portfolio_holdings=portfolio.holdings,
+                portfolio=portfolio,
                 prior_errors=prior_errors if attempt > 0 else None,
             )
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=user_msg,
-                config=self._types.GenerateContentConfig(
-                    system_instruction=SHOCK_PROPOSAL_PROMPT,
-                    temperature=self._temperature,
-                    response_mime_type="application/json",
-                    response_schema=ShockProposalOutput,
-                    tools=[self._types.Tool(google_search=self._types.GoogleSearch())],
-                ),
-            )
-            last_output = ShockProposalOutput.model_validate_json(response.text)
-            last_citations = extract_citations(response)
+            shock_output = shock_output.model_copy(update={"narrative": narrative})
 
-            errors = validate_shock_proposal(last_output, envelope=envelope, portfolio=portfolio)
+            errors = validate_shock_proposal(shock_output, envelope=envelope, portfolio=portfolio)
             if not errors:
-                if not has_grounding(response):
-                    raise RuntimeError(
-                        "Gemini response did not return grounding metadata. "
-                        "Forward-looking claims must be cited; cannot proceed."
-                    )
-                return last_output, last_citations
+                return shock_output, citations
 
             prior_errors = errors
 
         raise RuntimeError(
-            f"Shock proposal failed validation after {max_retries + 1} attempts: " f"{prior_errors}"
+            f"Shock proposal failed validation after {max_retries + 1} attempts: {prior_errors}"
         )
+
+    def _grounded_narrative(
+        self,
+        *,
+        scenario_text: str,
+        envelope: pd.DataFrame,
+        factor_universe_descriptions: list[dict],
+        portfolio: Portfolio,
+    ) -> tuple[str, list[Citation]]:
+        """Call 2a: current-market narrative with Google Search grounding, no schema."""
+        user_msg = format_grounded_narrative_user_message(
+            scenario_text=scenario_text,
+            envelope=envelope,
+            factor_universe_descriptions=factor_universe_descriptions,
+            portfolio_holdings=portfolio.holdings,
+        )
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_msg,
+            config=self._types.GenerateContentConfig(
+                system_instruction=GROUNDED_NARRATIVE_PROMPT,
+                temperature=self._temperature,
+                tools=[self._types.Tool(google_search=self._types.GoogleSearch())],
+            ),
+        )
+        return response.text or "", extract_citations(response)
+
+    def _extract_structured_shocks(
+        self,
+        *,
+        narrative: str,
+        envelope: pd.DataFrame,
+        factor_universe_descriptions: list[dict],
+        portfolio: Portfolio,
+        prior_errors: list[str] | None = None,
+    ) -> ShockProposalOutput:
+        """Call 2b: schema-bound shock extraction from the grounded narrative, no tools."""
+        user_msg = format_shock_extraction_user_message(
+            narrative=narrative,
+            envelope=envelope,
+            factor_universe_descriptions=factor_universe_descriptions,
+            portfolio_holdings=portfolio.holdings,
+            prior_errors=prior_errors,
+        )
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_msg,
+            config=self._types.GenerateContentConfig(
+                system_instruction=SHOCK_EXTRACTION_PROMPT,
+                temperature=self._temperature,
+                response_mime_type="application/json",
+                response_schema=ShockProposalOutput,
+            ),
+        )
+        return ShockProposalOutput.model_validate_json(response.text)

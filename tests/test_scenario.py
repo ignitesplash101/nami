@@ -7,10 +7,12 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.config import Config
 from app.data.sample_portfolios import get_portfolio
 from app.factors.universe import FACTORS
+from app.llm.gemini_client import GeminiClient
 from app.llm.scenario import run_scenario
 from app.llm.schemas import (
     AnalogSelection,
@@ -220,3 +222,31 @@ def test_run_scenario_skip_cache_forces_fresh_call(monkeypatch):
 def test_get_portfolio_smoke():
     # Sanity check the imports work; placeholder for future portfolio-tests file.
     assert get_portfolio("us_tech_growth") is not None
+
+
+def test_propose_shocks_raises_when_grounded_narrative_returns_no_citations(monkeypatch):
+    """Production guard: do not proceed when Google Search grounding did not fire."""
+    client = GeminiClient.__new__(GeminiClient)
+    portfolio = get_portfolio("us_tech_growth")
+    envelope = pd.DataFrame(
+        {"mean": [-0.05], "p10": [-0.10], "p90": [0.0], "count": [2]},
+        index=["SPY"],
+    )
+
+    def _grounded_narrative_without_citations(**kwargs):
+        return "A current-market narrative with no citation metadata.", []
+
+    def _extract_should_not_run(**kwargs):
+        raise AssertionError("structured extraction should not run without citations")
+
+    monkeypatch.setattr(client, "_grounded_narrative", _grounded_narrative_without_citations)
+    monkeypatch.setattr(client, "_extract_structured_shocks", _extract_should_not_run)
+
+    with pytest.raises(RuntimeError, match="no citations|Google Search"):
+        client.propose_shocks_with_retry(
+            scenario_text="latest market news",
+            portfolio=portfolio,
+            factor_universe_descriptions=[],
+            envelope=envelope,
+            events_registry={},
+        )
