@@ -6,6 +6,9 @@ Describe a forward-looking market scenario in natural language; the engine groun
 
 The name *nami* (波) is Japanese for "wave" — markets move in waves, factor shocks propagate in waves, and the engine decomposes portfolio impact into its constituent wave components.
 
+📘 **[Methodology](docs/methodology.md)** — factor universe, beta estimation, LLM pipeline, reproducibility
+📊 **[Backtest results](docs/backtest_results.md)** — live-LLM evaluation snapshot + semantic invariants
+
 ---
 
 ## ⚠️ Disclaimer
@@ -200,23 +203,25 @@ Done by the human before invoking the agent. Do **not** automate.
 - [x] Cache LLM responses to Cloud Storage (`scenario_cache/{hash}.json`, 7d TTL)
 
 ### Phase 5 — UI (≈10h)
-- [ ] `portfolio_tab.py`: load sample / upload CSV / display weights table
-- [ ] `scenario_tab.py`: free-text scenario input + "Run Scenario" button
-- [ ] `results_tab.py`:
-  - P&L summary at top (portfolio %, $ if notionals given)
+- [x] `portfolio_tab.py`: load sample / upload CSV / inline editable holdings via `st.data_editor`
+- [x] `scenario_tab.py`: free-text scenario input + sample dropdown + "Run Scenario" button
+- [x] `results_tab.py`:
+  - P&L summary at top with shock vs contribution distinction
   - Factor contribution waterfall chart
+  - Factor reasoning + Periphery reasoning tables (LLM rationale per shock)
   - Name-level breakdown table
   - LLM narrative below with citations as expandable footnotes
-  - Analog windows visualization
-- [ ] `methodology_tab.py`: static markdown explaining the factor model + analog approach + disclaimers
-- [ ] Footer disclaimer on every page
+  - Analog windows table
+- [x] `methodology_tab.py`: renders `docs/methodology.md` below the disclaimer
+- [x] Disclaimer banner on every page (`st.warning(DISCLAIMER_SHORT)` in `app/main.py` above every tab)
 
 ### Phase 6 — Backtests + Validation (≈6h)
-- [ ] `tests/test_backtest.py`:
-  - Feed engine the scenario "March 2020 COVID" with portfolio = MSCI World
-  - Engine should generate shocks within empirical 2020 range
-  - Run all sample portfolios against 3 historical events and document outputs in `docs/backtest_results.md`
-- [ ] Visible in README and methodology tab — the credibility piece.
+- [x] `tests/test_live_evals.py` (renamed from `test_backtest.py` — these hit live Gemini + Google Search and are stochastic over news drift, not deterministic backtests):
+  - Pandemic scenario → at least one pandemic-tagged analog selected + citations returned
+  - Banking-stress scenario → XLF shock more negative than SPY (financials lead)
+  - Taiwan scenario on US tech growth → periphery shock on ≥1 semi (NVDA/AMD/AAPL/AVGO/AMAT/QCOM)
+  - Gated on `RUN_NETWORK_TESTS=1`; documented in [`docs/backtest_results.md`](docs/backtest_results.md)
+- [x] Methodology + backtest links visible in README ([`docs/methodology.md`](docs/methodology.md), [`docs/backtest_results.md`](docs/backtest_results.md)) — the credibility piece
 
 ### Phase 7 — Deploy (≈6h)
 - [x] `Dockerfile` for Cloud Run (single-stage slim Python 3.12; uv + `--no-install-project` + `PYTHONPATH=/app`)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AnalogSelection(BaseModel):
@@ -63,6 +63,8 @@ class ScenarioResult(BaseModel):
     scenario_text: str
     market_date: date
     portfolio_key: str
+    portfolio_name: str = "(unknown)"
+    portfolio_holdings: dict[str, float] = Field(default_factory=dict)
     analogs_selected: list[AnalogSelection]
     factor_shocks: list[FactorShock]
     periphery_shocks: list[PeripheryShock]

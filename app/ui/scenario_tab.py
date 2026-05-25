@@ -35,11 +35,16 @@ def render() -> None:
         placeholder="e.g. 'BoJ raises rates 50bps; yen surges to 130; global risk-off.'",
     )
 
+    portfolio = st.session_state.get("portfolio")
     portfolio_key = st.session_state.get("portfolio_key")
-    if portfolio_key is None:
-        st.warning("Pick a portfolio on the Portfolio tab first.", icon="⚠️")
+    if portfolio is None and portfolio_key is None:
+        st.warning("Pick or build a portfolio on the Portfolio tab first.", icon="⚠️")
+    elif portfolio is not None:
+        st.caption(
+            f"Using portfolio: **{portfolio.name}** ({len(portfolio.holdings)} holdings)"
+        )
 
-    can_run = bool(scenario_text and portfolio_key)
+    can_run = bool(scenario_text and (portfolio is not None or portfolio_key is not None))
     run = st.button("Run Scenario", type="primary", disabled=not can_run)
 
     if run:
@@ -47,7 +52,10 @@ def render() -> None:
             try:
                 from app.llm.scenario import run_scenario
 
-                result = run_scenario(scenario_text, portfolio_key)
+                if portfolio is not None:
+                    result = run_scenario(scenario_text, portfolio)
+                else:
+                    result = run_scenario(scenario_text, portfolio_key=portfolio_key)
                 st.session_state["scenario_result"] = result
                 st.success(
                     f"✓ Scenario complete. Portfolio P&L: {result.portfolio_pnl.total_pnl:.2%}. "

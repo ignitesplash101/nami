@@ -100,7 +100,13 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - **`portfolio_pnl()` returns JSON-safe dicts** (not pd.Series) since Phase 4 — Series would break the cache serialization round-trip. Shape: `{total_pnl, by_factor, by_ticker_factor, by_ticker_periphery, by_ticker_total}`, all values plain floats or dicts of floats.
 - **Gemini grounding + `response_schema` in one call is unreliable.** `gemini-3.5-flash` can return valid JSON while skipping `google_search`, leaving `grounding_metadata` empty. `propose_shocks_with_retry` deliberately splits Call 2 into `_grounded_narrative` (text + Google Search, no schema) and `_extract_structured_shocks` (schema, no tools). Do NOT merge them back together or add a "retry without grounding" fallback.
 - **`run_scenario` accepts injected `gemini` and `cache`** — tests use mocks (`tests/conftest.py::InMemoryCache` and `_MockGeminiClient`) instead of `storage.Client()` and `genai.Client()`. Production code calls with defaults (which read `Config` and construct real clients).
-- **PROMPT_VERSION** in `app/llm/prompts.py` MUST be bumped manually when either system prompt changes semantically — that invalidates the cache cleanly for downstream re-derivation.
+- **PROMPT_VERSION** in `app/llm/prompts.py` MUST be bumped for ANY change that affects `ScenarioResult`'s shape OR prompt semantics. Schema changes invalidate the cache exactly the same way prompt changes do. v3 means `ScenarioResult` carries `portfolio_name` + `portfolio_holdings`.
+- **`ScenarioResult` is self-contained as of v3.** Always render holdings from `result.portfolio_holdings`, never from `get_portfolio(result.portfolio_key)` — the latter raises on `"custom"`. The new fields have defaults so cached v2 entries don't crash, but they'll show weight=0 for tickers; the PROMPT_VERSION bump invalidates them lazily.
+- **Results-tab labels must keep `shock applied` vs `contrib to P&L` distinct.** "Shock applied" is the magnitude the LLM proposed for a factor; "contrib to P&L" is `(Σᵢ wᵢ · βᵢ,f) · shock[f]` — the weighted contribution to the total. Never collapse these into a single number.
+- **`run_scenario` accepts EITHER `portfolio` (positional, `str | Portfolio`) OR `portfolio_key=` (kwarg, back-compat).** Passing both or neither raises `ValueError`. The UI passes a `Portfolio` object so custom holdings round-trip; existing tests still pass `portfolio_key="us_tech_growth"`.
+- **Portfolio-tab editor uses DYNAMIC widget keys** (`f"portfolio_editor::{source_id}"`) so switching sample/upload creates a fresh `st.data_editor` instead of mutating session_state — Streamlit is brittle with the latter. Trade-off: switching source mid-edit drops in-progress changes.
+- **CSV upload rules** (`_parse_csv` in portfolio_tab.py): required columns `ticker,weight`; uppercase tickers (`.T` suffixes preserved); reject blanks / duplicates / negatives / non-finite; totals in `[0.95, 1.05]` accepted as decimals OR `[95, 105]` as percentages (auto-normalized to decimals). Anything else is rejected.
+- **`tests/test_live_evals.py` is network-gated on `RUN_NETWORK_TESTS=1`** and **stochastic over news drift** even with `temperature=0` — use semantic assertions only (tag membership, ordering, presence-of-citation), never magnitude bounds. `docs/backtest_results.md` is a DATED snapshot, not a permanent benchmark. Costs ~$0.001 per test.
 - **Cloud Run runtime auth uses ADC**, not Secret Manager. `nami-sa` is attached via `--service-account=` in `cloudbuild.yaml`; the Vertex AI + GCS Python clients pick it up automatically. Do NOT set `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run — `app/config.py` tolerates its absence.
 - **Streamlit binds to `$PORT`** on Cloud Run via the Dockerfile CMD (`--server.port=${PORT:-8080} --server.address=0.0.0.0`). Locally it still defaults to 8501. Don't drop `--server.address=0.0.0.0` — Cloud Run's TCP health checks fail on default `localhost`.
 - **`--session-affinity` is enabled** in `cloudbuild.yaml`. Required for Streamlit's per-instance `st.session_state` to persist for a returning user.
@@ -131,8 +137,8 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - [x] **Phase 2** — Factor model (universe, regression, shocks)
 - [x] **Phase 3** — Historical analog matcher (events YAML, analogs.py, COVID-verified)
 - [x] **Phase 4** — LLM integration (Gemini + grounding + structured output + Scenario/Results UI)
-- [ ] Phase 5 — UI build-out
-- [ ] Phase 6 — Backtests + validation
+- [x] **Phase 5** — UI build-out (editable Portfolio, Scenario form, Results dashboard with factor/periphery reasoning tables, Methodology rendering `docs/methodology.md`)
+- [x] **Phase 6** — Live-LLM evaluation tests (3 network-gated semantic tests) + `docs/backtest_results.md` snapshot template + `docs/methodology.md`
 - [x] **Phase 7** — Deploy (Cloud Run + Cloud Build 2nd-gen trigger; `--no-allow-unauthenticated` + IAM run.invoker instead of full IAP)
 - [ ] Phase 8 — Advanced attribution (Shapley) — post-v1
 

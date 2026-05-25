@@ -1,4 +1,4 @@
-"""End-to-end scenario orchestrator: cache → analog select → envelope → shock propose → betas → P&L → cache write."""
+"""End-to-end scenario orchestrator: cache -> analog select -> envelope -> shock propose -> betas -> P&L -> cache write."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import date
 
 from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
-from app.data.sample_portfolios import get_portfolio
+from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.analogs import (
     compute_envelope,
     event_summaries,
@@ -24,27 +24,55 @@ from app.utils.hashing import scenario_cache_key
 
 def run_scenario(
     scenario_text: str,
-    portfolio_key: str,
+    portfolio: str | Portfolio | None = None,
     *,
     config: Config | None = None,
     gemini: GeminiClient | None = None,
     cache: CacheProtocol | None = None,
     market_date: date | None = None,
     skip_cache: bool = False,
+    portfolio_key: str | None = None,
 ) -> ScenarioResult:
-    """End-to-end pipeline. `gemini` and `cache` are dependency-injected for tests."""
+    """End-to-end pipeline.
+
+    Args:
+        scenario_text: natural-language scenario description.
+        portfolio: a sample-portfolio key (str), a Portfolio object (custom), or None
+            (in which case `portfolio_key` MUST be given). Cannot be combined with
+            `portfolio_key`.
+        portfolio_key: back-compat keyword equivalent to passing `portfolio=<str>`.
+            Cannot be combined with `portfolio`.
+        gemini, cache: dependency-injected for tests.
+
+    Custom portfolios are stored with `portfolio_key="custom"`; the cache key still
+    differentiates them via `portfolio_holdings` (which is part of the SHA256 input).
+    """
+    if portfolio is not None and portfolio_key is not None:
+        raise ValueError("Pass either `portfolio` or `portfolio_key`, not both")
+    if portfolio is None and portfolio_key is None:
+        raise ValueError("Must pass `portfolio` (str|Portfolio) or `portfolio_key` (str)")
+
+    if isinstance(portfolio, Portfolio):
+        portfolio_obj = portfolio
+        resolved_key = "custom"
+    elif isinstance(portfolio, str):
+        portfolio_obj = get_portfolio(portfolio)
+        resolved_key = portfolio
+    else:
+        assert portfolio_key is not None  # narrowed by the guards above
+        portfolio_obj = get_portfolio(portfolio_key)
+        resolved_key = portfolio_key
+
     config = config or load_config()
     gemini = gemini or GeminiClient(config)
     if cache is None:
         cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
     market_date = market_date or date.today()
 
-    portfolio = get_portfolio(portfolio_key)
-
     key = scenario_cache_key(
         scenario_text=scenario_text,
-        portfolio_key=portfolio_key,
-        portfolio_holdings=portfolio.holdings,
+        portfolio_key=resolved_key,
+        portfolio_holdings=portfolio_obj.holdings,
         market_date=market_date,
         model_id=config.vertex_model_id,
         prompt_version=PROMPT_VERSION,
@@ -68,20 +96,20 @@ def run_scenario(
 
     shock_out, citations = gemini.propose_shocks_with_retry(
         scenario_text=scenario_text,
-        portfolio=portfolio,
+        portfolio=portfolio_obj,
         factor_universe_descriptions=factor_universe_desc,
         envelope=envelope,
         events_registry=events,
     )
 
     betas = estimate_betas_for_portfolio(
-        portfolio,
+        portfolio_obj,
         lookback_weeks=config.beta_lookback_weeks,
         alpha=config.ridge_alpha,
     )
 
     pnl = portfolio_pnl(
-        portfolio,
+        portfolio_obj,
         betas,
         shocks={fs.factor: fs.shock for fs in shock_out.factor_shocks},
         periphery_shocks={ps.ticker: ps.shock for ps in shock_out.periphery_shocks},
@@ -100,7 +128,9 @@ def run_scenario(
     result = ScenarioResult(
         scenario_text=scenario_text,
         market_date=market_date,
-        portfolio_key=portfolio_key,
+        portfolio_key=resolved_key,
+        portfolio_name=portfolio_obj.name,
+        portfolio_holdings=dict(portfolio_obj.holdings),
         analogs_selected=analog_out.selected_events,
         factor_shocks=shock_out.factor_shocks,
         periphery_shocks=shock_out.periphery_shocks,

@@ -13,7 +13,10 @@ import pandas as pd
 
 from app.utils.disclaimers import DISCLAIMER_LONG
 
-PROMPT_VERSION = "v2"
+# Bump on ANY change that affects ScenarioResult's shape OR prompt semantics. Schema
+# changes invalidate the cache the same way prompt changes do.
+# v2 -> v3: ScenarioResult gained portfolio_name + portfolio_holdings.
+PROMPT_VERSION = "v3"
 
 
 ANALOG_SELECTION_PROMPT = f"""\

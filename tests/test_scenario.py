@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from app.config import Config
-from app.data.sample_portfolios import get_portfolio
+from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.universe import FACTORS
 from app.llm.gemini_client import GeminiClient
 from app.llm.scenario import run_scenario
@@ -222,6 +222,57 @@ def test_run_scenario_skip_cache_forces_fresh_call(monkeypatch):
 def test_get_portfolio_smoke():
     # Sanity check the imports work; placeholder for future portfolio-tests file.
     assert get_portfolio("us_tech_growth") is not None
+
+
+def test_run_scenario_accepts_portfolio_object_positional(monkeypatch):
+    """Passing a Portfolio object as the second positional arg uses 'custom' as resolved_key
+    and populates portfolio_name + portfolio_holdings on the result."""
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    custom = Portfolio(
+        name="My Custom",
+        description="test custom",
+        holdings={"AAPL": 0.6, "MSFT": 0.4},
+    )
+
+    result = run_scenario(
+        "stress",
+        custom,
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+
+    assert result.portfolio_key == "custom"
+    assert result.portfolio_name == "My Custom"
+    assert result.portfolio_holdings == {"AAPL": 0.6, "MSFT": 0.4}
+
+
+def test_run_scenario_rejects_both_portfolio_and_portfolio_key():
+    with pytest.raises(ValueError, match="not both"):
+        run_scenario(
+            "x",
+            "us_tech_growth",
+            portfolio_key="msci_world",
+            config=_config(),
+            gemini=_MockGeminiClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+        )
+
+
+def test_run_scenario_rejects_neither_portfolio_nor_portfolio_key():
+    with pytest.raises(ValueError, match="Must pass"):
+        run_scenario(
+            "x",
+            config=_config(),
+            gemini=_MockGeminiClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+        )
 
 
 def test_propose_shocks_raises_when_grounded_narrative_returns_no_citations(monkeypatch):
