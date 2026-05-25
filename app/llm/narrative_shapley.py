@@ -16,7 +16,9 @@ and control-flow confusion.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from math import factorial
 
@@ -78,7 +80,10 @@ def compute_narrative_shapley(
     subset_pnls: dict[int, float] = {0: 0.0}
     total_subsets = 2**N
     non_empty_count = total_subsets - 1
-    for idx, mask in enumerate(range(1, total_subsets), start=1):
+
+    max_workers = max(1, min(config.narrative_shapley_max_workers, non_empty_count))
+
+    def _run_one(mask: int) -> float:
         included = [sub_narratives[i] for i in range(N) if mask & (1 << i)]
         subset_text = " ".join(included)
         sub_result = run_scenario(
@@ -89,9 +94,24 @@ def compute_narrative_shapley(
             cache=cache,
             market_date=market_date,
         )
-        subset_pnls[mask] = float(sub_result.portfolio_pnl.total_pnl)
-        if progress is not None:
-            progress(idx, non_empty_count)
+        return float(sub_result.portfolio_pnl.total_pnl)
+
+    # Submit all subsets to the pool, then drain via `as_completed` so the progress
+    # callback fires from the main thread (Streamlit's `st.progress` is not safe to
+    # call from worker threads; the FastAPI SSE/WebSocket replacement has the same
+    # requirement). `subset_pnls` is keyed by mask, not by completion order, so the
+    # downstream Shapley math is deterministic regardless of how the pool drained.
+    progress_lock = threading.Lock()
+    done = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_to_mask = {pool.submit(_run_one, mask): mask for mask in range(1, total_subsets)}
+        for future in as_completed(future_to_mask):
+            mask = future_to_mask[future]
+            subset_pnls[mask] = future.result()
+            with progress_lock:
+                done += 1
+                if progress is not None:
+                    progress(done, non_empty_count)
 
     contributions: list[NarrativeContribution] = []
     full_pnl = subset_pnls[total_subsets - 1]

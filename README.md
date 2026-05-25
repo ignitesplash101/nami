@@ -49,10 +49,11 @@ User flow:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Cloud Run (Streamlit container, min=0, max=2)                   │
+│ Cloud Run (FastAPI + React container, min=0, max=2)             │
 │ ├── Access: app-level visitor/admin controls                    │
 │ └── App                                                          │
-│     ├── UI: Streamlit (Portfolio | Scenario | Results | Method) │
+│     ├── UI: React + TypeScript + Plotly.js workbench            │
+│     ├── API: FastAPI JSON endpoints                             │
 │     ├── LLM: Vertex AI → gemini-3.5-flash (search grounding)    │
 │     ├── Factor Engine: pandas + statsmodels regression          │
 │     ├── Analog Matcher: historical event registry + windowing   │
@@ -68,7 +69,8 @@ User flow:
 ## Tech Stack (pinned)
 
 - **Python** 3.12
-- **Streamlit** 1.40+ (UI)
+- **FastAPI** + **Uvicorn** (backend/API)
+- **React**, **TypeScript**, **Vite**, **Plotly.js** (frontend/UI)
 - **google-cloud-aiplatform** (Vertex AI SDK, `gemini-3.5-flash`)
 - **yfinance** (market data, v1)
 - **pandas**, **numpy**, **statsmodels** (factor regression)
@@ -95,13 +97,8 @@ nami/
 ├── cloudbuild.yaml              # Cloud Build pipeline
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                  # Streamlit entry point
+│   ├── api/                     # FastAPI app + request/response schemas
 │   ├── config.py                # env + secrets loading
-│   ├── ui/
-│   │   ├── portfolio_tab.py
-│   │   ├── scenario_tab.py
-│   │   ├── results_tab.py
-│   │   └── methodology_tab.py
 │   ├── llm/
 │   │   ├── gemini_client.py     # Vertex AI client wrapper
 │   │   ├── prompts.py           # system prompts + templates
@@ -119,11 +116,14 @@ nami/
 │   └── utils/
 │       ├── hashing.py           # scenario → cache key
 │       └── disclaimers.py       # disclaimer strings + footer
+├── frontend/
+│   ├── package.json             # React/Vite frontend deps
+│   └── src/                     # workbench, Plotly charts, typed API client
 ├── tests/
+│   ├── test_api.py
 │   ├── test_factors.py
 │   ├── test_analogs.py
-│   ├── test_shocks.py
-│   └── test_backtest.py         # 2008/2020/2022 sanity backtests
+│   └── test_live_evals.py       # network-gated live LLM semantic checks
 ├── data/
 │   ├── historical_events.yaml   # event registry (date ranges + tags)
 │   └── factor_universe.yaml     # factor definitions
@@ -160,7 +160,7 @@ Done by the human before invoking the agent. Do **not** automate.
   - US Tech Growth (FAANG+ heavy)
   - Defensive Mix (staples, utilities, healthcare)
   - Japan Equity (TOPIX Core 30 subset)
-- [x] Basic Streamlit app shell with 4 empty tabs
+- [x] FastAPI + React/Vite app shell with portfolio, scenario, results, and methodology surfaces
 
 ### Phase 2 — Factor Model (≈10h)
 - [ ] `app/factors/universe.py` defines factor universe:
@@ -204,17 +204,17 @@ Done by the human before invoking the agent. Do **not** automate.
 - [x] Cache LLM responses to Cloud Storage (`scenario_cache/{hash}.json`, 7d TTL)
 
 ### Phase 5 — UI (≈10h)
-- [x] `portfolio_tab.py`: load sample / upload CSV / inline editable holdings via `st.data_editor`
-- [x] `scenario_tab.py`: free-text scenario input + sample dropdown + "Run Scenario" button
-- [x] `results_tab.py`:
+- [x] React/Vite workbench: load sample / upload CSV / inline editable holdings
+- [x] Scenario form: visitor sample mode + admin free-text scenario input
+- [x] Results dashboard:
   - P&L summary at top with shock vs contribution distinction
-  - Factor contribution waterfall chart
+  - Factor contribution waterfall chart via Plotly.js
   - Factor reasoning + Periphery reasoning tables (LLM rationale per shock)
   - Name-level breakdown table
   - LLM narrative below with citations as expandable footnotes
   - Analog windows table
-- [x] `methodology_tab.py`: renders `docs/methodology.md` below the disclaimer
-- [x] Disclaimer banner on every page (`st.warning(DISCLAIMER_SHORT)` in `app/main.py` above every tab)
+- [x] Methodology panel renders `docs/methodology.md`
+- [x] Disclaimer banner visible in the app shell
 
 ### Phase 6 — Backtests + Validation (≈6h)
 - [x] `tests/test_live_evals.py` (renamed from `test_backtest.py` — these hit live Gemini + Google Search and are stochastic over news drift, not deterministic backtests):
@@ -250,6 +250,22 @@ The differentiator that turns this from "LLM demo" to "quant-credible engine."
 - [x] Methodology tab: Conditional Shapley framing (axioms, what it is NOT, worked example, when to use which), narrative-decomposition section, all in [`docs/methodology.md`](docs/methodology.md)
 - [x] `tests/test_attribution.py`: efficiency, symmetry, high-correlation redistribution, independence ⇒ Naive≈Shapley, insufficient-background guard
 - [x] `tests/test_narrative_shapley.py`: efficiency + symmetry with mocked subset payoffs; decomposition count validation (raises on N∉[2,4])
+
+### Phase 9 — JS frontend + scenario-generation speedups + attribution refinement
+The runtime switches off Streamlit; the engine gets faster; Shapley attribution gains two user-friendlier variants.
+
+- [x] **FastAPI + React/Vite/Plotly.js runtime.** Streamlit (`app/main.py`, `app/ui/*`) replaced by `app/api/*` JSON endpoints serving a typed React workbench under `frontend/`. Multi-stage Dockerfile (Node→Python). All access controls (visitor vs admin, passcode-protected session cookie) preserved.
+- [x] **yfinance cache layer.** `app/data/market_cache.py` wraps `_fetch_prices` with a process-wide `CloudStorageCache` parquet layer (24h TTL). Cache hits skip yfinance entirely for the same (sorted_tickers, interval, start, end) window.
+- [x] **De-duped factor-returns fetch.** `app/factors/regression.py::fetch_factor_returns_with_history` returns `(raw_returns, demeaned_history_or_None)` from a single yfinance call. `app/llm/scenario.py` previously fetched factor returns twice (once for betas, once for the SHAP background).
+- [x] **Parallel yfinance fetches.** `compute_envelope` and `run_scenario` now use `concurrent.futures.ThreadPoolExecutor` to overlap independent yfinance calls.
+- [x] **In-process warm cache.** `app/factors/warm_cache.py::get_factor_returns_with_history` is `functools.lru_cache`d for process-lifetime hits across scenarios in the same Cloud Run instance. `load_events`, `event_summaries`, `events_version`, and `factor_universe_version` are also lru_cached. Portable across Streamlit/FastAPI (no `@st.cache_resource` dependency).
+- [x] **Parallel narrative Shapley.** `compute_narrative_shapley` runs the 2^N−1 subset re-runs through a `ThreadPoolExecutor` (`max_workers=4` default, drained via `as_completed` so the progress callback fires from the main thread). N=4 path goes from ~3–4 min sequential to ~30–45s.
+- [x] **Explicit-shocks-only Shapley.** `conditional_shapley_attribution_explicit` runs the Shapley game over only the factors the LLM actually shocked. Unshocked factors stay at exactly 0; sum ≤ factor-driven P&L. Addresses the "model attributed credit to a factor I didn't shock" UX concern.
+- [x] **Grouped Shapley.** `conditional_shapley_attribution_grouped` runs full Shapley then sums φ_f within each factor group (market / sector / style / macro), then redistributes by within-group naive share. Sum = factor P&L; within-group leakage collapses.
+- [x] **React attribution toggle.** Results pane offers four modes: Naive | Conditional (full) | Explicit-only | Grouped — each disabled when the backing payload is None.
+- [x] **`PROMPT_VERSION` v4 → v5** to invalidate cached scenarios under the new `PortfolioPnL` shape (`by_factor_conditional_shapley_explicit`, `by_factor_conditional_shapley_grouped`).
+- [x] `tests/test_attribution.py`: explicit-only zero-on-unshocked, explicit-only ≈ full when all factors shocked, grouped sum = factor P&L, grouped collapses within-group correlation, unmapped-factor guard.
+- [x] `frontend/src/charts.test.ts`: explicit-only and grouped attribution selectors + the correlation-label suppression.
 
 ---
 
@@ -291,13 +307,19 @@ cp .env.example .env
 #   GCS_BUCKET=<your-cache-bucket>
 #   GOOGLE_APPLICATION_CREDENTIALS=<path-to-service-account-json>
 
-# Run
-streamlit run app/main.py
+# Run backend API
+uv run uvicorn app.api.main:api --reload --host 0.0.0.0 --port 8080
+
+# Run frontend in another terminal
+cd frontend
+npm install
+npm run dev
 
 # Tests
 pytest
 ruff check .
 black --check .
+cd frontend && npm test && npm run build
 ```
 
 ---

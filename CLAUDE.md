@@ -18,7 +18,8 @@ nami (波) is an LLM-driven scenario explorer for equity portfolios. User descri
 
 - **Python 3.12** (pinned in `.python-version` and `pyproject.toml`)
 - **uv** for env/dep management
-- **Streamlit** UI — 4-tab shell at `app/main.py`
+- **FastAPI** backend at `app/api/main.py`
+- **React + TypeScript + Vite + Plotly.js** frontend under `frontend/`
 - **GCP** — Vertex AI (`gemini-3.5-flash`), Cloud Storage (cache), Cloud Run (deploy)
 - **Region split** (this matters):
   - Cloud Run / GCS bucket / Artifact Registry → `asia-northeast1`
@@ -31,7 +32,7 @@ nami (波) is an LLM-driven scenario explorer for equity portfolios. User descri
 ```
 app/
 ├── config.py                # env-var loader; validates 3 REQUIRED keys
-├── main.py                  # Streamlit entry: 4 tabs + disclaimer banner
+├── api/                     # FastAPI endpoints, auth/session cookies, API schemas
 ├── data/
 │   ├── market.py            # yfinance wrapper: fetch_weekly_prices, compute_weekly_returns
 │   ├── cache.py             # CloudStorageCache: parquet I/O with TTL via blob.updated
@@ -41,10 +42,10 @@ app/
 ├── llm/                     # Phase 4 — Vertex AI / Gemini integration
 │                            #   schemas.py · prompts.py · grounding.py · validation.py
 │                            #   gemini_client.py · scenario.py (orchestrator)
-├── ui/                      # tab modules (portfolio_tab, scenario_tab, ...)
 └── utils/
     └── disclaimers.py       # disclaimer strings + footer
 
+frontend/                    # React/Vite workbench; Plotly.js client-side charts
 tests/                       # pytest unit tests, in sync with the implementation phase
 ```
 
@@ -56,11 +57,13 @@ tests/                       # pytest unit tests, in sync with the implementatio
 # from <repo root>
 
 uv sync                            # install/update deps from pyproject.toml
-uv run streamlit run app/main.py   # start the UI on http://localhost:8501
+uv run uvicorn app.api.main:api --reload --host 0.0.0.0 --port 8080
+cd frontend; npm install; npm run dev
 uv run pytest tests/ -v            # run unit tests
 uv run ruff check .                # lint
 uv run black --check .             # format check
 uv run black .                     # format fix
+cd frontend; npm test; npm run build
 ```
 
 To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRED keys populated. Template: `.env.example`.
@@ -73,7 +76,7 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - **`from __future__ import annotations`** at the top of every new module — keeps type hints as strings so `dict[str, float]` / `X | None` work without runtime cost.
 - **`@dataclass(frozen=True)`** for value objects (`Config`, `Portfolio`, `Factor`).
 - **Validate at boundaries.** Raise `ValueError` / `RuntimeError` with specific messages when inputs violate invariants. See `Portfolio.__post_init__` (weight sum) for the pattern.
-- **No `print()` in library code** — `print` is for `__main__` smoke checks or CLI scripts only. Streamlit code uses `st.write` / `st.info` / `st.warning`.
+- **No `print()` in library code** — `print` is for `__main__` smoke checks or CLI scripts only. FastAPI code should use structured responses/exceptions; frontend code should surface user-facing errors in state.
 - **No commented-out code, no `# TODO:`** — if you're not implementing it now, raise `NotImplementedError` and open a separate scope.
 - **Comments only when the WHY is non-obvious.** Names + types do the explaining. Comments document irreducible context (a workaround, a constraint).
 
@@ -84,7 +87,8 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 1. `uv run pytest tests/ -v` — all green
 2. `uv run ruff check .` — clean
 3. `uv run black --check .` — clean
-4. For UI changes: **actually run** `streamlit run app/main.py` and verify in the browser. Type-checking passing ≠ feature working.
+4. `cd frontend; npm test; npm run build` — frontend green
+5. For UI changes: run FastAPI + Vite locally and verify in the browser. Type-checking passing ≠ feature working.
 
 ---
 
@@ -104,25 +108,34 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - **`ScenarioResult` is self-contained as of v3.** Always render holdings from `result.portfolio_holdings`, never from `get_portfolio(result.portfolio_key)` — the latter raises on `"custom"`. The new fields have defaults so cached v2 entries don't crash, but they'll show weight=0 for tickers; the PROMPT_VERSION bump invalidates them lazily.
 - **Results-tab labels must keep `shock applied` vs `contrib to P&L` distinct.** "Shock applied" is the magnitude the LLM proposed for a factor; "contrib to P&L" is `(Σᵢ wᵢ · βᵢ,f) · shock[f]` — the weighted contribution to the total. Never collapse these into a single number.
 - **`run_scenario` accepts EITHER `portfolio` (positional, `str | Portfolio`) OR `portfolio_key=` (kwarg, back-compat).** Passing both or neither raises `ValueError`. The UI passes a `Portfolio` object so custom holdings round-trip; existing tests still pass `portfolio_key="us_tech_growth"`.
-- **Portfolio-tab editor uses DYNAMIC widget keys** (`f"portfolio_editor::{source_id}"`) so switching sample/upload creates a fresh `st.data_editor` instead of mutating session_state — Streamlit is brittle with the latter. Trade-off: switching source mid-edit drops in-progress changes.
-- **CSV upload rules** (`_parse_csv` in portfolio_tab.py): required columns `ticker,weight`; uppercase tickers (`.T` suffixes preserved); reject blanks / duplicates / negatives / non-finite; totals in `[0.95, 1.05]` accepted as decimals OR `[95, 105]` as percentages (auto-normalized to decimals). Anything else is rejected.
+- **CSV/custom portfolio rules** live in `app/api/portfolio_validation.py`: uppercase tickers (`.T` suffixes preserved); reject blanks / duplicates / negatives / non-finite; totals near 1.0 accepted as decimals OR near 100 as percentages (auto-normalized to decimals). Anything else is rejected.
 - **`tests/test_live_evals.py` is network-gated on `RUN_NETWORK_TESTS=1`** and **stochastic over news drift** even with `temperature=0` — use semantic assertions only (tag membership, ordering, presence-of-citation), never magnitude bounds. `docs/backtest_results.md` is a DATED snapshot, not a permanent benchmark. Costs ~$0.001 per test.
 - **Cloud Run GCP client auth uses ADC**, not JSON keys. `nami-sa` is attached via `--service-account=` in `cloudbuild.yaml`; the Vertex AI + GCS Python clients pick it up automatically. Do NOT set `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run — `app/config.py` tolerates its absence.
-- **Cloud Run is publicly invokable, but the app has passcode admin mode.** `cloudbuild.yaml` uses `--allow-unauthenticated` so the Streamlit URL is viewable without Google login. The `PASSCODE` value is injected from Secret Manager (`nami-passcode:latest`). Visitor mode is sample portfolios + sample scenarios only; admin mode unlocks free-text scenarios, custom/uploaded portfolios, and narrative decomposition.
-- **Streamlit binds to `$PORT`** on Cloud Run via the Dockerfile CMD (`--server.port=${PORT:-8080} --server.address=0.0.0.0`). Locally it still defaults to 8501. Don't drop `--server.address=0.0.0.0` — Cloud Run's TCP health checks fail on default `localhost`.
-- **`--session-affinity` is enabled** in `cloudbuild.yaml`. Required for Streamlit's per-instance `st.session_state` to persist for a returning user.
+- **Cloud Run is publicly invokable, but the app has passcode admin mode.** `cloudbuild.yaml` uses `--allow-unauthenticated` so the React app is viewable without Google login. The `PASSCODE` value is injected from Secret Manager (`nami-passcode:latest`). Visitor mode is sample portfolios + sample scenarios only; admin mode unlocks free-text scenarios, custom/uploaded portfolios, and narrative decomposition.
+- **FastAPI binds to `$PORT`** on Cloud Run via the Dockerfile CMD (`uvicorn app.api.main:api --host 0.0.0.0 --port ${PORT:-8080}`). Don't drop `--host 0.0.0.0` — Cloud Run's TCP health checks fail on default localhost binding.
+- **Admin access is an HTTP-only signed cookie**, not frontend-only state. `app/api/security.py` signs the admin cookie with the configured passcode; changing the passcode invalidates existing admin cookies.
+- **`--session-affinity` is still enabled** in `cloudbuild.yaml`. It is less load-bearing after moving off Streamlit session state, but harmless and useful for long-running requests.
 - **Cloud Build 2nd-gen trigger** `nami-main-push` lives in `asia-northeast1`, uses the repository resource `projects/<PROJECT_ID>/locations/asia-northeast1/connections/nami-github-connection/repositories/ignitesplash101-nami`. Edit via Cloud Console → Triggers, or `gcloud builds triggers update`.
 - **Cloud Build SA for this project is the compute-engine default** (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`), NOT the legacy `<PROJECT_NUMBER>@cloudbuild.gserviceaccount.com`. `gcloud builds get-default-service-account` returns empty in some gcloud versions; derive reliably with `gcloud projects describe $PROJECT_ID --format="value(projectNumber)"` then construct `<NUMBER>-compute@developer.gserviceaccount.com`.
-- **Dockerfile uses `uv sync --frozen --no-dev --no-install-project` + `PYTHONPATH=/app`.** Don't drop `--no-install-project` — without it, `uv sync` reads `pyproject.toml`'s `readme = README.md` field and fails because README isn't copied yet in the deps layer (and copying it would break layer caching).
+- **Dockerfile is multi-stage.** Node builds `frontend/dist`; Python runs FastAPI. The Python stage still uses `uv sync --frozen --no-dev --no-install-project` + `PYTHONPATH=/app`. Don't drop `--no-install-project` — without it, `uv sync` reads `pyproject.toml`'s `readme = README.md` field and fails because README isn't copied yet in the deps layer.
 - **Gemini 3.5 Flash region:** `global` / `us` / `eu` only. NOT `us-central1`, NOT `asia-northeast1`. `VERTEX_AI_LOCATION` is independent of the Cloud Run / bucket region.
-- **`PortfolioPnL.by_factor_naive` is the persisted naive attribution.** There is NO `by_factor` alias. Pydantic v2's `computed_field` is included in `model_dump()` but rejected by `model_validate()` under `extra="forbid"`, which would poison the JSON cache round-trip. Readers must pick `by_factor_naive` or `by_factor_conditional_shapley` explicitly.
-- **Conditional Shapley ≠ causal attribution.** It is *data-dependent credit allocation* under the historical conditional distribution of factor returns. A factor with zero LLM shock can receive nonzero Conditional Shapley credit if it's correlated with a shocked one. Surface this in the UI — `results_tab._render_factor_reasoning` labels such rows "No explicit LLM shock; attributed via correlation".
+- **`PortfolioPnL.by_factor_naive` is the persisted naive attribution.** There is NO `by_factor` alias. Pydantic v2's `computed_field` is included in `model_dump()` but rejected by `model_validate()` under `extra="forbid"`, which would poison the JSON cache round-trip. Readers must pick a specific variant: `by_factor_naive` / `by_factor_conditional_shapley` / `by_factor_conditional_shapley_explicit` / `by_factor_conditional_shapley_grouped`.
+- **Four attribution variants live in `app/factors/attribution.py`:** `naive_attribution`, `conditional_shapley_attribution` (full F-dim game), `conditional_shapley_attribution_explicit` (game restricted to LLM-shocked factors; unshocked factors stay at 0; sum ≤ factor P&L by design), and `conditional_shapley_attribution_grouped` (full game then within-group sum + redistribute by naive share; sum = factor P&L; collapses within-group leakage like SPY↔ACWI). The explicit-only and grouped variants address the UX confusion of correlated-peer cross-credit. `app/factors/shocks.py::portfolio_pnl` computes all three Shapley variants when factor history is available; each is independently best-effort.
+- **The grouped Shapley implementation is "full Shapley + within-group sum-and-redistribute", NOT synthetic-feature aggregation.** Aggregating member coefs+shocks before running shap introduces within-group cross-product terms `c_f · s_{f'}` that don't exist in the linear model. Running full Shapley first then summing φ_f within each group preserves efficiency exactly.
+- **`conditional_shapley_attribution_explicit` short-circuits the 1-feature case.** shap.LinearExplainer's covariance path crashes on a 1-D background; for a single explicit shock the trivial Shapley value `coef · shock` is returned directly.
+- **Conditional Shapley ≠ causal attribution.** It is *data-dependent credit allocation* under the historical conditional distribution of factor returns. The **full** variant can attribute nonzero credit to factors with zero LLM shock (via correlation). The **explicit-only** and **grouped** variants suppress that behavior. `frontend/src/charts.ts::hasCorrelationCrossCredit` gates the "No explicit LLM shock; attributed via correlation" label to the full-Shapley view only.
 - **Use `shap.maskers.Impute(background)`** with the non-deprecated `LinearExplainer((coefs, intercept), masker)` form (see `app/factors/attribution.py`). The `feature_perturbation=` kwarg is deprecated in current shap; new code must avoid it.
 - **Factor-return background must NOT `fillna(0)`.** `fetch_factor_returns_history` does `dropna(how="any")` then demeans, requiring ≥52 complete rows. Zero-filling a missing ETF manufactures false correlation that contaminates the Conditional Shapley values. The strict dropna restricts the background to the post-XLC-launch window (mid-2018+), which is correct.
 - **Narrative decomposition is experimental counterfactual pipeline attribution**, not a clean causal decomposition. Each subset re-runs analog selection + grounded narrative + shock extraction, so the result reflects pipeline behavior on the subset, not a "true" contribution. Frame this honestly in both UI (expander label says "Experimental:") and methodology doc.
 - **Narrative Shapley lives in `app/llm/narrative_shapley.py::compute_narrative_shapley`, NOT inside `run_scenario`.** The UI calls `run_scenario` first, then `compute_narrative_shapley` if opted-in, which calls `decompose_scenario` + reruns the pipeline 2^N − 1 times and attaches the result via `model_copy(update={"narrative_shapley": ...})`. Putting it inside `run_scenario` would invite recursion and control-flow confusion.
-- **`PROMPT_VERSION` covers cache invalidation for prompt OR schema changes.** v3 → v4 because `PortfolioPnL.by_factor` was renamed to `by_factor_naive` + new field added + `ScenarioResult.narrative_shapley` introduced. A future refactor may split this into `PROMPT_VERSION` + `SCENARIO_CACHE_VERSION`; for now one bump suffices.
+- **`PROMPT_VERSION` covers cache invalidation for prompt OR schema changes.** v3 → v4 because `PortfolioPnL.by_factor` was renamed to `by_factor_naive` + new field added + `ScenarioResult.narrative_shapley` introduced. v4 → v5 added `by_factor_conditional_shapley_explicit` and `by_factor_conditional_shapley_grouped`. A future refactor may split this into `PROMPT_VERSION` + `SCENARIO_CACHE_VERSION`; for now one bump suffices.
 - **N must be in [2, 4] for narrative Shapley.** Both `decompose_scenario` and `compute_narrative_shapley` raise `RuntimeError` if the decomposer returns out-of-range. N=5 would be 31 subset runs ≈ 8 min sync wall-clock and is cut off intentionally.
+- **Narrative Shapley runs subsets in parallel.** `compute_narrative_shapley` submits all 2^N−1 non-empty subsets to a `ThreadPoolExecutor` (`config.narrative_shapley_max_workers`, default 4) and drains via `concurrent.futures.as_completed` so the progress callback fires from the main thread. `subset_pnls` is keyed by mask, not by completion order — the Shapley math is deterministic regardless of how the pool drained. If Gemini rate-limits show up in practice, drop `NARRATIVE_SHAPLEY_MAX_WORKERS=2`.
+- **yfinance is cached at the `_fetch_prices` layer.** `app/data/market.py` consults a process-wide `CloudStorageCache` (prefix `market_data`, parquet, 24h TTL) keyed on `(sorted_tickers, interval, start, end)` before calling `yf.download`. Cache failures (no GCS creds, parquet schema mismatch) silently fall back to yfinance — both read and write paths are wrapped in `contextlib.suppress(Exception)`. The singleton is `app/data/market_cache.py::get_market_cache()` (lru_cache(maxsize=1)); tests pass `cache=None` explicitly to bypass.
+- **`run_scenario` parallelizes portfolio-prices vs factor-history fetches.** Inside the cache-miss path, `fetch_weekly_prices(portfolio.tickers)` and `get_factor_returns_with_history(...)` are submitted to a 2-worker ThreadPoolExecutor and joined before `estimate_betas_for_portfolio` runs. The combined factor fetch returns `(raw_returns, demeaned_history_or_None)` — passes BOTH into the beta estimator AND the SHAP background, eliminating a duplicate yfinance round-trip that existed pre-Phase-9.
+- **`compute_envelope` parallelizes per-event yfinance calls.** Up to 8 concurrent `fetch_event_returns` workers. Order-preserving via `executor.map`.
+- **In-process warm cache lives in `app/factors/warm_cache.py`, NOT in `app/ui/`.** Originally planned as `@st.cache_resource`; corrected to `functools.lru_cache(maxsize=4)` so it survives the FastAPI rewrite. `app/factors/analogs.py::load_events`/`event_summaries`/`events_version` and `app/factors/universe.py::factor_universe_version` are also lru_cached. Call `warm_cache.warm()` from a FastAPI `lifespan` hook to pre-populate.
+- **Mocks for `run_scenario` MUST stub THREE market-layer functions** in the scenario module's namespace (per the parallelized hot path): `app.llm.scenario.fetch_weekly_prices`, `app.llm.scenario.get_factor_returns_with_history`, and `app.llm.scenario.estimate_betas_for_portfolio`. See `tests/test_scenario.py::_patch_market_layer`. The beta-estimator mock must accept `**kwargs` because the orchestrator passes pre-fetched `factor_returns=` and `ticker_returns=` into it.
 
 ---
 
@@ -142,7 +155,7 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 ## Phase status
 
 - [x] **Phase 0** — GCP setup (project, billing, APIs, service account, key, bucket)
-- [x] **Phase 1** — Foundation (pyproject, config, market, cache, sample_portfolios, Streamlit shell)
+- [x] **Phase 1** — Foundation (pyproject, config, market, cache, sample_portfolios, API/web shell)
 - [x] **Phase 2** — Factor model (universe, regression, shocks)
 - [x] **Phase 3** — Historical analog matcher (events YAML, analogs.py, COVID-verified)
 - [x] **Phase 4** — LLM integration (Gemini + grounding + structured output + Scenario/Results UI)
@@ -150,5 +163,6 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - [x] **Phase 6** — Live-LLM evaluation tests (3 network-gated semantic tests) + `docs/backtest_results.md` snapshot template + `docs/methodology.md`
 - [x] **Phase 7** — Deploy (Cloud Run + Cloud Build 2nd-gen trigger; public `run.app` link with app-level passcode admin mode)
 - [x] **Phase 8** — Advanced attribution: factor-level Conditional Shapley via `shap.LinearExplainer` + `shap.maskers.Impute` against demeaned historical factor returns; experimental narrative decomposition (2^N subset Shapley); Results-tab toggle + reasoning table; methodology section with axioms + framing
+- [x] **Phase 9** — Streamlit → FastAPI + React/Vite/Plotly.js runtime; yfinance GCS cache + de-duped factor fetch + parallel I/O; in-process warm cache; narrative Shapley parallelization; explicit-only + grouped Shapley variants; React 4-mode attribution toggle; PROMPT_VERSION v4 → v5
 
 Source of truth for phase scope: [README.md → Implementation Phases](README.md#implementation-phases).

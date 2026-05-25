@@ -20,6 +20,7 @@ class Config:
     llm_cache_ttl_days: int = 7
     beta_lookback_weeks: int = 156
     ridge_alpha: float = 0.1
+    narrative_shapley_max_workers: int = 4
     log_level: str = "INFO"
     environment: str = "dev"
 
@@ -44,6 +45,7 @@ def load_config() -> Config:
         llm_cache_ttl_days=int(os.getenv("LLM_CACHE_TTL_DAYS", "7")),
         beta_lookback_weeks=int(os.getenv("BETA_LOOKBACK_WEEKS", "156")),
         ridge_alpha=float(os.getenv("RIDGE_ALPHA", "0.1")),
+        narrative_shapley_max_workers=int(os.getenv("NARRATIVE_SHAPLEY_MAX_WORKERS", "4")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         environment=os.getenv("ENVIRONMENT", "dev"),
     )

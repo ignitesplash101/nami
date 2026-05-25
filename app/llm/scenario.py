@@ -6,6 +6,7 @@ from datetime import date
 
 from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
+from app.data.market import compute_weekly_returns, fetch_weekly_prices
 from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.analogs import (
     compute_envelope,
@@ -13,9 +14,10 @@ from app.factors.analogs import (
     events_version,
     load_events,
 )
-from app.factors.regression import estimate_betas_for_portfolio, fetch_factor_returns_history
+from app.factors.regression import estimate_betas_for_portfolio
 from app.factors.shocks import portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
+from app.factors.warm_cache import get_factor_returns_with_history
 from app.llm.gemini_client import GeminiClient
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.schemas import PortfolioPnL, ScenarioResult
@@ -102,18 +104,29 @@ def run_scenario(
         events_registry=events,
     )
 
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        portfolio_future = pool.submit(
+            fetch_weekly_prices,
+            portfolio_obj.tickers,
+            lookback_weeks=config.beta_lookback_weeks,
+        )
+        factors_future = pool.submit(
+            get_factor_returns_with_history,
+            lookback_weeks=config.beta_lookback_weeks,
+        )
+        ticker_prices = portfolio_future.result()
+        factor_returns, factor_history = factors_future.result()
+    ticker_returns = compute_weekly_returns(ticker_prices)
+
     betas = estimate_betas_for_portfolio(
         portfolio_obj,
         lookback_weeks=config.beta_lookback_weeks,
         alpha=config.ridge_alpha,
+        factor_returns=factor_returns,
+        ticker_returns=ticker_returns,
     )
-
-    try:
-        factor_history = fetch_factor_returns_history(
-            lookback_weeks=config.beta_lookback_weeks,
-        )
-    except Exception:  # noqa: BLE001 — Conditional Shapley is best-effort; never break a run
-        factor_history = None
 
     pnl = portfolio_pnl(
         portfolio_obj,

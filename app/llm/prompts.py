@@ -18,7 +18,9 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 # v2 -> v3: ScenarioResult gained portfolio_name + portfolio_holdings.
 # v3 -> v4: PortfolioPnL renamed by_factor -> by_factor_naive, added
 #           by_factor_conditional_shapley; ScenarioResult gained narrative_shapley.
-PROMPT_VERSION = "v4"
+# v4 -> v5: PortfolioPnL gained by_factor_conditional_shapley_explicit and
+#           by_factor_conditional_shapley_grouped (extra Shapley variants).
+PROMPT_VERSION = "v5"
 
 
 ANALOG_SELECTION_PROMPT = f"""\

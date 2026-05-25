@@ -43,6 +43,14 @@ def fetch_factor_returns_history(
     carry the modern factor universe's correlation structure.
     """
     raw = fetch_factor_returns(end=end, lookback_weeks=lookback_weeks)
+    return _demean_factor_history(raw, min_complete_rows=min_complete_rows)
+
+
+def _demean_factor_history(
+    raw: pd.DataFrame,
+    *,
+    min_complete_rows: int = 52,
+) -> pd.DataFrame:
     complete = raw.dropna(how="any")
     if len(complete) < min_complete_rows:
         raise RuntimeError(
@@ -51,6 +59,27 @@ def fetch_factor_returns_history(
             "Try a more recent date range or a smaller factor universe."
         )
     return complete - complete.mean(axis=0)
+
+
+def fetch_factor_returns_with_history(
+    lookback_weeks: int = 156,
+    end: date | datetime | str | None = None,
+    *,
+    min_complete_rows: int = 52,
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """Single yfinance round-trip → (raw weekly factor returns, demeaned history-or-None).
+
+    Used by `run_scenario` to avoid two near-identical fetches (one for beta
+    estimation, one for the Conditional Shapley background). The demeaned history
+    is None when there aren't enough complete rows for SHAP — preserves the
+    existing best-effort semantics in `portfolio_pnl`.
+    """
+    raw = fetch_factor_returns(end=end, lookback_weeks=lookback_weeks)
+    try:
+        history = _demean_factor_history(raw, min_complete_rows=min_complete_rows)
+    except RuntimeError:
+        history = None
+    return raw, history
 
 
 def estimate_betas(
@@ -99,20 +128,29 @@ def estimate_betas_for_portfolio(
     lookback_weeks: int = 156,
     alpha: float = 0.1,
     end: date | datetime | str | None = None,
+    *,
+    factor_returns: pd.DataFrame | None = None,
+    ticker_returns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Convenience wrapper: fetch portfolio + factor returns and run estimate_betas.
+
+    Either of `factor_returns` and `ticker_returns` may be supplied pre-fetched
+    (caller has already paid for them, e.g. when running the two yfinance calls
+    in parallel) to avoid a duplicate fetch.
 
     Validates that every portfolio holding has a beta row. yfinance silently drops
     tickers it can't fetch, and a missing ticker downstream would produce silently
     wrong P&L — so we raise loudly here with the missing set.
     """
-    ticker_prices = fetch_weekly_prices(
-        portfolio.tickers,
-        end=end,
-        lookback_weeks=lookback_weeks,
-    )
-    ticker_returns = compute_weekly_returns(ticker_prices)
-    factor_returns = fetch_factor_returns(end=end, lookback_weeks=lookback_weeks)
+    if ticker_returns is None:
+        ticker_prices = fetch_weekly_prices(
+            portfolio.tickers,
+            end=end,
+            lookback_weeks=lookback_weeks,
+        )
+        ticker_returns = compute_weekly_returns(ticker_prices)
+    if factor_returns is None:
+        factor_returns = fetch_factor_returns(end=end, lookback_weeks=lookback_weeks)
 
     betas = estimate_betas(ticker_returns, factor_returns, alpha=alpha)
 

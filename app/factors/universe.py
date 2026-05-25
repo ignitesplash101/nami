@@ -8,6 +8,7 @@ percent change of the index level (e.g., VIX 15 -> 22.5 == +0.50; TNX 4.00% -> 4
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from dataclasses import dataclass
@@ -95,9 +96,14 @@ def factors_by_group(group: str) -> list[Factor]:
     return [f for f in FACTORS.values() if f.group == group]
 
 
+@functools.lru_cache(maxsize=1)
 def factor_universe_version() -> str:
     """Short (12-char) hash of the factor universe shape. Used in the scenario cache key
-    so any change to FACTORS (added/removed/renamed/retickered) invalidates cached responses."""
+    so any change to FACTORS (added/removed/renamed/retickered) invalidates cached responses.
+
+    Cached for process lifetime — FACTORS is a module-level constant; the hash never
+    changes within a process. Saves the JSON+SHA256 round-trip on every scenario.
+    """
     payload = json.dumps(
         [(name, f.ticker, f.group) for name, f in sorted(FACTORS.items())],
         sort_keys=True,

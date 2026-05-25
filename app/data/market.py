@@ -1,12 +1,26 @@
-"""yfinance wrapper returning adjusted close prices at weekly or daily granularity."""
+"""yfinance wrapper returning adjusted close prices at weekly or daily granularity.
+
+Wraps `yf.download` with a process-wide `CloudStorageCache` parquet layer (TTL 24h)
+so the same ticker × window combination round-trips through GCS instead of yfinance
+on subsequent calls. The cache is best-effort — any cache failure (missing GCS
+credentials, parquet schema mismatch, etc.) silently falls back to yfinance.
+"""
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterable
 from datetime import date, datetime
 
 import pandas as pd
 import yfinance as yf
+
+from app.data.market_cache import (
+    MARKET_CACHE_TTL_HOURS,
+    MarketCacheProtocol,
+    get_market_cache,
+    market_cache_key,
+)
 
 
 def _fetch_prices(
@@ -17,12 +31,17 @@ def _fetch_prices(
     end: date | datetime | str | None,
     lookback_periods: int | None,
     period_unit: str,
+    cache: MarketCacheProtocol | None | str = "default",
 ) -> pd.DataFrame:
     """Shared implementation for fetch_weekly_prices and fetch_daily_prices.
 
     `period_unit` is the pandas Timedelta unit for `lookback_periods` ("W" or "D").
     `end` follows yfinance's convention: exclusive of the next bar. Callers needing
     inclusive-end semantics must add the appropriate offset before calling.
+
+    `cache` defaults to the process-wide market cache singleton. Pass `cache=None`
+    to bypass the cache layer entirely (unit tests; explicit fresh fetches). Pass
+    an explicit `MarketCacheProtocol` instance to inject a fake.
     """
     tickers = list(tickers)
     if not tickers:
@@ -35,8 +54,24 @@ def _fetch_prices(
             anchor = pd.Timestamp.now(tz="UTC").tz_localize(None).normalize()
         start = (anchor - pd.Timedelta(value=lookback_periods, unit=period_unit)).date()
 
+    sorted_tickers = sorted(tickers)
+
+    cache_instance: MarketCacheProtocol | None = (
+        get_market_cache() if cache == "default" else cache  # type: ignore[assignment]
+    )
+
+    cache_key = market_cache_key(sorted_tickers, interval=interval, start=start, end=end)
+
+    if cache_instance is not None:
+        try:
+            hit = cache_instance.get(cache_key, ttl_hours=MARKET_CACHE_TTL_HOURS)
+        except Exception:  # noqa: BLE001 — cache read failure must not break a fetch
+            hit = None
+        if hit is not None and not hit.empty:
+            return hit
+
     raw = yf.download(
-        tickers=tickers,
+        tickers=sorted_tickers,
         start=start,
         end=end,
         interval=interval,
@@ -46,15 +81,21 @@ def _fetch_prices(
     )
 
     if raw is None or raw.empty:
-        raise RuntimeError(f"yfinance returned no data for {tickers!r}")
+        raise RuntimeError(f"yfinance returned no data for {sorted_tickers!r}")
 
     if isinstance(raw.columns, pd.MultiIndex):
         closes = raw["Close"]
     else:
-        closes = raw[["Close"]].rename(columns={"Close": tickers[0]})
+        closes = raw[["Close"]].rename(columns={"Close": sorted_tickers[0]})
 
     closes = closes.dropna(how="all").sort_index()
     closes.columns.name = None
+
+    if cache_instance is not None:
+        # Cache write failure must not break a fetch.
+        with contextlib.suppress(Exception):
+            cache_instance.put(cache_key, closes)
+
     return closes
 
 
@@ -63,6 +104,8 @@ def fetch_weekly_prices(
     start: date | datetime | str | None = None,
     end: date | datetime | str | None = None,
     lookback_weeks: int | None = None,
+    *,
+    cache: MarketCacheProtocol | None | str = "default",
 ) -> pd.DataFrame:
     """Fetch weekly adjusted close prices.
 
@@ -77,6 +120,7 @@ def fetch_weekly_prices(
         end=end,
         lookback_periods=lookback_weeks,
         period_unit="W",
+        cache=cache,
     )
 
 
@@ -85,6 +129,8 @@ def fetch_daily_prices(
     start: date | datetime | str | None = None,
     end: date | datetime | str | None = None,
     lookback_days: int | None = None,
+    *,
+    cache: MarketCacheProtocol | None | str = "default",
 ) -> pd.DataFrame:
     """Fetch daily adjusted close prices.
 
@@ -99,6 +145,7 @@ def fetch_daily_prices(
         end=end,
         lookback_periods=lookback_days,
         period_unit="D",
+        cache=cache,
     )
 
 

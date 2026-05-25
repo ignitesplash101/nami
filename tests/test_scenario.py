@@ -102,14 +102,39 @@ def _patch_market_layer(monkeypatch):
         # Return a simple pattern: each factor's "event return" = -0.05.
         return pd.Series(dict.fromkeys(factor_names, -0.05), name=event.id)
 
-    def _fake_estimate_betas(portfolio, lookback_weeks=156, alpha=0.1, end=None):
-        # Beta of 1.0 to first factor, 0 elsewhere.
+    def _fake_estimate_betas(portfolio, lookback_weeks=156, alpha=0.1, end=None, **_kwargs):
+        # Beta of 1.0 to first factor, 0 elsewhere. `factor_returns` /
+        # `ticker_returns` may be passed pre-fetched in the parallel-fetch path;
+        # the mock ignores them since the betas are hardcoded.
         data = np.zeros((len(portfolio.tickers), len(factor_names)))
         data[:, 0] = 1.0
         return pd.DataFrame(data, index=portfolio.tickers, columns=factor_names)
 
+    def _fake_fetch_weekly_prices(tickers, *args, **kwargs):
+        # Tiny deterministic price series; scenario.py only consumes this via
+        # `compute_weekly_returns` then hands it to the mocked beta estimator,
+        # which ignores it. Returning a 3-row frame keeps `pct_change().dropna()`
+        # non-empty so no edge case fires.
+        return pd.DataFrame(
+            {t: [100.0, 101.0, 102.0] for t in tickers},
+            index=pd.date_range("2024-01-01", periods=3, freq="W"),
+        )
+
+    def _fake_get_factor_returns_with_history(lookback_weeks=156):
+        # 60 demeaned-looking rows, enough to satisfy Shapley min_background_rows.
+        n_rows = 60
+        idx = pd.date_range("2024-01-01", periods=n_rows, freq="W")
+        data = {name: np.linspace(-0.01, 0.01, n_rows) for name in factor_names}
+        raw = pd.DataFrame(data, index=idx)
+        return raw, raw - raw.mean(axis=0)
+
     monkeypatch.setattr("app.factors.analogs.fetch_event_returns", _fake_fetch_event_returns)
     monkeypatch.setattr("app.llm.scenario.estimate_betas_for_portfolio", _fake_estimate_betas)
+    monkeypatch.setattr("app.llm.scenario.fetch_weekly_prices", _fake_fetch_weekly_prices)
+    monkeypatch.setattr(
+        "app.llm.scenario.get_factor_returns_with_history",
+        _fake_get_factor_returns_with_history,
+    )
 
 
 def test_run_scenario_calls_gemini_and_assembles_result(monkeypatch):

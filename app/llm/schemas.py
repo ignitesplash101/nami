@@ -50,14 +50,29 @@ class ShockProposalOutput(BaseModel):
 
 
 class PortfolioPnL(BaseModel):
-    # NOTE: no `by_factor` alias — readers must pick `by_factor_naive` or
-    # `by_factor_conditional_shapley` explicitly. Pydantic v2's `computed_field` is
-    # included in `model_dump()` but rejected by `model_validate()` under
-    # `extra="forbid"`, which would poison the JSON cache round-trip.
+    # NOTE: no `by_factor` alias — readers must pick a specific variant explicitly.
+    # Pydantic v2's `computed_field` is included in `model_dump()` but rejected by
+    # `model_validate()` under `extra="forbid"`, which would poison the JSON cache
+    # round-trip.
+    #
+    # Conditional Shapley variants (all best-effort; None when factor history is
+    # unavailable or shap fails):
+    #   - by_factor_conditional_shapley:          full F-dim game, can cross-credit
+    #                                              factors the LLM never shocked.
+    #   - by_factor_conditional_shapley_explicit: game restricted to LLM-shocked
+    #                                              factors; unshocked factors stay 0.
+    #                                              Sum ≤ factor-driven P&L (gap is
+    #                                              unattributed cross-correlation).
+    #   - by_factor_conditional_shapley_grouped:  G-dim game over factor groups
+    #                                              (market/sector/style/macro);
+    #                                              within-group credit redistributed
+    #                                              by naive weight. Sum = factor P&L.
     model_config = ConfigDict(extra="forbid")
     total_pnl: float
     by_factor_naive: dict[str, float]
     by_factor_conditional_shapley: dict[str, float] | None = None
+    by_factor_conditional_shapley_explicit: dict[str, float] | None = None
+    by_factor_conditional_shapley_grouped: dict[str, float] | None = None
     by_ticker_factor: dict[str, float]
     by_ticker_periphery: dict[str, float]
     by_ticker_total: dict[str, float]

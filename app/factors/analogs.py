@@ -8,6 +8,7 @@ proposed factor shocks.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -76,13 +77,21 @@ _UniqueKeyLoader.add_constructor(
 def load_events(path: Path | None = None) -> dict[str, HistoricalEvent]:
     """Parse and validate the historical events registry.
 
+    Cached per-path for the lifetime of the process — events are immutable historical
+    records, the YAML changes only on deploy, and the cache key includes file path so
+    tests using custom registries don't pollute the production entry.
+
     Raises:
         FileNotFoundError: if the registry file is missing.
         ValueError: if any event is malformed — invalid tag, inverted dates,
             window shorter than MIN_WINDOW_DAYS, missing required field.
         yaml.constructor.ConstructorError: if duplicate event_ids exist.
     """
-    path = path or DEFAULT_REGISTRY_PATH
+    return _load_events_cached(path or DEFAULT_REGISTRY_PATH)
+
+
+@functools.lru_cache(maxsize=8)
+def _load_events_cached(path: Path) -> dict[str, HistoricalEvent]:
     with open(path, encoding="utf-8") as f:
         raw = yaml.load(f, Loader=_UniqueKeyLoader)
 
@@ -130,7 +139,12 @@ def _validate_event(event_id: str, payload: dict[str, Any]) -> HistoricalEvent:
 
 
 def event_summaries(path: Path | None = None) -> list[dict[str, Any]]:
-    """Compact LLM-facing summaries, ordered by start_date ascending."""
+    """Compact LLM-facing summaries, ordered by start_date ascending. Process-cached."""
+    return _event_summaries_cached(path or DEFAULT_REGISTRY_PATH)
+
+
+@functools.lru_cache(maxsize=8)
+def _event_summaries_cached(path: Path) -> list[dict[str, Any]]:
     events = load_events(path)
     sorted_events = sorted(events.values(), key=lambda e: e.start_date)
     return [
@@ -198,7 +212,14 @@ def compute_envelope(
     if unknown:
         raise KeyError(f"unknown event_ids: {unknown}")
 
-    rows = [fetch_event_returns(registry[eid]) for eid in event_ids]
+    events_to_fetch = [registry[eid] for eid in event_ids]
+    if len(events_to_fetch) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(len(events_to_fetch), 8)) as pool:
+            rows = list(pool.map(fetch_event_returns, events_to_fetch))
+    else:
+        rows = [fetch_event_returns(events_to_fetch[0])]
     returns_matrix = pd.DataFrame(rows)
 
     return pd.DataFrame(
@@ -213,6 +234,10 @@ def compute_envelope(
 
 def events_version(path: Path | None = None) -> str:
     """Short (12-char) hash of the events registry file contents. Used in the scenario
-    cache key so any edit to the YAML invalidates cached responses."""
-    path = path or DEFAULT_REGISTRY_PATH
+    cache key so any edit to the YAML invalidates cached responses. Process-cached."""
+    return _events_version_cached(path or DEFAULT_REGISTRY_PATH)
+
+
+@functools.lru_cache(maxsize=8)
+def _events_version_cached(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]

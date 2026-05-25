@@ -253,6 +253,47 @@ the credit across the correlated peer.
 - **Conditional Shapley** for axiom-compliant attribution when factors are known to
   be correlated — i.e. most of the time in equities. Default when available.
 
+### Variants: full, explicit-only, grouped
+
+Conditional Shapley ships in three flavors. All three are computed best-effort
+whenever a sufficient factor-return background is available; the API/UI surfaces
+all three under `PortfolioPnL.by_factor_conditional_shapley*` fields and the
+frontend picks which to render.
+
+| Variant | Players in the Shapley game | Sums to | When to read |
+|---|---|---|---|
+| **Full** (`by_factor_conditional_shapley`) | All F factors in the universe | Factor-driven P&L (efficiency axiom) | "How would credit flow under the full historical joint distribution?" |
+| **Explicit-only** (`by_factor_conditional_shapley_explicit`) | Only the factors the LLM explicitly shocked; unshocked factors stay at exactly 0.0 | A sub-game total ≤ factor-driven P&L | "Restrict attribution to factors the model actually named." Matches the user's mental model when reading "what did the LLM shock?" |
+| **Grouped** (`by_factor_conditional_shapley_grouped`) | G=4 factor groups (market / sector / style / macro); within-group credit redistributed to members by naive weight | Factor-driven P&L (efficiency preserved) | "Collapse within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL) and only Shapley-allocate cross-group correlation." |
+
+**Within-group aggregation**: `conditional_shapley_attribution_grouped` aggregates
+member returns and shocks within each group by **SUM**, not average. Sum preserves
+`Σ aggregated_shock = Σ raw_shock` and so preserves the efficiency property at the
+factor level. Average would distort correlation structure for groups with many
+members and would break efficiency unless rescaled.
+
+**Redistribution within a group**: each group's Shapley value is split among its
+members proportionally to `(wᵀβ)_f · shock[f]` — the naive within-group share. The
+practical effect: a group's credit lands on the factor the LLM actually shocked, not
+on its correlated peers. If all member shocks are 0, the group's value (also
+typically ~0) is split uniformly across members for transparency.
+
+**Why explicit-only exists.** The full variant is mathematically clean but reads
+strangely to users: a SPY-only shock can produce a noticeable ACWI/QUAL contribution
+because `shap.maskers.Impute` measures the marginal effect of an *omitted* factor
+against the conditional expectation given the shocked ones. With SPY/XLK/MTUM
+heavily negative, the conditional expectation of ACWI/QUAL is also negative, so a
+zero shock is "better than expected" and earns positive offsetting attribution.
+That's correct under the axiomatic credit-allocation framing — but a user reading
+"the model attributed P&L to a factor I didn't shock" sees a bug. Explicit-only is
+the variant that matches the user's mental model.
+
+**Why grouped exists.** The 21-factor view spreads correlated-peer leakage across
+many factors (SPY/ACWI/XLK/MTUM/QUAL all moving together swamps the cross-group
+signal). The grouped view collapses within-group leakage into naive and
+Shapley-allocates only cross-group correlation, which is the more interesting
+signal for a portfolio P&L story.
+
 ---
 
 ## Experimental: narrative decomposition
@@ -271,12 +312,12 @@ advanced reader doesn't expect a market-drift baseline.
 **Framing**: this is *counterfactual pipeline attribution*, NOT a clean causal
 decomposition. Each subset reruns analog selection + grounded narrative + shock
 extraction, so the values reflect pipeline behavior on the subset, not a true causal
-contribution of the named sub-narrative. The Streamlit expander label and methodology
-caption both say "experimental" for that reason.
+contribution of the named sub-narrative. The UI label and methodology caption both say
+"experimental" for that reason.
 
 Cost: `2^N − 1` full scenario runs (the empty subset is the hardcoded zero). For N=4
 that's 15 runs ≈ $0.015 and ~3-4 min sequential wall-clock. N is capped at 4 because
-N=5 takes 31 runs and ~8 min — too long for synchronous Streamlit UX.
+N=5 takes 31 runs and ~8 min — too long for a synchronous request/response UX.
 
 Both Shapley sums (factor-level and narrative-level) satisfy the **efficiency axiom**
 exactly modulo float-point noise (factor) or float-point + LLM-variance drift
@@ -337,6 +378,7 @@ XLF beats SPY to the downside; Taiwan scenario → semis appear in periphery).
 - LLM pipeline: `app/llm/{schemas,prompts,grounding,validation,gemini_client,scenario}.py`
 - Caching: `app/data/cache.py` (GCS parquet + JSON), `app/utils/hashing.py`
 - Sample portfolios: `app/data/sample_portfolios.py`
-- UI: `app/ui/{portfolio,scenario,results,methodology}_tab.py`, `app/main.py`
+- API: `app/api/main.py`
+- UI: `frontend/src/` (React + TypeScript + Plotly.js)
 
 For implementation conventions, see [`CLAUDE.md`](../CLAUDE.md).
