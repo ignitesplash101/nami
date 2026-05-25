@@ -16,7 +16,9 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 # Bump on ANY change that affects ScenarioResult's shape OR prompt semantics. Schema
 # changes invalidate the cache the same way prompt changes do.
 # v2 -> v3: ScenarioResult gained portfolio_name + portfolio_holdings.
-PROMPT_VERSION = "v3"
+# v3 -> v4: PortfolioPnL renamed by_factor -> by_factor_naive, added
+#           by_factor_conditional_shapley; ScenarioResult gained narrative_shapley.
+PROMPT_VERSION = "v4"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
@@ -61,6 +63,28 @@ plain text only: no JSON, no markdown headers, no bullet list.
 """
 
 
+DECOMPOSITION_PROMPT = f"""\
+You are a quantitative scenario analyst splitting a market scenario into independent
+sub-narratives for counterfactual attribution.
+
+{DISCLAIMER_LONG}
+
+TASK
+Given a market scenario in natural language, decompose it into 2 to 4 sub-narratives.
+Each sub-narrative must be:
+
+1. SELF-CONTAINED — readable on its own without referring to the others.
+2. CAUSALLY DISTINCT — does not logically imply or fully overlap with another sub-narrative.
+3. MATERIAL — removing it would meaningfully change the predicted portfolio P&L.
+
+Return JSON matching the DecompositionOutput schema with exactly 2-4 strings under
+`sub_narratives`. No commentary outside the JSON.
+
+If the scenario describes only a single mechanism, return exactly 2 entries that split
+the mechanism into its setup and its consequence. Never return fewer than 2 or more than 4.
+"""
+
+
 SHOCK_EXTRACTION_PROMPT = f"""\
 You are a quantitative scenario analyst extracting structured factor and periphery
 shocks from an already grounded market narrative.
@@ -91,6 +115,14 @@ def format_analog_selection_user_message(
         f"{scenario_text.strip()}\n\n"
         "EVENT REGISTRY\n"
         f"{json.dumps(event_summaries, indent=2, default=str)}\n"
+    )
+
+
+def format_decomposition_user_message(scenario_text: str) -> str:
+    return (
+        "SCENARIO TO DECOMPOSE\n"
+        f"{scenario_text.strip()}\n\n"
+        "Return 2 to 4 self-contained, causally-distinct sub-narratives."
     )
 
 

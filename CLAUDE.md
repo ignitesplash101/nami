@@ -114,6 +114,14 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - **Cloud Build SA for this project is the compute-engine default** (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`), NOT the legacy `<PROJECT_NUMBER>@cloudbuild.gserviceaccount.com`. `gcloud builds get-default-service-account` returns empty in some gcloud versions; derive reliably with `gcloud projects describe $PROJECT_ID --format="value(projectNumber)"` then construct `<NUMBER>-compute@developer.gserviceaccount.com`.
 - **Dockerfile uses `uv sync --frozen --no-dev --no-install-project` + `PYTHONPATH=/app`.** Don't drop `--no-install-project` — without it, `uv sync` reads `pyproject.toml`'s `readme = README.md` field and fails because README isn't copied yet in the deps layer (and copying it would break layer caching).
 - **Gemini 3.5 Flash region:** `global` / `us` / `eu` only. NOT `us-central1`, NOT `asia-northeast1`. `VERTEX_AI_LOCATION` is independent of the Cloud Run / bucket region.
+- **`PortfolioPnL.by_factor_naive` is the persisted naive attribution.** There is NO `by_factor` alias. Pydantic v2's `computed_field` is included in `model_dump()` but rejected by `model_validate()` under `extra="forbid"`, which would poison the JSON cache round-trip. Readers must pick `by_factor_naive` or `by_factor_conditional_shapley` explicitly.
+- **Conditional Shapley ≠ causal attribution.** It is *data-dependent credit allocation* under the historical conditional distribution of factor returns. A factor with zero LLM shock can receive nonzero Conditional Shapley credit if it's correlated with a shocked one. Surface this in the UI — `results_tab._render_factor_reasoning` labels such rows "No explicit LLM shock; attributed via correlation".
+- **Use `shap.maskers.Impute(background)`** with the non-deprecated `LinearExplainer((coefs, intercept), masker)` form (see `app/factors/attribution.py`). The `feature_perturbation=` kwarg is deprecated in current shap; new code must avoid it.
+- **Factor-return background must NOT `fillna(0)`.** `fetch_factor_returns_history` does `dropna(how="any")` then demeans, requiring ≥52 complete rows. Zero-filling a missing ETF manufactures false correlation that contaminates the Conditional Shapley values. The strict dropna restricts the background to the post-XLC-launch window (mid-2018+), which is correct.
+- **Narrative decomposition is experimental counterfactual pipeline attribution**, not a clean causal decomposition. Each subset re-runs analog selection + grounded narrative + shock extraction, so the result reflects pipeline behavior on the subset, not a "true" contribution. Frame this honestly in both UI (expander label says "Experimental:") and methodology doc.
+- **Narrative Shapley lives in `app/llm/narrative_shapley.py::compute_narrative_shapley`, NOT inside `run_scenario`.** The UI calls `run_scenario` first, then `compute_narrative_shapley` if opted-in, which calls `decompose_scenario` + reruns the pipeline 2^N − 1 times and attaches the result via `model_copy(update={"narrative_shapley": ...})`. Putting it inside `run_scenario` would invite recursion and control-flow confusion.
+- **`PROMPT_VERSION` covers cache invalidation for prompt OR schema changes.** v3 → v4 because `PortfolioPnL.by_factor` was renamed to `by_factor_naive` + new field added + `ScenarioResult.narrative_shapley` introduced. A future refactor may split this into `PROMPT_VERSION` + `SCENARIO_CACHE_VERSION`; for now one bump suffices.
+- **N must be in [2, 4] for narrative Shapley.** Both `decompose_scenario` and `compute_narrative_shapley` raise `RuntimeError` if the decomposer returns out-of-range. N=5 would be 31 subset runs ≈ 8 min sync wall-clock and is cut off intentionally.
 
 ---
 
@@ -125,7 +133,7 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - **Never auto-commit on the user's behalf** unless explicitly asked. Stage explicit files (`git add file1 file2`), never `git add .` until ignores are verified.
 - **Don't phase-jump.** README's Implementation Phases are ordered; each phase must be functional + tested before the next. Don't pull Phase 4 LLM work into a Phase 2 PR.
 - **Don't preemptively migrate yfinance → Polygon.** The README has a deliberate one-file-change path in `app/data/market.py` when reliability demands it. Don't introduce abstractions for that swap until it's needed.
-- **Don't add Shapley attribution to `app/factors/shocks.py`** — Phase 8, post-v1.
+- **Don't add Shapley logic to `app/factors/shocks.py`.** Shapley lives in `app/factors/attribution.py::conditional_shapley_attribution`; `shocks.py` only orchestrates the call. Narrative-level Shapley lives in `app/llm/narrative_shapley.py`.
 - **Don't widen the disclaimer surface or soften its language** — it's load-bearing for the regulatory framing ("scenario explorer" not "stress testing").
 
 ---
@@ -140,6 +148,6 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 - [x] **Phase 5** — UI build-out (editable Portfolio, Scenario form, Results dashboard with factor/periphery reasoning tables, Methodology rendering `docs/methodology.md`)
 - [x] **Phase 6** — Live-LLM evaluation tests (3 network-gated semantic tests) + `docs/backtest_results.md` snapshot template + `docs/methodology.md`
 - [x] **Phase 7** — Deploy (Cloud Run + Cloud Build 2nd-gen trigger; `--no-allow-unauthenticated` + IAM run.invoker instead of full IAP)
-- [ ] Phase 8 — Advanced attribution (Shapley) — post-v1
+- [x] **Phase 8** — Advanced attribution: factor-level Conditional Shapley via `shap.LinearExplainer` + `shap.maskers.Impute` against demeaned historical factor returns; experimental narrative decomposition (2^N subset Shapley); Results-tab toggle + reasoning table; methodology section with axioms + framing
 
 Source of truth for phase scope: [README.md → Implementation Phases](README.md#implementation-phases).

@@ -165,6 +165,125 @@ factors are correlated.
 
 ---
 
+## Factor attribution: Naive vs Conditional Shapley
+
+The engine returns **two** per-factor attribution dictionaries on every scenario:
+`by_factor_naive` (always) and `by_factor_conditional_shapley` (when the historical
+factor-return background is available). The Results-tab toggle picks which one to
+render.
+
+### Why naive attribution misleads under correlation
+
+Naive attribution is the direct algebra:
+
+```
+by_factor_naive[f] = (Σᵢ wᵢ · βᵢ,f) · shock[f]
+```
+
+This sums exactly to the factor-driven P&L and is dead simple to interpret — but it
+**assumes factor independence**. In practice SPY and ACWI move together (ρ ≈ 0.95),
+XLK is essentially SPY plus a tech-tilt, and sector ETFs co-move during stress. If
+the LLM shocks SPY while leaving ACWI unshocked, naive attribution gives ACWI exactly
+zero credit even though ACWI is what the SPY shock *implies* about global equities.
+Conversely, two near-identical factors that are both shocked can have their credit
+arbitrarily split based on which factor the LLM happened to name first.
+
+### Conditional Shapley axioms
+
+Shapley values are the unique axiom-compliant credit allocation among:
+- **Efficiency** — `Σ_f shapley[f] == factor-driven P&L`
+- **Symmetry** — factors with identical marginal effect get equal credit
+- **Linearity** — composing two games linearly composes the Shapley values
+- **Null player** — a factor with zero coefficient gets zero credit
+
+### What Conditional Shapley is NOT
+
+**It is not a causal "true" attribution.** Conditional Shapley is *data-dependent
+credit allocation under the historical conditional joint distribution* of factor
+returns. A factor with zero explicit LLM shock can receive nonzero Conditional
+Shapley credit because it is correlated with one that *was* shocked — the model's
+prediction at the conditional expectation differs from the prediction at the
+marginal expectation. This is the price of axiomatic credit allocation, not a bug,
+but it does mean Conditional Shapley should be read as "how much of the move is
+*explained by* factor f under the historical co-movement structure" rather than "how
+much would change if we toggled f in isolation."
+
+The UI surfaces this honestly: rows labelled "No explicit LLM shock; attributed via
+correlation" show up only under Conditional Shapley, for factors the LLM didn't name
+but which received Shapley credit through correlation.
+
+### Implementation
+
+`app/factors/attribution.py::conditional_shapley_attribution` uses the
+non-deprecated `shap` API:
+
+```python
+masker    = shap.maskers.Impute(background)
+explainer = shap.LinearExplainer((aggregated_coefs, 0.0), masker)
+shap_values = explainer.shap_values(shock_vec)
+```
+
+where `aggregated_coefs = (weights @ betas)` collapses the N × F beta matrix into the
+portfolio-level F-vector of factor exposures. The background is the demeaned,
+dropna'd historical weekly factor-return matrix supplied by
+`fetch_factor_returns_history` (≥52 complete rows required — `RuntimeError` otherwise).
+
+**Critical:** the background must NOT be `fillna(0)`'d. Zero-filling a missing ETF's
+returns manufactures false zero-correlation that contaminates the Shapley values.
+Strict dropna across all 22 factors effectively restricts the background to the
+post-XLC-launch window (mid-2018+); this is correct — older windows can't carry the
+modern factor universe's correlation structure.
+
+### Worked example
+
+Two factors, ρ = 0.9, only F0 explicitly shocked:
+
+| | F0 (shocked −5%) | F1 (no shock) |
+|---|---|---|
+| Naive | −5% × β = full credit | exactly 0 |
+| Conditional Shapley | ~−2.5% credit | ~−2.5% credit (via correlation) |
+
+Both attributions sum to the same factor-driven P&L. Conditional Shapley distributes
+the credit across the correlated peer.
+
+### When to use which
+
+- **Naive** for quick intuition when factors are roughly independent or when the
+  reader needs to see exactly which factors the LLM named.
+- **Conditional Shapley** for axiom-compliant attribution when factors are known to
+  be correlated — i.e. most of the time in equities. Default when available.
+
+---
+
+## Experimental: narrative decomposition
+
+The opt-in "Also compute experimental narrative decomposition" checkbox in the
+Scenario tab triggers a different kind of Shapley analysis: it splits the scenario
+text itself into N ∈ {2, 3, 4} self-contained sub-narratives, re-runs the **full
+pipeline** on each of the 2^N subset combinations, and assigns each sub-narrative its
+exact Shapley value over the pipeline payoff function `v(S) = total_pnl(run_scenario(
+" ".join(S)))`.
+
+The empty-subset payoff is hardcoded to `v(∅) := 0` — no narrative → no pipeline run
+→ no P&L move. This is defensible but not the only choice; documented here so an
+advanced reader doesn't expect a market-drift baseline.
+
+**Framing**: this is *counterfactual pipeline attribution*, NOT a clean causal
+decomposition. Each subset reruns analog selection + grounded narrative + shock
+extraction, so the values reflect pipeline behavior on the subset, not a true causal
+contribution of the named sub-narrative. The Streamlit expander label and methodology
+caption both say "experimental" for that reason.
+
+Cost: `2^N − 1` full scenario runs (the empty subset is the hardcoded zero). For N=4
+that's 15 runs ≈ $0.015 and ~3-4 min sequential wall-clock. N is capped at 4 because
+N=5 takes 31 runs and ~8 min — too long for synchronous Streamlit UX.
+
+Both Shapley sums (factor-level and narrative-level) satisfy the **efficiency axiom**
+exactly modulo float-point noise (factor) or float-point + LLM-variance drift
+(narrative). The methodology doc and UI both flag narrative-level drift as expected.
+
+---
+
 ## Reproducibility & caching
 
 - `temperature=0` on every Gemini call.

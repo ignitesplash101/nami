@@ -20,7 +20,8 @@ from app.llm.schemas import (
 def _sample_pnl() -> PortfolioPnL:
     return PortfolioPnL(
         total_pnl=-0.05,
-        by_factor={"SPY": -0.03, "VIX": -0.02},
+        by_factor_naive={"SPY": -0.03, "VIX": -0.02},
+        by_factor_conditional_shapley={"SPY": -0.025, "VIX": -0.025},
         by_ticker_factor={"AAPL": -0.02, "MSFT": -0.03},
         by_ticker_periphery={"AAPL": 0.0, "MSFT": 0.0},
         by_ticker_total={"AAPL": -0.02, "MSFT": -0.03},
@@ -62,11 +63,13 @@ def test_portfolio_pnl_model_from_portfolio_pnl_dict():
     # Mirrors the shape `app.factors.shocks.portfolio_pnl` returns.
     raw = {
         "total_pnl": -0.05,
-        "by_factor": {"SPY": -0.03, "VIX": -0.02},
+        "by_factor_naive": {"SPY": -0.03, "VIX": -0.02},
+        "by_factor_conditional_shapley": None,
         "by_ticker_factor": {"AAPL": -0.02, "MSFT": -0.03},
         "by_ticker_periphery": {"AAPL": 0.0, "MSFT": 0.0},
         "by_ticker_total": {"AAPL": -0.02, "MSFT": -0.03},
     }
     pnl = PortfolioPnL(**raw)
     assert pnl.total_pnl == -0.05
-    assert pnl.by_factor["SPY"] == -0.03
+    assert pnl.by_factor_naive["SPY"] == -0.03
+    assert pnl.by_factor_conditional_shapley is None

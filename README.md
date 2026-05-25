@@ -30,7 +30,8 @@ User flow:
    - Proposed periphery shocks (name-specific idiosyncratic moves)
    - Natural language reasoning for each shock
 4. Engine computes portfolio P&L via pre-estimated factor betas
-5. Results dashboard: P&L attribution, factor contributions, name-level breakdown, scenario narrative
+5. Factor-level **Conditional Shapley** attribution (correlation-aware credit allocation, toggle-selectable against naive) and an opt-in **experimental narrative decomposition** that re-runs the engine across subsets of LLM-generated sub-narratives to assign per-narrative Shapley contributions
+6. Results dashboard: P&L attribution, factor contributions, name-level breakdown, scenario narrative
 
 ---
 
@@ -233,21 +234,22 @@ Done by the human before invoking the agent. Do **not** automate.
 - [x] Cloud Build 2nd-gen trigger on push to `main` (`nami-main-push` in `asia-northeast1`)
 
 ### Phase 8 — Advanced Attribution (≈8h, post-v1)
-The differentiator that turns this from "LLM demo" to "quant-credible engine." Ship v1 first; add this once the engine is stable end-to-end.
+The differentiator that turns this from "LLM demo" to "quant-credible engine."
 
-- [ ] Add `shap` to dependencies
-- [ ] `app/factors/attribution.py`:
-  - `naive_attribution(betas, shocks)` → dict of per-factor contributions
-  - `shapley_attribution(betas, shocks, factor_covariance)` → Shapley values via `shap.LinearExplainer` against the factor covariance matrix
-  - Both functions return identical schema; UI toggle selects which
-- [ ] `app/factors/narrative_shapley.py`:
-  - Given an LLM-generated scenario with N sub-narratives, re-run engine with each combination of narratives included/excluded
-  - Compute Shapley values across narrative components
-  - For N=5 narratives → 32 scenario evaluations (cache aggressively by hash)
-- [ ] UI: "Attribution Method" toggle in results tab (Naive | Shapley)
-- [ ] UI: "Narrative Decomposition" expandable card showing per-narrative Shapley contribution
-- [ ] Methodology tab: explain inflation under correlated factors, show worked example
-- [ ] `tests/test_attribution.py`: verify Shapley values sum to total P&L (efficiency axiom); verify naive vs Shapley diverge meaningfully when factors are collinear
+- [x] Add `shap` to dependencies (`shap>=0.46,<1.0`)
+- [x] `app/factors/attribution.py`:
+  - `naive_attribution(betas, shocks, weights)` → dict of per-factor contributions
+  - `conditional_shapley_attribution(betas, shocks, weights, factor_returns_history)` → Conditional Shapley values via `shap.LinearExplainer` + `shap.maskers.Impute` against the demeaned, dropna'd historical factor-return matrix
+  - Both functions return identical schema; UI toggle selects which. `PortfolioPnL` persists both as `by_factor_naive` (required) and `by_factor_conditional_shapley` (optional)
+- [x] `app/llm/narrative_shapley.py`:
+  - Given a scenario, calls `decompose_scenario` to split into N ∈ [2, 4] sub-narratives
+  - Re-runs the full pipeline on each of the 2^N subset combinations (capped at N=4 → 16 runs)
+  - Computes exact Shapley values across narrative components; attaches `narrative_shapley` to the result via `model_copy(update=...)`. Lives OUTSIDE `run_scenario` — UI calls them in sequence
+- [x] UI: "Attribution method" radio in Results tab (Naive | Conditional Shapley) — captions explicitly label Conditional Shapley as "NOT a causal attribution"
+- [x] UI: "Experimental: narrative decomposition" expander on Results showing per-narrative Shapley + caption that this is counterfactual pipeline attribution, not a causal decomposition
+- [x] Methodology tab: Conditional Shapley framing (axioms, what it is NOT, worked example, when to use which), narrative-decomposition section, all in [`docs/methodology.md`](docs/methodology.md)
+- [x] `tests/test_attribution.py`: efficiency, symmetry, high-correlation redistribution, independence ⇒ Naive≈Shapley, insufficient-background guard
+- [x] `tests/test_narrative_shapley.py`: efficiency + symmetry with mocked subset payoffs; decomposition count validation (raises on N∉[2,4])
 
 ---
 

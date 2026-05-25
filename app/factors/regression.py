@@ -28,6 +28,31 @@ def fetch_factor_returns(
     return returns.rename(columns=factor_name_by_ticker())
 
 
+def fetch_factor_returns_history(
+    lookback_weeks: int = 156,
+    end: date | datetime | str | None = None,
+    *,
+    min_complete_rows: int = 52,
+) -> pd.DataFrame:
+    """T × F demeaned weekly factor-return history for use as a SHAP background.
+
+    Rows with ANY NaN are dropped — do NOT fillna(0). Zero-filling a missing ETF
+    manufactures false zero-correlation that contaminates Conditional Shapley.
+    The strict drop restricts the surviving sample to the post-XLC-launch window
+    (mid-2018+) once every factor in `FACTORS` is present; older windows cannot
+    carry the modern factor universe's correlation structure.
+    """
+    raw = fetch_factor_returns(end=end, lookback_weeks=lookback_weeks)
+    complete = raw.dropna(how="any")
+    if len(complete) < min_complete_rows:
+        raise RuntimeError(
+            f"Conditional Shapley background needs ≥{min_complete_rows} complete rows; "
+            f"got {len(complete)} after dropna across {len(raw.columns)} factors. "
+            "Try a more recent date range or a smaller factor universe."
+        )
+    return complete - complete.mean(axis=0)
+
+
 def estimate_betas(
     ticker_returns: pd.DataFrame,
     factor_returns: pd.DataFrame,

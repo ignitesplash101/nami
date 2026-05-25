@@ -41,9 +41,7 @@ def render() -> None:
         seed_holdings = get_portfolio(choice).holdings
         source_id = f"sample-{choice}"
 
-    seed_df = pd.DataFrame(
-        [{"ticker": t, "weight": w} for t, w in seed_holdings.items()]
-    )
+    seed_df = pd.DataFrame([{"ticker": t, "weight": w} for t, w in seed_holdings.items()])
 
     edited = st.data_editor(
         seed_df,

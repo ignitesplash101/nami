@@ -50,12 +50,48 @@ class ShockProposalOutput(BaseModel):
 
 
 class PortfolioPnL(BaseModel):
+    # NOTE: no `by_factor` alias — readers must pick `by_factor_naive` or
+    # `by_factor_conditional_shapley` explicitly. Pydantic v2's `computed_field` is
+    # included in `model_dump()` but rejected by `model_validate()` under
+    # `extra="forbid"`, which would poison the JSON cache round-trip.
     model_config = ConfigDict(extra="forbid")
     total_pnl: float
-    by_factor: dict[str, float]
+    by_factor_naive: dict[str, float]
+    by_factor_conditional_shapley: dict[str, float] | None = None
     by_ticker_factor: dict[str, float]
     by_ticker_periphery: dict[str, float]
     by_ticker_total: dict[str, float]
+
+
+class DecompositionOutput(BaseModel):
+    """Gemini's split of a scenario into 2-4 self-contained sub-narratives."""
+
+    model_config = ConfigDict(extra="forbid")
+    sub_narratives: list[str]
+
+
+class NarrativeContribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    narrative_index: int
+    narrative_text: str
+    shapley_value: float
+    relative_contribution: float
+
+
+class NarrativeShapleyResult(BaseModel):
+    """Result of running 2^N subset evaluations to assign per-sub-narrative Shapley values.
+
+    Experimental counterfactual *pipeline* attribution — each subset reruns analog
+    selection + grounded narrative + shock extraction, so the values reflect pipeline
+    behavior on the subset, not a causal decomposition of the original scenario.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    sub_narratives: list[str]
+    contributions: list[NarrativeContribution]
+    subset_pnls: dict[str, float]  # bitmask string "0110" -> P&L
+    total_pnl: float  # full scenario (all sub-narratives ON)
+    n_subsets_evaluated: int  # 2^N
 
 
 class ScenarioResult(BaseModel):
@@ -72,3 +108,4 @@ class ScenarioResult(BaseModel):
     citations: list[Citation]
     factor_envelope: dict[str, dict[str, float]]
     portfolio_pnl: PortfolioPnL
+    narrative_shapley: NarrativeShapleyResult | None = None  # opt-in only

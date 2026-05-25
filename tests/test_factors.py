@@ -122,7 +122,7 @@ def test_portfolio_pnl_attribution_sums():
 
     assert isinstance(result["total_pnl"], float)
     np.testing.assert_allclose(
-        sum(result["by_factor"].values()),
+        sum(result["by_factor_naive"].values()),
         result["total_pnl"],
         atol=1e-10,
     )
@@ -135,7 +135,7 @@ def test_portfolio_pnl_returns_json_safe_dict():
     result = portfolio_pnl(portfolio, betas, {"SPY": -0.1, "VIX": 0.3})
 
     assert isinstance(result["total_pnl"], float)
-    for key in ("by_factor", "by_ticker_factor", "by_ticker_periphery", "by_ticker_total"):
+    for key in ("by_factor_naive", "by_ticker_factor", "by_ticker_periphery", "by_ticker_total"):
         assert isinstance(result[key], dict), f"{key} should be a dict, got {type(result[key])}"
         for v in result[key].values():
             assert isinstance(v, float), f"{key} values must be float, got {type(v)}"

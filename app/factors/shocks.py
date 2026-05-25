@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from app.data.sample_portfolios import Portfolio
+from app.factors.attribution import conditional_shapley_attribution, naive_attribution
+
+logger = logging.getLogger(__name__)
 
 
 def apply_shocks(betas: pd.DataFrame, shocks: dict[str, float]) -> pd.Series:
@@ -33,6 +37,7 @@ def portfolio_pnl(
     betas: pd.DataFrame,
     shocks: dict[str, float],
     periphery_shocks: dict[str, float] | None = None,
+    factor_returns_history: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     """Expected portfolio P&L under factor + (optional) periphery shocks, plus attribution.
 
@@ -40,13 +45,19 @@ def portfolio_pnl(
 
         {
             "total_pnl": float,
-            "by_factor": dict[str, float],          # per-factor portfolio attribution
-            "by_ticker_factor": dict[str, float],   # per-ticker factor-driven contribution
-            "by_ticker_periphery": dict[str, float],# per-ticker periphery contribution
-            "by_ticker_total": dict[str, float],    # factor + periphery, per ticker
+            "by_factor_naive": dict[str, float],
+            "by_factor_conditional_shapley": dict[str, float] | None,
+            "by_ticker_factor": dict[str, float],
+            "by_ticker_periphery": dict[str, float],
+            "by_ticker_total": dict[str, float],
         }
 
-    Linearity gives `sum(by_factor) + sum(by_ticker_periphery) == total_pnl`.
+    Linearity gives `sum(by_factor_naive) + sum(by_ticker_periphery) == total_pnl`.
+    Shapley contributions also sum to the factor-driven P&L by the efficiency axiom.
+
+    `factor_returns_history` (demeaned, dropna'd) enables Conditional Shapley. When
+    omitted or when shap fails, `by_factor_conditional_shapley=None` and the engine
+    degrades gracefully to Naive-only.
     """
     missing = set(portfolio.tickers) - set(betas.index)
     if missing:
@@ -73,16 +84,25 @@ def portfolio_pnl(
     by_ticker_periphery = (weights * periphery_per_ticker).rename("by_ticker_periphery")
     by_ticker_total = (by_ticker_factor + by_ticker_periphery).rename("by_ticker_total")
 
-    weighted_betas = betas.T @ weights
-    shock_vec = pd.Series({col: shocks.get(col, 0.0) for col in betas.columns})
-    by_factor = weighted_betas * shock_vec
+    by_factor_naive = naive_attribution(betas, shocks, weights)
+
+    by_factor_conditional_shapley: dict[str, float] | None = None
+    if factor_returns_history is not None:
+        try:
+            by_factor_conditional_shapley = conditional_shapley_attribution(
+                betas, shocks, weights, factor_returns_history
+            )
+        except Exception as exc:  # noqa: BLE001 — Shapley failure must not break a scenario
+            logger.warning("Conditional Shapley unavailable: %s", exc)
+            by_factor_conditional_shapley = None
 
     total_pnl = float(by_ticker_total.sum())
 
     tickers_in_portfolio = list(portfolio.tickers)
     return {
         "total_pnl": total_pnl,
-        "by_factor": {f: float(v) for f, v in by_factor.items()},
+        "by_factor_naive": by_factor_naive,
+        "by_factor_conditional_shapley": by_factor_conditional_shapley,
         "by_ticker_factor": {t: float(by_ticker_factor[t]) for t in tickers_in_portfolio},
         "by_ticker_periphery": {t: float(by_ticker_periphery[t]) for t in tickers_in_portfolio},
         "by_ticker_total": {t: float(by_ticker_total[t]) for t in tickers_in_portfolio},

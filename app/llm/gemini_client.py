@@ -18,15 +18,18 @@ from app.factors.analogs import HistoricalEvent
 from app.llm.grounding import extract_citations
 from app.llm.prompts import (
     ANALOG_SELECTION_PROMPT,
+    DECOMPOSITION_PROMPT,
     GROUNDED_NARRATIVE_PROMPT,
     SHOCK_EXTRACTION_PROMPT,
     format_analog_selection_user_message,
+    format_decomposition_user_message,
     format_grounded_narrative_user_message,
     format_shock_extraction_user_message,
 )
 from app.llm.schemas import (
     AnalogSelectionOutput,
     Citation,
+    DecompositionOutput,
     ShockProposalOutput,
 )
 from app.llm.validation import validate_shock_proposal
@@ -46,6 +49,25 @@ class GeminiClient:
         )
         self._model = config.vertex_model_id
         self._temperature = config.llm_temperature
+
+    def decompose(self, scenario_text: str) -> DecompositionOutput:
+        """Split a scenario into 2-4 self-contained sub-narratives. No grounding.
+
+        Used by `compute_narrative_shapley` to enumerate 2^N subset evaluations for
+        per-sub-narrative Shapley attribution.
+        """
+        user_msg = format_decomposition_user_message(scenario_text)
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_msg,
+            config=self._types.GenerateContentConfig(
+                system_instruction=DECOMPOSITION_PROMPT,
+                temperature=self._temperature,
+                response_mime_type="application/json",
+                response_schema=DecompositionOutput,
+            ),
+        )
+        return DecompositionOutput.model_validate_json(response.text)
 
     def select_analogs(
         self, scenario_text: str, event_summaries: list[dict]

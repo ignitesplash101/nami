@@ -13,7 +13,7 @@ from app.factors.analogs import (
     events_version,
     load_events,
 )
-from app.factors.regression import estimate_betas_for_portfolio
+from app.factors.regression import estimate_betas_for_portfolio, fetch_factor_returns_history
 from app.factors.shocks import portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
 from app.llm.gemini_client import GeminiClient
@@ -108,11 +108,19 @@ def run_scenario(
         alpha=config.ridge_alpha,
     )
 
+    try:
+        factor_history = fetch_factor_returns_history(
+            lookback_weeks=config.beta_lookback_weeks,
+        )
+    except Exception:  # noqa: BLE001 — Conditional Shapley is best-effort; never break a run
+        factor_history = None
+
     pnl = portfolio_pnl(
         portfolio_obj,
         betas,
         shocks={fs.factor: fs.shock for fs in shock_out.factor_shocks},
         periphery_shocks={ps.ticker: ps.shock for ps in shock_out.periphery_shocks},
+        factor_returns_history=factor_history,
     )
 
     factor_envelope = {

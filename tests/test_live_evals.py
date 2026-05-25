@@ -62,6 +62,6 @@ def test_taiwan_scenario_periphery_includes_semis():
     )
     periphery_tickers = {ps.ticker for ps in result.periphery_shocks}
     expected_set = {"NVDA", "AMD", "AAPL", "AVGO", "AMAT", "QCOM"}
-    assert periphery_tickers & expected_set, (
-        f"Expected Taiwan periphery on at least one semi. Got: {periphery_tickers}"
-    )
+    assert (
+        periphery_tickers & expected_set
+    ), f"Expected Taiwan periphery on at least one semi. Got: {periphery_tickers}"
