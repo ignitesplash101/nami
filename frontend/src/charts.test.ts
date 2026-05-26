@@ -26,7 +26,10 @@ function fixtureResult(): ScenarioResult {
       by_ticker_total: { AAPL: -0.06, MSFT: -0.02 }
     },
     narrative_shapley: null,
-    adjustment_history: []
+    adjustment_history: [],
+    requested_as_of_date: null,
+    narrative_mode: "grounded",
+    selected_event_ids: []
   };
 }
 

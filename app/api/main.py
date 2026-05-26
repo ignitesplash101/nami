@@ -4,6 +4,7 @@ import json
 import queue
 import threading
 from collections.abc import Generator
+from datetime import date as date_type
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -17,11 +18,19 @@ from app.api.schemas import (
     AnalogEventResponse,
     NarrativeDecompositionRequest,
     Permissions,
+    PortfolioSnapshotRecord,
+    PortfolioSnapshotRequest,
     PortfolioValidationRequest,
     PortfolioValidationResponse,
     SamplePortfolioResponse,
     SampleScenarioResponse,
+    SavedPortfolioRecord,
+    SavedScenarioListItem,
+    SavedScenarioRecord,
+    SavePortfolioRequest,
+    SaveScenarioRequest,
     ScenarioAdjustRequest,
+    ScenarioReproducibility,
     ScenarioRunRequest,
     ScenarioRunResponse,
     UnlockRequest,
@@ -39,15 +48,23 @@ from app.api.security import (
 )
 from app.config import load_config
 from app.data.cache import CloudStorageCache
+from app.data.firestore_store import (
+    FirestoreStore,
+    SavedScenarioStore,
+    utcnow,
+)
 from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio
-from app.factors.analogs import HistoricalEvent, load_events
+from app.factors.analogs import HistoricalEvent, events_version, load_events
+from app.factors.universe import factor_universe_version
 from app.llm.gemini_client import GeminiClient
 from app.llm.narrative_shapley import compute_narrative_shapley
+from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import (
     adjust_scenario_shocks,
     compute_scenario_cache_key,
     run_scenario,
 )
+from app.utils.calendar import resolve_effective_market_date
 from app.utils.disclaimers import DISCLAIMER_SHORT
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +72,44 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 METHODOLOGY_PATH = ROOT / "docs" / "methodology.md"
 
 api = FastAPI(title="nami API", version="0.1.0")
+
+# nami engine version used in reproducibility metadata. Bumps with any
+# release-significant change to the engine; not in lockstep with PROMPT_VERSION.
+NAMI_ENGINE_VERSION = "0.1.0"
+
+
+_firestore_store: SavedScenarioStore | None = None
+
+
+def get_firestore_store() -> SavedScenarioStore:
+    """Lazy Firestore singleton. Tests override via FastAPI dependency_overrides
+    or by monkeypatching `app.api.main._firestore_store`."""
+    global _firestore_store
+    if _firestore_store is None:
+        config = load_config()
+        _firestore_store = FirestoreStore(project_id=config.google_cloud_project)
+    return _firestore_store
+
+
+def _build_reproducibility(
+    result, portfolio_key: str, requested_as_of: date_type, effective_as_of: date_type
+) -> ScenarioReproducibility:
+    config = load_config()
+    return ScenarioReproducibility(
+        model_id=config.vertex_model_id,
+        prompt_version=PROMPT_VERSION,
+        factor_universe_version=factor_universe_version(),
+        events_version=events_version(),
+        requested_as_of_date=requested_as_of,
+        effective_as_of_date=effective_as_of,
+        narrative_mode=result.narrative_mode,
+        beta_lookback_weeks=config.beta_lookback_weeks,
+        ridge_alpha=config.ridge_alpha,
+        selected_event_ids=list(result.selected_event_ids),
+        portfolio_holdings=dict(result.portfolio_holdings),
+        portfolio_key=portfolio_key,
+        nami_engine_version=NAMI_ENGINE_VERSION,
+    )
 
 
 def _permissions(mode: AccessMode) -> Permissions:
@@ -188,17 +243,42 @@ def sample_scenarios() -> list[SampleScenarioResponse]:
     ]
 
 
+def _resolve_as_of(body: ScenarioRunRequest, mode: AccessMode) -> date_type | None:
+    """Visitor mode is locked to live runs; only admins may backdate."""
+    if body.as_of_date is None:
+        return None
+    if mode == "visitor":
+        raise HTTPException(
+            status_code=403,
+            detail="Visitor mode does not support backdated scenarios.",
+        )
+    return body.as_of_date
+
+
 @api.post("/api/scenarios/run", response_model=ScenarioRunResponse)
 def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> ScenarioRunResponse:
     mode = access_mode_for_request(request)
     scenario_text = _resolve_scenario_text(body, mode)
     portfolio = _resolve_portfolio(body, mode)
-    result = run_scenario(scenario_text, portfolio)
+    requested_as_of = _resolve_as_of(body, mode)
+    try:
+        result = run_scenario(scenario_text, portfolio, market_date=requested_as_of)
+    except ValueError as exc:
+        # Insufficient analogs / data when backdating; user-facing 422.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     cache_key = compute_scenario_cache_key(scenario_text, portfolio, market_date=result.market_date)
+    portfolio_key = portfolio if isinstance(portfolio, str) else "custom"
+    reproducibility = _build_reproducibility(
+        result,
+        portfolio_key=portfolio_key,
+        requested_as_of=result.requested_as_of_date or result.market_date,
+        effective_as_of=result.market_date,
+    )
     return ScenarioRunResponse(
         result=result,
         analog_events=_analog_events(load_events()),
         cache_key=cache_key,
+        reproducibility=reproducibility,
     )
 
 
@@ -214,6 +294,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
     mode = access_mode_for_request(request)
     scenario_text = _resolve_scenario_text(body, mode)
     portfolio = _resolve_portfolio(body, mode)
+    requested_as_of = _resolve_as_of(body, mode)
 
     events_q: queue.Queue[dict] = queue.Queue()
     SENTINEL = object()
@@ -223,14 +304,24 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
 
     def worker() -> None:
         try:
-            result = run_scenario(scenario_text, portfolio, progress=progress)
+            result = run_scenario(
+                scenario_text, portfolio, market_date=requested_as_of, progress=progress
+            )
             cache_key = compute_scenario_cache_key(
                 scenario_text, portfolio, market_date=result.market_date
+            )
+            portfolio_key = portfolio if isinstance(portfolio, str) else "custom"
+            reproducibility = _build_reproducibility(
+                result,
+                portfolio_key=portfolio_key,
+                requested_as_of=result.requested_as_of_date or result.market_date,
+                effective_as_of=result.market_date,
             )
             response = ScenarioRunResponse(
                 result=result,
                 analog_events=_analog_events(load_events()),
                 cache_key=cache_key,
+                reproducibility=reproducibility,
             )
             events_q.put({"stage": "done", "result": response.model_dump(mode="json")})
         except Exception as exc:  # noqa: BLE001 — stream errors as SSE events
@@ -307,6 +398,182 @@ def decompose_endpoint(
         market_date=body.result.market_date,
     )
     return ScenarioRunResponse(result=result, analog_events=_analog_events(load_events()))
+
+
+# ============================================================================
+# Saved analytics (Firestore-backed) — Phase 11
+# ============================================================================
+
+
+def _require_admin(request: Request, action: str) -> None:
+    if not can_use_free_text_scenario(access_mode_for_request(request)):
+        raise HTTPException(status_code=403, detail=f"{action} requires admin mode.")
+
+
+@api.post("/api/saved-scenarios", response_model=SavedScenarioRecord)
+def save_scenario_endpoint(body: SaveScenarioRequest, request: Request) -> SavedScenarioRecord:
+    _require_admin(request, "Saving scenarios")
+    store = get_firestore_store()
+    record_id = ""  # filled by store
+    full = SavedScenarioRecord(
+        id="pending",
+        name=body.name,
+        tags=body.tags,
+        notes=body.notes,
+        created_at=utcnow(),
+        owner_label=body.owner_label,
+        scenario_text=body.result.scenario_text,
+        portfolio_snapshot_ref=body.portfolio_snapshot_ref,
+        portfolio_holdings=dict(body.result.portfolio_holdings),
+        portfolio_key=body.result.portfolio_key,
+        portfolio_name=body.result.portfolio_name,
+        analog_events_snapshot=body.analog_events_snapshot,
+        result=body.result,
+        reproducibility=body.reproducibility,
+    )
+    try:
+        record_id = store.save_scenario(full)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    return full.model_copy(update={"id": record_id})
+
+
+@api.get("/api/saved-scenarios", response_model=list[SavedScenarioListItem])
+def list_saved_scenarios_endpoint(
+    request: Request, tag: str | None = None, limit: int = 50
+) -> list[SavedScenarioListItem]:
+    _require_admin(request, "Listing saved scenarios")
+    if limit < 1 or limit > 200:
+        raise HTTPException(status_code=400, detail="limit must be in [1, 200].")
+    store = get_firestore_store()
+    try:
+        return store.list_scenarios(tag=tag, limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@api.get("/api/saved-scenarios/{scenario_id}", response_model=SavedScenarioRecord)
+def get_saved_scenario_endpoint(scenario_id: str, request: Request) -> SavedScenarioRecord:
+    _require_admin(request, "Reading saved scenarios")
+    store = get_firestore_store()
+    rec = store.get_scenario(scenario_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Saved scenario {scenario_id} not found.")
+    return rec
+
+
+@api.get("/api/saved-scenarios/{scenario_id}/json")
+def download_saved_scenario_json(scenario_id: str, request: Request) -> Response:
+    _require_admin(request, "Downloading saved scenarios")
+    store = get_firestore_store()
+    rec = store.get_scenario(scenario_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Saved scenario {scenario_id} not found.")
+    body = rec.model_dump_json(indent=2)
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in rec.name)[:64]
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="nami-scenario-{safe_name}-{scenario_id}.json"'
+        },
+    )
+
+
+@api.delete("/api/saved-scenarios/{scenario_id}", status_code=204)
+def delete_saved_scenario_endpoint(scenario_id: str, request: Request) -> Response:
+    _require_admin(request, "Deleting saved scenarios")
+    store = get_firestore_store()
+    store.delete_scenario(scenario_id)
+    return Response(status_code=204)
+
+
+@api.post("/api/portfolios", response_model=SavedPortfolioRecord)
+def create_portfolio_endpoint(body: SavePortfolioRequest, request: Request) -> SavedPortfolioRecord:
+    _require_admin(request, "Creating portfolios")
+    store = get_firestore_store()
+    rec = SavedPortfolioRecord(
+        id="pending",
+        name=body.name,
+        description=body.description,
+        created_at=utcnow(),
+        owner_label=body.owner_label,
+    )
+    pid = store.save_portfolio(rec)
+    return rec.model_copy(update={"id": pid})
+
+
+@api.get("/api/portfolios", response_model=list[SavedPortfolioRecord])
+def list_saved_portfolios_endpoint(request: Request) -> list[SavedPortfolioRecord]:
+    _require_admin(request, "Listing saved portfolios")
+    store = get_firestore_store()
+    return store.list_portfolios()
+
+
+@api.post(
+    "/api/portfolios/{portfolio_id}/snapshots",
+    response_model=PortfolioSnapshotRecord,
+)
+def create_portfolio_snapshot_endpoint(
+    portfolio_id: str, body: PortfolioSnapshotRequest, request: Request
+) -> PortfolioSnapshotRecord:
+    _require_admin(request, "Creating portfolio snapshots")
+    store = get_firestore_store()
+    if store.get_portfolio(portfolio_id) is None:
+        raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
+    # Validate snapshot is not future-dated relative to today's effective trading day.
+    today_effective = resolve_effective_market_date(date_type.today())
+    if body.as_of_date > today_effective:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Snapshot as_of_date {body.as_of_date.isoformat()} is in the "
+                f"future relative to today's NYSE close ({today_effective.isoformat()})."
+            ),
+        )
+    snap = PortfolioSnapshotRecord(
+        id="pending",
+        portfolio_id=portfolio_id,
+        as_of_date=body.as_of_date,
+        holdings=body.holdings,
+        notes=body.notes,
+        created_at=utcnow(),
+        owner_label=body.owner_label,
+    )
+    sid = store.save_snapshot(portfolio_id, snap)
+    return snap.model_copy(update={"id": sid})
+
+
+@api.get(
+    "/api/portfolios/{portfolio_id}/snapshots",
+    response_model=list[PortfolioSnapshotRecord],
+)
+def list_portfolio_snapshots_endpoint(
+    portfolio_id: str, request: Request
+) -> list[PortfolioSnapshotRecord]:
+    _require_admin(request, "Listing portfolio snapshots")
+    store = get_firestore_store()
+    if store.get_portfolio(portfolio_id) is None:
+        raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
+    return store.list_snapshots(portfolio_id)
+
+
+@api.get(
+    "/api/portfolios/{portfolio_id}/snapshots/{snapshot_id}",
+    response_model=PortfolioSnapshotRecord,
+)
+def get_portfolio_snapshot_endpoint(
+    portfolio_id: str, snapshot_id: str, request: Request
+) -> PortfolioSnapshotRecord:
+    _require_admin(request, "Reading portfolio snapshots")
+    store = get_firestore_store()
+    snap = store.get_snapshot(portfolio_id, snapshot_id)
+    if snap is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Snapshot {snapshot_id} not found under portfolio {portfolio_id}.",
+        )
+    return snap
 
 
 @api.get("/api/docs/methodology")

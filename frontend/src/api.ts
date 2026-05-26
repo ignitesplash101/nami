@@ -1,9 +1,14 @@
 import type {
   AccessResponse,
+  PortfolioSnapshotRecord,
   PortfolioValidationResponse,
   SamplePortfolio,
   SampleScenario,
+  SavedPortfolioRecord,
+  SavedScenarioListItem,
+  SavedScenarioRecord,
   ScenarioAdjustRequest,
+  ScenarioReproducibility,
   ScenarioResult,
   ScenarioRunResponse,
   SseProgressEvent
@@ -69,6 +74,9 @@ export interface RunScenarioPayload {
   portfolio_key?: string;
   portfolio_name?: string;
   portfolio_holdings?: Record<string, number>;
+  // Backdated runs (admin-only): YYYY-MM-DD. Server resolves to the last NYSE
+  // trading day on or before this date.
+  as_of_date?: string;
 }
 
 export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunResponse> {
@@ -141,6 +149,94 @@ export function adjustScenarioShocks(
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+// --- Saved analytics (Firestore-backed) ---
+
+export interface SaveScenarioRequestPayload {
+  name: string;
+  tags: string[];
+  notes: string;
+  owner_label: string | null;
+  result: ScenarioResult;
+  analog_events_snapshot: Record<string, unknown>;
+  reproducibility: ScenarioReproducibility;
+  portfolio_snapshot_ref?: string | null;
+}
+
+export function saveScenario(
+  payload: SaveScenarioRequestPayload
+): Promise<SavedScenarioRecord> {
+  return requestJson<SavedScenarioRecord>("/api/saved-scenarios", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function listSavedScenarios(tag?: string): Promise<SavedScenarioListItem[]> {
+  const query = tag ? `?tag=${encodeURIComponent(tag)}` : "";
+  return requestJson<SavedScenarioListItem[]>(`/api/saved-scenarios${query}`);
+}
+
+export function getSavedScenario(id: string): Promise<SavedScenarioRecord> {
+  return requestJson<SavedScenarioRecord>(
+    `/api/saved-scenarios/${encodeURIComponent(id)}`
+  );
+}
+
+export function deleteSavedScenario(id: string): Promise<void> {
+  return fetch(`/api/saved-scenarios/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "same-origin"
+  }).then((response) => {
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+  });
+}
+
+export function savedScenarioDownloadUrl(id: string): string {
+  return `/api/saved-scenarios/${encodeURIComponent(id)}/json`;
+}
+
+// --- Portfolios + snapshots ---
+
+export function createPortfolio(payload: {
+  name: string;
+  description: string;
+  owner_label: string | null;
+}): Promise<SavedPortfolioRecord> {
+  return requestJson<SavedPortfolioRecord>("/api/portfolios", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function listSavedPortfolios(): Promise<SavedPortfolioRecord[]> {
+  return requestJson<SavedPortfolioRecord[]>("/api/portfolios");
+}
+
+export function createPortfolioSnapshot(
+  portfolioId: string,
+  payload: {
+    as_of_date: string;
+    holdings: Record<string, number>;
+    notes: string;
+    owner_label: string | null;
+  }
+): Promise<PortfolioSnapshotRecord> {
+  return requestJson<PortfolioSnapshotRecord>(
+    `/api/portfolios/${encodeURIComponent(portfolioId)}/snapshots`,
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
+export function listPortfolioSnapshots(
+  portfolioId: string
+): Promise<PortfolioSnapshotRecord[]> {
+  return requestJson<PortfolioSnapshotRecord[]>(
+    `/api/portfolios/${encodeURIComponent(portfolioId)}/snapshots`
+  );
 }
 
 export async function getMethodology(): Promise<string> {

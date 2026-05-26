@@ -1137,3 +1137,251 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================
+ * Phase 11 — Backdating + Saved analytics + Portfolio history
+ * ========================================================================== */
+
+/* As-of date picker */
+.asof-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+.asof-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.asof-picker input[type="date"] {
+  width: auto;
+  min-width: 160px;
+}
+.asof-reset {
+  white-space: nowrap;
+}
+
+/* Backdated-mode banner */
+.backdated-banner {
+  border: 1px solid rgba(246, 184, 75, 0.4);
+  background: rgba(246, 184, 75, 0.08);
+  color: #ffe4b3;
+  padding: 14px 16px;
+  border-radius: 10px;
+  margin: 14px 0;
+}
+.backdated-banner strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #ffd57a;
+}
+.backdated-banner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.backdated-banner code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* Reproducibility chip + results toolbar */
+.results-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.reproducibility-chip {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.reproducibility-chip code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Save dialog */
+.save-dialog {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 100vw);
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.4);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.25s ease-out;
+}
+.save-dialog-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.save-dialog-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  border-top: 1px solid rgba(220, 231, 243, 0.08);
+  padding-top: 12px;
+}
+
+/* Saved library panel */
+.saved-panel {
+  margin-top: 18px;
+}
+.saved-tag-filter {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.saved-tag-filter button {
+  background: rgba(232, 238, 247, 0.05);
+  color: var(--muted);
+  border: 1px solid rgba(220, 231, 243, 0.08);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.saved-tag-filter button.active {
+  background: var(--cyan);
+  color: var(--ink);
+  border-color: var(--cyan);
+}
+.saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.saved-list li {
+  border: 1px solid rgba(220, 231, 243, 0.08);
+  background: rgba(13, 22, 36, 0.55);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.saved-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.saved-open {
+  background: none;
+  border: 0;
+  color: var(--cyan);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  padding: 0;
+}
+.saved-row-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #c6d0dc;
+  margin-bottom: 6px;
+}
+.saved-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.saved-tags span {
+  background: rgba(139, 211, 255, 0.14);
+  color: #8bd3ff;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.saved-row-actions {
+  display: flex;
+  gap: 8px;
+}
+.saved-row-actions a {
+  text-decoration: none;
+  font-size: 12px;
+}
+.ghost-button.danger {
+  color: #ffc6c9;
+  border-color: rgba(255, 77, 87, 0.35);
+}
+
+/* Portfolio history panel */
+.portfolio-history {
+  margin-top: 18px;
+}
+.port-history-create {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.port-history-create input {
+  flex: 1;
+}
+.snap-create {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 14px 0;
+}
+.snap-create label {
+  margin: 0;
+}
+.snap-create .primary-button {
+  grid-column: 1 / -1;
+}
+.snap-list h4 {
+  margin: 12px 0 8px 0;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.snap-list ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.snap-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.snap-date code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.snap-notes {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
@@ -20,9 +20,14 @@ from app.factors.analogs import (
     compute_envelope,
     event_summaries,
     events_version,
+    filter_events_as_of,
     load_events,
+    summarize_events,
 )
-from app.factors.regression import estimate_betas_for_portfolio
+from app.factors.regression import (
+    estimate_betas_for_portfolio,
+    fetch_factor_returns_with_history,
+)
 from app.factors.shocks import portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
 from app.factors.warm_cache import get_factor_returns_with_history
@@ -35,7 +40,12 @@ from app.llm.schemas import (
     ScenarioResult,
     ShockAdjustment,
 )
+from app.utils.calendar import resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
+
+# Minimum number of historical analog events required for envelope computation.
+# Surfaces as a 422 error from the API layer rather than a raw Gemini failure.
+MIN_ELIGIBLE_ANALOG_EVENTS = 2
 
 ProgressCallback = Callable[[str, str], None]
 """Optional progress hook for `run_scenario`. Called as `progress(stage, status)`
@@ -61,16 +71,18 @@ def compute_scenario_cache_key(
     """Compute the cache key the same way `run_scenario` does.
 
     Used by API handlers to surface the key to the client so subsequent
-    adjustment requests can reference the canonical cached result.
+    adjustment requests can reference the canonical cached result. `market_date`
+    is resolved to the effective NYSE trading day to match run_scenario's keying.
     """
     config = config or load_config()
-    market_date = market_date or date.today()
+    requested_as_of = market_date or date.today()
+    effective_as_of = resolve_effective_market_date(requested_as_of)
     portfolio_obj, resolved_key = _resolve_portfolio(portfolio, None)
     return scenario_cache_key(
         scenario_text=scenario_text,
         portfolio_key=resolved_key,
         portfolio_holdings=portfolio_obj.holdings,
-        market_date=market_date,
+        market_date=effective_as_of,
         model_id=config.vertex_model_id,
         prompt_version=PROMPT_VERSION,
         factor_universe_version=factor_universe_version(),
@@ -109,6 +121,21 @@ def run_scenario(
 ) -> ScenarioResult:
     """End-to-end pipeline.
 
+    The `market_date` argument doubles as the as-of date. When it equals today,
+    the pipeline runs the standard live-grounded path (Google Search citations,
+    warm-cached factor returns). When it is in the past, the pipeline switches
+    to vintage-controlled backdated mode:
+
+      * The historical-events registry is filtered to `event.end_date <=
+        effective_as_of` so the analog selector cannot see future-dated events.
+      * yfinance fetches pass `end=effective_as_of + 1 day` (the +1 day is
+        because yfinance `end=` is exclusive) and the warm cache is bypassed.
+      * The narrative call goes through `_analog_grounded_narrative` (no Google
+        Search) so the LLM is constrained to analog-event grounding.
+
+    `effective_as_of` is the last NYSE trading day on or before the user's
+    requested `market_date`, resolved via `resolve_effective_market_date`.
+
     Args:
         scenario_text: natural-language scenario description.
         portfolio: a sample-portfolio key (str), a Portfolio object (custom), or None
@@ -119,13 +146,9 @@ def run_scenario(
         gemini, cache: dependency-injected for tests.
         progress: optional callback invoked at stage boundaries. See ProgressCallback.
 
-    Custom portfolios are stored with `portfolio_key="custom"`; the cache key still
-    differentiates them via `portfolio_holdings` (which is part of the SHA256 input).
-
-    Performance: yfinance fetches start at the top of the function in a background
-    ThreadPoolExecutor (max_workers=2) and overlap with the entire Gemini chain
-    (Call 1 + envelope + Call 2a + Call 2b). yfinance is effectively free on the
-    critical path since Gemini ~8-16s >> yfinance ~2-6s.
+    Raises:
+        ValueError: when backdating yields < MIN_ELIGIBLE_ANALOG_EVENTS analogs.
+            (API layer translates to HTTP 422 with the as-of date in the message.)
     """
     portfolio_obj, resolved_key = _resolve_portfolio(portfolio, portfolio_key)
 
@@ -133,15 +156,21 @@ def run_scenario(
     gemini = gemini or GeminiClient(config)
     if cache is None:
         cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
-    market_date = market_date or date.today()
+
+    requested_as_of = market_date or date.today()
+    effective_as_of = resolve_effective_market_date(requested_as_of)
+    is_backdated = effective_as_of < date.today()
     progress = progress or _noop
 
+    # Cache key uses effective_as_of — that's what determines the actual data
+    # used. A user picking a weekend resolves to the prior Friday, and both
+    # requests should share a cache entry.
     progress("cache_check", "start")
     key = scenario_cache_key(
         scenario_text=scenario_text,
         portfolio_key=resolved_key,
         portfolio_holdings=portfolio_obj.holdings,
-        market_date=market_date,
+        market_date=effective_as_of,
         model_id=config.vertex_model_id,
         prompt_version=PROMPT_VERSION,
         factor_universe_version=factor_universe_version(),
@@ -155,27 +184,55 @@ def run_scenario(
             return ScenarioResult.model_validate(cached)
     progress("cache_check", "done")
 
-    events = load_events()
+    # Event registry — full for live runs, end-date-filtered for backdated runs.
+    full_events = load_events()
+    if is_backdated:
+        events = filter_events_as_of(full_events, effective_as_of)
+        if len(events) < MIN_ELIGIBLE_ANALOG_EVENTS:
+            raise ValueError(
+                f"Backdating to {effective_as_of.isoformat()} leaves only "
+                f"{len(events)} eligible historical analogs "
+                f"(minimum {MIN_ELIGIBLE_ANALOG_EVENTS} required). Try a more "
+                f"recent as-of date."
+            )
+        analog_summaries = summarize_events(events)
+    else:
+        events = full_events
+        analog_summaries = event_summaries()
+
     factor_universe_desc = [
         {"name": f.name, "group": f.group, "description": f.description} for f in FACTORS.values()
     ]
 
-    # B1: hoist yfinance to the top of the cache-miss path so it overlaps with the
-    # entire Gemini chain. The pool stays open until we collect the futures below.
+    # yfinance end= is exclusive; +1 day yields a bar inclusive of effective_as_of.
+    # Live runs pass end=None and let the helper anchor on today.
+    yf_end = (effective_as_of + timedelta(days=1)) if is_backdated else None
+
+    # Hoist yfinance to overlap with the Gemini chain. Backdated runs MUST
+    # bypass the warm cache (it keys only on lookback_weeks and always returns
+    # current data) — call the underlying fetch directly with end=.
     with ThreadPoolExecutor(max_workers=2) as pool:
         progress("market", "start")
         portfolio_future = pool.submit(
             fetch_weekly_prices,
             portfolio_obj.tickers,
             lookback_weeks=config.beta_lookback_weeks,
+            end=yf_end,
         )
-        factors_future = pool.submit(
-            get_factor_returns_with_history,
-            lookback_weeks=config.beta_lookback_weeks,
-        )
+        if is_backdated:
+            factors_future = pool.submit(
+                fetch_factor_returns_with_history,
+                lookback_weeks=config.beta_lookback_weeks,
+                end=yf_end,
+            )
+        else:
+            factors_future = pool.submit(
+                get_factor_returns_with_history,
+                lookback_weeks=config.beta_lookback_weeks,
+            )
 
         progress("analogs", "start")
-        analog_out = gemini.select_analogs(scenario_text, event_summaries())
+        analog_out = gemini.select_analogs(scenario_text, analog_summaries)
         selected_ids = [a.event_id for a in analog_out.selected_events]
         progress("analogs", "done")
 
@@ -184,13 +241,38 @@ def run_scenario(
         progress("envelope", "done")
 
         progress("narrative", "start")
-        shock_out, citations = gemini.propose_shocks_with_retry(
-            scenario_text=scenario_text,
-            portfolio=portfolio_obj,
-            factor_universe_descriptions=factor_universe_desc,
-            envelope=envelope,
-            events_registry=events,
-        )
+        if is_backdated:
+            # Build the selected-analog payload the analog-grounded prompt needs:
+            # full event details (name, dates, tags, description), not just ids.
+            selected_analog_events = [
+                {
+                    "id": e.id,
+                    "name": e.name,
+                    "start_date": e.start_date.isoformat(),
+                    "end_date": e.end_date.isoformat(),
+                    "tags": list(e.tags),
+                    "description": e.description,
+                }
+                for e in (events[eid] for eid in selected_ids if eid in events)
+            ]
+            shock_out, citations = gemini.propose_shocks_with_retry(
+                scenario_text=scenario_text,
+                portfolio=portfolio_obj,
+                factor_universe_descriptions=factor_universe_desc,
+                envelope=envelope,
+                events_registry=events,
+                analog_grounded=True,
+                as_of_date=effective_as_of,
+                selected_analog_events=selected_analog_events,
+            )
+        else:
+            shock_out, citations = gemini.propose_shocks_with_retry(
+                scenario_text=scenario_text,
+                portfolio=portfolio_obj,
+                factor_universe_descriptions=factor_universe_desc,
+                envelope=envelope,
+                events_registry=events,
+            )
         progress("narrative", "done")
 
         ticker_prices = portfolio_future.result()
@@ -231,7 +313,7 @@ def run_scenario(
 
     result = ScenarioResult(
         scenario_text=scenario_text,
-        market_date=market_date,
+        market_date=effective_as_of,
         portfolio_key=resolved_key,
         portfolio_name=portfolio_obj.name,
         portfolio_holdings=dict(portfolio_obj.holdings),
@@ -242,6 +324,9 @@ def run_scenario(
         citations=citations,
         factor_envelope=factor_envelope,
         portfolio_pnl=PortfolioPnL(**pnl),
+        requested_as_of_date=requested_as_of,
+        narrative_mode="analog_only" if is_backdated else "grounded",
+        selected_event_ids=selected_ids,
     )
 
     cache.put_json(key, result.model_dump(mode="json"))
@@ -294,8 +379,8 @@ def adjust_scenario_shocks(
     # part of the cache-key hash, so we trust it).
     if canonical.portfolio_key == "custom":
         portfolio_obj = Portfolio(
-            key="custom",
             name=canonical.portfolio_name,
+            description="User-saved custom portfolio",
             holdings=dict(canonical.portfolio_holdings),
         )
     else:
@@ -359,16 +444,32 @@ def adjust_scenario_shocks(
     # Recompute P&L with the new shocks. Periphery shocks come from canonical untouched.
     periphery_shocks = {ps.ticker: ps.shock for ps in canonical.periphery_shocks}
 
+    # CRITICAL: vintage-control the market fetches. If the canonical scenario was
+    # run as-of a past date, the adjustment must refetch using that same as-of —
+    # otherwise the new P&L would mix backdated shocks with current betas/factor
+    # history, which is a look-ahead leak. Backdated path also bypasses the warm
+    # cache (which always returns current data).
+    canonical_is_backdated = canonical.market_date < date.today()
+    yf_end = (canonical.market_date + timedelta(days=1)) if canonical_is_backdated else None
+
     with ThreadPoolExecutor(max_workers=2) as pool:
         portfolio_future = pool.submit(
             fetch_weekly_prices,
             portfolio_obj.tickers,
             lookback_weeks=config.beta_lookback_weeks,
+            end=yf_end,
         )
-        factors_future = pool.submit(
-            get_factor_returns_with_history,
-            lookback_weeks=config.beta_lookback_weeks,
-        )
+        if canonical_is_backdated:
+            factors_future = pool.submit(
+                fetch_factor_returns_with_history,
+                lookback_weeks=config.beta_lookback_weeks,
+                end=yf_end,
+            )
+        else:
+            factors_future = pool.submit(
+                get_factor_returns_with_history,
+                lookback_weeks=config.beta_lookback_weeks,
+            )
         ticker_prices = portfolio_future.result()
         factor_returns, factor_history = factors_future.result()
     ticker_returns = compute_weekly_returns(ticker_prices)

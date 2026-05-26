@@ -81,9 +81,11 @@ export interface ShockAdjustment {
   changed_factors: Record<string, [number, number]>;
 }
 
+export type NarrativeMode = "grounded" | "analog_only";
+
 export interface ScenarioResult {
   scenario_text: string;
-  market_date: string;
+  market_date: string;  // effective NYSE trading-day as-of date (YYYY-MM-DD)
   portfolio_key: string;
   portfolio_name: string;
   portfolio_holdings: Record<string, number>;
@@ -96,6 +98,28 @@ export interface ScenarioResult {
   portfolio_pnl: PortfolioPnL;
   narrative_shapley: NarrativeShapleyResult | null;
   adjustment_history: ShockAdjustment[];
+  // Backdating metadata (added Phase 11). Defaults match live runs so older
+  // cached payloads deserialize cleanly.
+  requested_as_of_date: string | null;
+  narrative_mode: NarrativeMode;
+  selected_event_ids: string[];
+}
+
+export interface ScenarioReproducibility {
+  model_id: string;
+  prompt_version: string;
+  factor_universe_version: string;
+  events_version: string;
+  requested_as_of_date: string;
+  effective_as_of_date: string;
+  narrative_mode: NarrativeMode;
+  beta_lookback_weeks: number;
+  ridge_alpha: number;
+  selected_event_ids: string[];
+  portfolio_holdings: Record<string, number>;
+  portfolio_key: string;
+  market_data_source: "yfinance";
+  nami_engine_version: string;
 }
 
 export interface AnalogEvent {
@@ -111,6 +135,59 @@ export interface ScenarioRunResponse {
   result: ScenarioResult;
   analog_events: Record<string, AnalogEvent>;
   cache_key: string | null;
+  reproducibility: ScenarioReproducibility | null;
+}
+
+export interface SavedScenarioListItem {
+  id: string;
+  name: string;
+  tags: string[];
+  created_at: string;
+  owner_label: string | null;
+  portfolio_name: string;
+  portfolio_key: string;
+  requested_as_of_date: string;
+  effective_as_of_date: string;
+  narrative_mode: NarrativeMode;
+  total_pnl: number;
+}
+
+export interface SavedScenarioRecord {
+  id: string;
+  name: string;
+  tags: string[];
+  notes: string;
+  created_at: string;
+  created_by: string;
+  owner_label: string | null;
+  scenario_text: string;
+  portfolio_snapshot_ref: string | null;
+  portfolio_holdings: Record<string, number>;
+  portfolio_key: string;
+  portfolio_name: string;
+  analog_events_snapshot: Record<string, AnalogEvent>;
+  result: ScenarioResult;
+  reproducibility: ScenarioReproducibility;
+}
+
+export interface SavedPortfolioRecord {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  created_by: string;
+  owner_label: string | null;
+}
+
+export interface PortfolioSnapshotRecord {
+  id: string;
+  portfolio_id: string;
+  as_of_date: string;
+  holdings: Record<string, number>;
+  notes: string;
+  created_at: string;
+  created_by: string;
+  owner_label: string | null;
 }
 
 export interface ScenarioAdjustRequest {

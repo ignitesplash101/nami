@@ -45,6 +45,8 @@ class _MockGeminiClient:
             reasoning="picked two stress analogs",
         )
 
+    last_analog_grounded: bool = False
+
     def propose_shocks_with_retry(
         self,
         *,
@@ -54,10 +56,26 @@ class _MockGeminiClient:
         envelope,
         events_registry,
         max_retries=1,
+        analog_grounded: bool = False,
+        as_of_date=None,
+        selected_analog_events=None,
     ):
+        # Capture the analog_grounded flag so backdating tests can assert that
+        # run_scenario routed through the no-Search path. `last_analog_grounded`
+        # is class-shared so the assertion site can read it without holding the
+        # instance.
+        type(self).last_analog_grounded = analog_grounded
         self.shock_calls += 1
         # Pick the first 3 factors so they line up with the real envelope
         factor_names = list(FACTORS.keys())[:3]
+        # Backdated runs return empty citations (no Google Search); live runs
+        # return the mock citations.
+        citations = [] if analog_grounded else self.citations
+        narrative = (
+            "Analog-grounded test narrative."
+            if analog_grounded
+            else "A test narrative grounded in current events."
+        )
         return (
             ShockProposalOutput(
                 factor_shocks=[
@@ -72,9 +90,9 @@ class _MockGeminiClient:
                         reasoning="periphery on first holding",
                     )
                 ],
-                narrative="A test narrative grounded in current events.",
+                narrative=narrative,
             ),
-            self.citations,
+            citations,
         )
 
 
@@ -110,23 +128,28 @@ def _patch_market_layer(monkeypatch):
         data[:, 0] = 1.0
         return pd.DataFrame(data, index=portfolio.tickers, columns=factor_names)
 
+    # Capture `end=` arg so backdating tests can assert the vintage threading.
+    captured: dict[str, object] = {}
+
     def _fake_fetch_weekly_prices(tickers, *args, **kwargs):
-        # Tiny deterministic price series; scenario.py only consumes this via
-        # `compute_weekly_returns` then hands it to the mocked beta estimator,
-        # which ignores it. Returning a 3-row frame keeps `pct_change().dropna()`
-        # non-empty so no edge case fires.
+        captured["weekly_prices_end"] = kwargs.get("end")
         return pd.DataFrame(
             {t: [100.0, 101.0, 102.0] for t in tickers},
             index=pd.date_range("2024-01-01", periods=3, freq="W"),
         )
 
-    def _fake_get_factor_returns_with_history(lookback_weeks=156):
-        # 60 demeaned-looking rows, enough to satisfy Shapley min_background_rows.
+    def _fake_factor_returns_with_history(lookback_weeks=156, end=None):
+        captured["factor_history_end"] = end
         n_rows = 60
         idx = pd.date_range("2024-01-01", periods=n_rows, freq="W")
         data = {name: np.linspace(-0.01, 0.01, n_rows) for name in factor_names}
         raw = pd.DataFrame(data, index=idx)
         return raw, raw - raw.mean(axis=0)
+
+    def _fake_get_factor_returns_with_history(lookback_weeks=156):
+        # Warm cache wrapper (live runs only — does not accept end=).
+        captured["warm_cache_called"] = True
+        return _fake_factor_returns_with_history(lookback_weeks=lookback_weeks)
 
     monkeypatch.setattr("app.factors.analogs.fetch_event_returns", _fake_fetch_event_returns)
     monkeypatch.setattr("app.llm.scenario.estimate_betas_for_portfolio", _fake_estimate_betas)
@@ -135,6 +158,11 @@ def _patch_market_layer(monkeypatch):
         "app.llm.scenario.get_factor_returns_with_history",
         _fake_get_factor_returns_with_history,
     )
+    monkeypatch.setattr(
+        "app.llm.scenario.fetch_factor_returns_with_history",
+        _fake_factor_returns_with_history,
+    )
+    return captured
 
 
 def test_run_scenario_calls_gemini_and_assembles_result(monkeypatch):
@@ -158,7 +186,13 @@ def test_run_scenario_calls_gemini_and_assembles_result(monkeypatch):
     assert len(result.analogs_selected) == 2
     assert len(result.factor_shocks) == 3
     assert len(result.periphery_shocks) == 1
-    assert result.citations  # mock returns one
+    # Citations: live runs (market_date >= today) carry Google Search citations;
+    # backdated runs return empty citations because the analog-grounded path
+    # does not invoke Google Search.
+    if result.market_date >= date.today():
+        assert result.citations
+    else:
+        assert result.citations == []
     assert result.portfolio_pnl.total_pnl != 0  # SPY beta=1, shock=-0.05 → negative
     assert len(cache.store) == 1
 

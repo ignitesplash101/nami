@@ -8,6 +8,7 @@ import {
   Lock,
   LogOut,
   Menu,
+  Save,
   Shield,
   Table2,
   Unlock,
@@ -31,16 +32,22 @@ import {
   topContributor
 } from "./charts";
 import { AdjustmentPanel } from "./AdjustmentPanel";
+import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
 import { AttributionGuide } from "./AttributionGuide";
+import { getSavedScenario } from "./api";
 import { MethodologyDrawer } from "./MethodologyDrawer";
+import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
 import { RunProgress } from "./RunProgress";
+import { SaveScenarioDialog } from "./SaveScenarioDialog";
+import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { useMediaQuery } from "./useMediaQuery";
 import { useMethodologyDrawer } from "./useMethodologyDrawer";
 import { useOverlay } from "./useOverlay";
 import type {
   AccessResponse,
   AttributionMethod,
+  PortfolioSnapshotRecord,
   SamplePortfolio,
   SampleScenario,
   ScenarioResult,
@@ -107,8 +114,12 @@ export default function App() {
   const [customName, setCustomName] = useState("Custom Book");
   const [customRows, setCustomRows] = useState<HoldingRow[]>(defaultCustomRows);
   const [scenarioText, setScenarioText] = useState("");
+  // As-of date (YYYY-MM-DD). Empty string means today/live.
+  const [asOfDate, setAsOfDate] = useState<string>("");
   const [resultEnvelope, setResultEnvelope] = useState<ScenarioRunResponse | null>(null);
   const [canonicalSnapshot, setCanonicalSnapshot] = useState<ScenarioResult | null>(null);
+  const [savedReloadKey, setSavedReloadKey] = useState(0);
+  const saveDialog = useOverlay();
   const [methodology, setMethodology] = useState("");
   const [attributionMethod, setAttributionMethod] = useState<AttributionMethod>("naive");
   const [isRunning, setIsRunning] = useState(false);
@@ -148,6 +159,25 @@ export default function App() {
       setScenarioKey(scenarioResponse[0]?.key ?? "china_tariffs");
       setScenarioText(scenarioResponse[0]?.text ?? "");
       setMethodology(methodologyText);
+
+      // Permalink hydration: ?saved=<id> opens a saved scenario directly.
+      // Admin-only (matches the underlying endpoint gating).
+      const params = new URLSearchParams(window.location.search);
+      const savedId = params.get("saved");
+      if (savedId && accessResponse.access_mode === "admin") {
+        try {
+          const rec = await getSavedScenario(savedId);
+          setResultEnvelope({
+            result: rec.result,
+            analog_events: rec.analog_events_snapshot,
+            cache_key: null,
+            reproducibility: rec.reproducibility
+          });
+          setCanonicalSnapshot(rec.result);
+        } catch (exc) {
+          setError(`Could not load saved scenario: ${exc instanceof Error ? exc.message : exc}`);
+        }
+      }
     }
     boot().catch((exc: Error) => setError(exc.message));
   }, []);
@@ -183,14 +213,18 @@ export default function App() {
     setCompletedStages(new Set());
     setCacheHit(false);
     try {
+      const baseAdmin = {
+        scenario_text: scenarioText || selectedScenario?.text,
+        portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
+        portfolio_name: portfolioMode === "custom" ? customName : undefined,
+        portfolio_holdings:
+          portfolioMode === "custom" ? holdingsFromRows(customRows) : undefined,
+        // Only thread as_of_date when admin chose a non-today date. Empty
+        // string and today both mean "live" — let the backend default.
+        as_of_date: asOfDate || undefined
+      };
       const payload = access.permissions.free_text_scenario
-        ? {
-            scenario_text: scenarioText || selectedScenario?.text,
-            portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
-            portfolio_name: portfolioMode === "custom" ? customName : undefined,
-            portfolio_holdings:
-              portfolioMode === "custom" ? holdingsFromRows(customRows) : undefined
-          }
+        ? baseAdmin
         : {
             sample_scenario_key: scenarioKey,
             portfolio_key: portfolioKey
@@ -315,7 +349,18 @@ export default function App() {
           selectedScenario={selectedScenario}
           isRunning={isRunning}
           onRun={handleRun}
+          asOfDate={asOfDate}
+          setAsOfDate={setAsOfDate}
         />
+
+        {resultEnvelope?.result.narrative_mode === "analog_only" ? (
+          <BackdatedModeBanner
+            effectiveDate={resultEnvelope.result.market_date}
+            requestedDate={
+              resultEnvelope.result.requested_as_of_date ?? resultEnvelope.result.market_date
+            }
+          />
+        ) : null}
 
         {isRunning ? (
           <RunProgress
@@ -334,6 +379,8 @@ export default function App() {
           isDecomposing={isDecomposing}
           onDecompose={handleDecompose}
           onOpenMethodology={openMethodology}
+          canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
+          onSave={saveDialog.open}
         />
 
         {resultEnvelope &&
@@ -348,7 +395,49 @@ export default function App() {
           />
         ) : null}
 
+        {isAdmin ? (
+          <SavedScenariosPanel
+            reloadKey={savedReloadKey}
+            onOpen={(env) => {
+              setResultEnvelope(env);
+              setCanonicalSnapshot(env.result);
+            }}
+          />
+        ) : null}
+
+        {isAdmin ? (
+          <PortfolioHistoryPanel
+            currentHoldings={
+              portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
+            }
+            onLoadSnapshot={(snap) => {
+              setPortfolioMode("custom");
+              setCustomName(`Snapshot ${snap.as_of_date}`);
+              setCustomRows(
+                Object.entries(snap.holdings).map(([ticker, weight], i) => ({
+                  id: `snap-${snap.id}-${i}`,
+                  ticker,
+                  weight: String(weight)
+                }))
+              );
+            }}
+          />
+        ) : null}
       </section>
+
+      {resultEnvelope?.reproducibility ? (
+        <SaveScenarioDialog
+          isOpen={saveDialog.isOpen}
+          onClose={saveDialog.close}
+          onSaved={() => {
+            saveDialog.close();
+            setSavedReloadKey((k) => k + 1);
+          }}
+          result={resultEnvelope.result}
+          analogEvents={resultEnvelope.analog_events}
+          reproducibility={resultEnvelope.reproducibility}
+        />
+      ) : null}
 
       <RailDrawer isOpen={railDrawer.isOpen} onClose={railDrawer.close}>
         {railContent}
@@ -579,7 +668,9 @@ function ScenarioPanel({
   setScenarioText,
   selectedScenario,
   isRunning,
-  onRun
+  onRun,
+  asOfDate,
+  setAsOfDate
 }: {
   access: AccessResponse | null;
   scenarios: SampleScenario[];
@@ -590,6 +681,8 @@ function ScenarioPanel({
   selectedScenario?: SampleScenario;
   isRunning: boolean;
   onRun: () => void;
+  asOfDate: string;
+  setAsOfDate: (v: string) => void;
 }) {
   const canFreeText = Boolean(access?.permissions.free_text_scenario);
   return (
@@ -619,6 +712,9 @@ function ScenarioPanel({
           />
         </label>
       </div>
+      {canFreeText ? (
+        <AsOfDatePicker value={asOfDate} onChange={setAsOfDate} disabled={isRunning} />
+      ) : null}
       <button className="primary-button" onClick={onRun} disabled={isRunning || !selectedScenario}>
         {isRunning ? "Running pipeline..." : "Run scenario"} <ArrowRight size={16} />
       </button>
@@ -633,7 +729,9 @@ function ResultsPanel({
   canDecompose,
   isDecomposing,
   onDecompose,
-  onOpenMethodology
+  onOpenMethodology,
+  canSave,
+  onSave
 }: {
   envelope: ScenarioRunResponse | null;
   attributionMethod: AttributionMethod;
@@ -642,6 +740,8 @@ function ResultsPanel({
   isDecomposing: boolean;
   onDecompose: () => void;
   onOpenMethodology: (section?: string) => void;
+  canSave: boolean;
+  onSave: () => void;
 }) {
   if (!envelope) {
     return (
@@ -671,6 +771,20 @@ function ResultsPanel({
 
   return (
     <section className="results-stack">
+      <div className="results-toolbar">
+        {canSave ? (
+          <button className="ghost-button" onClick={onSave}>
+            <Save size={14} /> Save scenario
+          </button>
+        ) : null}
+        {envelope.reproducibility ? (
+          <span className="muted reproducibility-chip">
+            prompt {envelope.reproducibility.prompt_version} · model{" "}
+            {envelope.reproducibility.model_id} · as-of{" "}
+            <code>{envelope.reproducibility.effective_as_of_date}</code>
+          </span>
+        ) : null}
+      </div>
       <div className="metric-grid">
         <Metric label="Portfolio P&L" value={formatPercent(result.portfolio_pnl.total_pnl)} />
         <Metric

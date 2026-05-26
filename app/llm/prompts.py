@@ -7,6 +7,7 @@ change so cached responses are re-derived against the new pipeline.
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 import pandas as pd
@@ -20,7 +21,14 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 #           by_factor_conditional_shapley; ScenarioResult gained narrative_shapley.
 # v4 -> v5: PortfolioPnL gained by_factor_conditional_shapley_explicit and
 #           by_factor_conditional_shapley_grouped (extra Shapley variants).
-PROMPT_VERSION = "v5"
+# v5 -> v6: Backdated scenarios + analog-only narrative path. Analog filter now
+#           uses end_date <= as_of (was implicitly unbounded); ScenarioResult
+#           gained narrative_mode + effective/requested as-of dates +
+#           selected_event_ids. Cache namespace must be invalidated because
+#           the same (scenario_text, portfolio, market_date) key could have
+#           produced a different result under v5 if any analog event was
+#           still in progress on market_date.
+PROMPT_VERSION = "v6"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
@@ -106,6 +114,41 @@ RULES
 5. Down-weight factors with count < 3.
 6. Periphery shocks may only reference tickers in the provided portfolio holdings.
 7. Outputs are illustrative and probabilistic, not investment advice.
+"""
+
+
+ANALOG_GROUNDED_NARRATIVE_PROMPT = f"""\
+You are a quantitative scenario analyst writing the narrative for an equity
+portfolio scenario engine **in backdated mode**.
+
+{DISCLAIMER_LONG}
+
+CRITICAL BACKDATING CONSTRAINTS
+
+You will receive an explicit AS-OF DATE. You MUST NOT reference any events,
+market data, news, or developments that occurred AFTER that date. The only
+sources of grounding for this narrative are:
+
+1. The analog events listed in the user message (their dates, magnitudes,
+   tagged mechanisms).
+2. The empirical envelope statistics (mean, p10, p90, count) computed across
+   those analog events.
+3. The portfolio holdings.
+
+DO NOT invoke Google Search. DO NOT cite recent news. DO NOT mention any
+event whose start date is after the as-of date.
+
+OUTPUT
+
+Write a concise 3-5 sentence narrative that:
+- Names which analog event(s) the scenario most closely echoes and why.
+- States the mechanism (e.g. "rates spike via Fed credibility shock",
+  "risk-off on credit contagion") consistent with those analogs.
+- Quotes a few rough magnitudes from the envelope to give the reader a sense
+  of scale (e.g. "in 2018-2019, SPY moved -X% across this style of event").
+
+Plain text only — no JSON, no headers, no bullets. No URLs or citations
+beyond the analog event names themselves.
 """
 
 
@@ -225,6 +268,41 @@ def format_shock_extraction_user_message(
             ]
         )
     return "\n".join(sections)
+
+
+def format_analog_grounded_narrative_user_message(
+    *,
+    scenario_text: str,
+    as_of_date: date,
+    selected_analog_events: list[dict[str, Any]],
+    envelope: pd.DataFrame,
+    factor_universe_descriptions: list[dict[str, Any]],
+    portfolio_holdings: dict[str, float],
+) -> str:
+    return "\n".join(
+        [
+            f"AS-OF DATE (strict no-look-ahead): {as_of_date.isoformat()}",
+            "",
+            "SCENARIO",
+            scenario_text.strip(),
+            "",
+            "SELECTED HISTORICAL ANALOG EVENTS (your ONLY grounding source)",
+            json.dumps(selected_analog_events, indent=2),
+            "",
+            "EMPIRICAL ENVELOPE (per factor, across the selected analogs)",
+            json.dumps(_envelope_records(envelope), indent=2),
+            "",
+            "FACTOR UNIVERSE",
+            json.dumps(factor_universe_descriptions, indent=2),
+            "",
+            "PORTFOLIO HOLDINGS (ticker -> weight)",
+            json.dumps(_rounded_holdings(portfolio_holdings), indent=2),
+            "",
+            "INSTRUCTION",
+            "Write a 3-5 sentence narrative grounded ONLY in the analog events above.",
+            "Do not invoke Google Search. Do not reference anything after the as-of date.",
+        ]
+    )
 
 
 def format_shock_edit_user_message(

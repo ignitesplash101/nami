@@ -10,6 +10,8 @@ Google Search tool is not invoked, producing valid JSON with no grounding metada
 
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
 from app.config import Config
@@ -17,11 +19,13 @@ from app.data.sample_portfolios import Portfolio
 from app.factors.analogs import HistoricalEvent
 from app.llm.grounding import extract_citations
 from app.llm.prompts import (
+    ANALOG_GROUNDED_NARRATIVE_PROMPT,
     ANALOG_SELECTION_PROMPT,
     DECOMPOSITION_PROMPT,
     GROUNDED_NARRATIVE_PROMPT,
     SHOCK_EDIT_PROMPT,
     SHOCK_EXTRACTION_PROMPT,
+    format_analog_grounded_narrative_user_message,
     format_analog_selection_user_message,
     format_decomposition_user_message,
     format_grounded_narrative_user_message,
@@ -97,20 +101,39 @@ class GeminiClient:
         envelope: pd.DataFrame,
         events_registry: dict[str, HistoricalEvent],
         max_retries: int = 1,
+        analog_grounded: bool = False,
+        as_of_date: date | None = None,
+        selected_analog_events: list[dict] | None = None,
     ) -> tuple[ShockProposalOutput, list[Citation]]:
         del events_registry  # currently unused; reserved for future cross-checks
 
-        narrative, citations = self._grounded_narrative(
-            scenario_text=scenario_text,
-            envelope=envelope,
-            factor_universe_descriptions=factor_universe_descriptions,
-            portfolio=portfolio,
-        )
-        if not citations:
-            raise RuntimeError(
-                "Grounded narrative call returned no citations. Gemini did not invoke "
-                "Google Search, so forward-looking claims cannot be returned."
+        if analog_grounded:
+            # Backdated path: no Google Search, narrative grounded in analog
+            # events only. as_of_date + selected_analog_events are required.
+            if as_of_date is None or selected_analog_events is None:
+                raise ValueError(
+                    "analog_grounded=True requires as_of_date and selected_analog_events"
+                )
+            narrative, citations = self._analog_grounded_narrative(
+                scenario_text=scenario_text,
+                as_of_date=as_of_date,
+                selected_analog_events=selected_analog_events,
+                envelope=envelope,
+                factor_universe_descriptions=factor_universe_descriptions,
+                portfolio=portfolio,
             )
+        else:
+            narrative, citations = self._grounded_narrative(
+                scenario_text=scenario_text,
+                envelope=envelope,
+                factor_universe_descriptions=factor_universe_descriptions,
+                portfolio=portfolio,
+            )
+            if not citations:
+                raise RuntimeError(
+                    "Grounded narrative call returned no citations. Gemini did not invoke "
+                    "Google Search, so forward-looking claims cannot be returned."
+                )
 
         prior_errors: list[str] = []
         for attempt in range(max_retries + 1):
@@ -132,6 +155,39 @@ class GeminiClient:
         raise RuntimeError(
             f"Shock proposal failed validation after {max_retries + 1} attempts: {prior_errors}"
         )
+
+    def _analog_grounded_narrative(
+        self,
+        *,
+        scenario_text: str,
+        as_of_date: date,
+        selected_analog_events: list[dict],
+        envelope: pd.DataFrame,
+        factor_universe_descriptions: list[dict],
+        portfolio: Portfolio,
+    ) -> tuple[str, list[Citation]]:
+        """Backdated narrative path: NO Google Search. Narrative is grounded
+        in the selected analog events and the envelope only. Returns empty
+        citations list — `analogs_selected` on the result is the audit trail.
+        """
+        user_msg = format_analog_grounded_narrative_user_message(
+            scenario_text=scenario_text,
+            as_of_date=as_of_date,
+            selected_analog_events=selected_analog_events,
+            envelope=envelope,
+            factor_universe_descriptions=factor_universe_descriptions,
+            portfolio_holdings=portfolio.holdings,
+        )
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_msg,
+            config=self._types.GenerateContentConfig(
+                system_instruction=ANALOG_GROUNDED_NARRATIVE_PROMPT,
+                temperature=self._temperature,
+                # NO tools= — Google Search must not be invoked for backdated runs.
+            ),
+        )
+        return response.text or "", []
 
     def _grounded_narrative(
         self,

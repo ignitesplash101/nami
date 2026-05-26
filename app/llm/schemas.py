@@ -173,3 +173,15 @@ class ScenarioResult(BaseModel):
     portfolio_pnl: PortfolioPnL
     narrative_shapley: NarrativeShapleyResult | None = None  # opt-in only
     adjustment_history: list[ShockAdjustment] = Field(default_factory=list)
+    # Backdating metadata (added Phase 11). All default-defaulted so cached v5
+    # entries deserialize cleanly under v6 lazy re-derivation.
+    # `market_date` is the *effective* as-of date (last NYSE trading day on or
+    # before the user request); `requested_as_of_date` is the raw user request
+    # for display/audit clarity.
+    requested_as_of_date: date | None = None
+    # narrative_mode: "grounded" when Google Search ran (current-date); "analog_only"
+    # when backdated and the LLM was constrained to analog-event grounding only.
+    narrative_mode: Literal["grounded", "analog_only"] = "grounded"
+    # event_ids selected for the analog envelope. Already on `analogs_selected`
+    # but duplicated here for reproducibility-block convenience.
+    selected_event_ids: list[str] = Field(default_factory=list)

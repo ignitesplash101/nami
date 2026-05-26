@@ -139,13 +139,24 @@ def _validate_event(event_id: str, payload: dict[str, Any]) -> HistoricalEvent:
 
 
 def event_summaries(path: Path | None = None) -> list[dict[str, Any]]:
-    """Compact LLM-facing summaries, ordered by start_date ascending. Process-cached."""
+    """Compact LLM-facing summaries of the full event registry, ordered by
+    start_date ascending. Process-cached. Use `summarize_events(filter_events_as_of(...))`
+    when backdating to enforce strict no-look-ahead.
+    """
     return _event_summaries_cached(path or DEFAULT_REGISTRY_PATH)
 
 
 @functools.lru_cache(maxsize=8)
 def _event_summaries_cached(path: Path) -> list[dict[str, Any]]:
-    events = load_events(path)
+    return summarize_events(load_events(path))
+
+
+def summarize_events(events: dict[str, HistoricalEvent]) -> list[dict[str, Any]]:
+    """Render an event-registry dict to the JSON shape the analog-selection LLM
+    expects. Mirrors `event_summaries()` but takes a pre-filtered registry, so
+    callers in backdated mode can pass `filter_events_as_of(load_events(), as_of)`
+    and the LLM is shown only eligible analogs.
+    """
     sorted_events = sorted(events.values(), key=lambda e: e.start_date)
     return [
         {
@@ -158,6 +169,21 @@ def _event_summaries_cached(path: Path) -> list[dict[str, Any]]:
         }
         for e in sorted_events
     ]
+
+
+def filter_events_as_of(
+    events: dict[str, HistoricalEvent], as_of: date
+) -> dict[str, HistoricalEvent]:
+    """Strict end-date filter: an event is eligible only if it FULLY completed
+    on or before `as_of`. Events still in progress at `as_of` are excluded —
+    their windowed-return fetch would otherwise leak post-as-of returns via the
+    event's end_date. v1 does not support truncated in-progress events.
+
+    Critical for quant-grade backdating: filtering by `start_date` instead would
+    let analogs whose return windows extend past `as_of` into the envelope
+    computation.
+    """
+    return {eid: e for eid, e in events.items() if e.end_date <= as_of}
 
 
 def fetch_event_returns(event: HistoricalEvent) -> pd.Series:

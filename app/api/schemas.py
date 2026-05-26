@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.llm.schemas import ScenarioResult
@@ -59,6 +62,10 @@ class ScenarioRunRequest(BaseModel):
     portfolio_key: str | None = None
     portfolio_name: str | None = None
     portfolio_holdings: dict[str, float] | None = None
+    # Backdated scenarios: user-requested as-of date. When None or today,
+    # standard live-grounded path. When < today, runs in vintage-controlled
+    # backdated mode (events filtered, yfinance end=, analog-only narrative).
+    as_of_date: date | None = None
 
 
 class AnalogEventResponse(BaseModel):
@@ -71,6 +78,29 @@ class AnalogEventResponse(BaseModel):
     description: str
 
 
+class ScenarioReproducibility(BaseModel):
+    """Full audit metadata for a scenario run. Surfaced on every response and
+    persisted inline on saved scenarios so a result is reproducible (best-effort)
+    without depending on any external version's stability.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    model_id: str
+    prompt_version: str
+    factor_universe_version: str
+    events_version: str
+    requested_as_of_date: date
+    effective_as_of_date: date
+    narrative_mode: Literal["grounded", "analog_only"]
+    beta_lookback_weeks: int
+    ridge_alpha: float
+    selected_event_ids: list[str]
+    portfolio_holdings: dict[str, float]
+    portfolio_key: str
+    market_data_source: Literal["yfinance"] = "yfinance"
+    nami_engine_version: str
+
+
 class ScenarioRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     result: ScenarioResult
@@ -79,6 +109,9 @@ class ScenarioRunResponse(BaseModel):
     # back on /api/scenarios/adjust-shocks; the server re-fetches the trusted
     # canonical result from the GCS cache rather than trusting client-supplied data.
     cache_key: str | None = None
+    # Full reproducibility metadata (model/prompt/factor/events version + as-of
+    # dates + config). Always populated; saved scenarios persist it inline.
+    reproducibility: ScenarioReproducibility | None = None
 
 
 class NarrativeDecompositionRequest(BaseModel):
@@ -91,3 +124,94 @@ class ScenarioAdjustRequest(BaseModel):
     cache_key: str
     overrides: dict[str, float] | None = None  # manual mode: full factor->value map
     adjustment_text: str | None = None  # prompt mode: natural-language edit
+
+
+# --- Saved analytics (Firestore-backed) ---
+
+
+class SaveScenarioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(..., min_length=1, max_length=200)
+    tags: list[str] = Field(default_factory=list)
+    notes: str = ""
+    owner_label: str | None = None
+    # The full result + analog events + reproducibility snapshot to persist.
+    # All inline — no FK to GCS scenario cache; saved record is self-contained.
+    result: ScenarioResult
+    analog_events_snapshot: dict[str, AnalogEventResponse]
+    reproducibility: ScenarioReproducibility
+    portfolio_snapshot_ref: str | None = None
+
+
+class SavedScenarioRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    tags: list[str] = Field(default_factory=list)
+    notes: str = ""
+    created_at: datetime
+    created_by: str = "admin"
+    owner_label: str | None = None
+    scenario_text: str
+    portfolio_snapshot_ref: str | None = None
+    portfolio_holdings: dict[str, float]
+    portfolio_key: str
+    portfolio_name: str
+    analog_events_snapshot: dict[str, AnalogEventResponse]
+    result: ScenarioResult
+    reproducibility: ScenarioReproducibility
+
+
+class SavedScenarioListItem(BaseModel):
+    """Trimmed-down list-view entry. Excludes the heavy `result` payload to keep
+    library listings small; clients fetch the full record by id."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    tags: list[str] = Field(default_factory=list)
+    created_at: datetime
+    owner_label: str | None = None
+    portfolio_name: str
+    portfolio_key: str
+    requested_as_of_date: date
+    effective_as_of_date: date
+    narrative_mode: Literal["grounded", "analog_only"]
+    total_pnl: float
+
+
+class SavePortfolioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = ""
+    owner_label: str | None = None
+
+
+class SavedPortfolioRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    description: str = ""
+    created_at: datetime
+    created_by: str = "admin"
+    owner_label: str | None = None
+
+
+class PortfolioSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    as_of_date: date
+    holdings: dict[str, float]
+    notes: str = ""
+    owner_label: str | None = None
+
+
+class PortfolioSnapshotRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    portfolio_id: str
+    as_of_date: date
+    holdings: dict[str, float]
+    notes: str = ""
+    created_at: datetime
+    created_by: str = "admin"
+    owner_label: str | None = None
