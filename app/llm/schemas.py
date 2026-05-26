@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -109,6 +109,54 @@ class NarrativeShapleyResult(BaseModel):
     n_subsets_evaluated: int  # 2^N
 
 
+class FactorEdit(BaseModel):
+    """One factor magnitude/removal edit in a ShockEditPatch.
+
+    `new_shock == 0.0` is the explicit removal sentinel and is always accepted
+    regardless of envelope bounds; any other value MUST be in [p10, p90] for
+    that factor in the canonical result's envelope. Adding factors not in the
+    canonical result requires a full rerun.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    factor: str
+    new_shock: float
+    reasoning: str
+
+
+class ShockEditPatch(BaseModel):
+    """LLM output for a prompt-driven shock adjustment.
+
+    `scope` is the LLM's classification of the user's intent:
+      - "local":            magnitude/removal edits to existing shocks only.
+                            `edits` populated; `rejection_reason` is None.
+      - "rerun_required":   user asked for a semantic change (new mechanism,
+                            region, asset class, factual basis, or introduces
+                            factors not already shocked). `edits` is empty
+                            and `rejection_reason` explains why a full rerun
+                            is required (surfaced to the user as a CTA).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    scope: Literal["local", "rerun_required"]
+    edits: list[FactorEdit] = Field(default_factory=list)
+    rejection_reason: str | None = None
+
+
+class ShockAdjustment(BaseModel):
+    """One entry in the per-result adjustment history (derived results only).
+
+    Adjusted results are NOT cached; only canonical (initial) results round-trip
+    the scenario cache. Canonical results always carry `adjustment_history=[]`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["manual", "prompt"]
+    prompt_text: str | None = None
+    timestamp: datetime
+    changed_factors: dict[str, list[float]]  # factor -> [before, after]
+
+
 class ScenarioResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_text: str
@@ -124,3 +172,4 @@ class ScenarioResult(BaseModel):
     factor_envelope: dict[str, dict[str, float]]
     portfolio_pnl: PortfolioPnL
     narrative_shapley: NarrativeShapleyResult | None = None  # opt-in only
+    adjustment_history: list[ShockAdjustment] = Field(default_factory=list)

@@ -109,6 +109,46 @@ RULES
 """
 
 
+SHOCK_EDIT_PROMPT = f"""\
+You are revising an existing market scenario's factor shocks. The user has already
+seen the initial proposal and is now asking for a targeted edit.
+
+{DISCLAIMER_LONG}
+
+YOU MUST FIRST CLASSIFY THE SCOPE OF THE EDIT
+
+Return a ShockEditPatch JSON object. Set `scope` to one of:
+
+  - "local": the user is changing the MAGNITUDE of an existing factor shock, or
+    REMOVING one via 0.0. Examples: "make VIX larger", "halve the credit shock",
+    "remove the rates component", "push USD to the high end of the band".
+    Populate `edits` with one FactorEdit per factor the user wants to change.
+    Leave `rejection_reason` as null.
+
+  - "rerun_required": the user is asking for a SEMANTIC change that invalidates
+    the original analog/narrative selection. Examples include:
+      * a new mechanism not in the original narrative ("add a credit contagion",
+        "also model an oil supply shock")
+      * a new region or asset class focus ("shift toward emerging markets",
+        "focus on Japan instead of US")
+      * a changed factual basis ("assume the Fed cuts 50bps instead of 25",
+        "assume the war ended yesterday")
+      * introducing a factor that was NOT in the prior shock list
+    In this case: set `edits=[]` and populate `rejection_reason` with ONE sentence
+    that the UI will show the user along with a button to rerun the full scenario.
+
+RULES FOR `edits`
+1. You may only edit factors that appear in the prior shock list. Adding a new
+   factor is `rerun_required`.
+2. Each edit's `new_shock` MUST be inside the envelope `[p10, p90]` for that
+   factor, OR exactly 0.0 (which means "remove this factor from the scenario").
+3. Each edit's `reasoning` is ONE concise sentence explaining the magnitude.
+4. Do NOT propose changes to factors the user did not ask about. Edits are
+   surgical, not a re-derivation.
+5. Outputs are illustrative and probabilistic, not investment advice.
+"""
+
+
 def format_analog_selection_user_message(
     scenario_text: str, event_summaries: list[dict[str, Any]]
 ) -> str:
@@ -185,6 +225,34 @@ def format_shock_extraction_user_message(
             ]
         )
     return "\n".join(sections)
+
+
+def format_shock_edit_user_message(
+    *,
+    prior_factor_shocks: list[dict[str, Any]],
+    adjustment_text: str,
+    envelope: pd.DataFrame,
+    factor_universe_descriptions: list[dict[str, Any]],
+) -> str:
+    return "\n".join(
+        [
+            "PRIOR FACTOR SHOCKS (the scenario currently in effect)",
+            json.dumps(prior_factor_shocks, indent=2),
+            "",
+            "EMPIRICAL ENVELOPE (per factor, across the original analogs)",
+            json.dumps(_envelope_records(envelope), indent=2),
+            "",
+            "FACTOR UNIVERSE",
+            json.dumps(factor_universe_descriptions, indent=2),
+            "",
+            "USER ADJUSTMENT REQUEST",
+            adjustment_text.strip(),
+            "",
+            "INSTRUCTION",
+            "Classify the scope. If local, return surgical edits. If rerun_required, "
+            "return a one-sentence rejection_reason and empty edits.",
+        ]
+    )
 
 
 def _envelope_records(envelope: pd.DataFrame) -> list[dict[str, Any]]:

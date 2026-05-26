@@ -20,16 +20,19 @@ from app.llm.prompts import (
     ANALOG_SELECTION_PROMPT,
     DECOMPOSITION_PROMPT,
     GROUNDED_NARRATIVE_PROMPT,
+    SHOCK_EDIT_PROMPT,
     SHOCK_EXTRACTION_PROMPT,
     format_analog_selection_user_message,
     format_decomposition_user_message,
     format_grounded_narrative_user_message,
+    format_shock_edit_user_message,
     format_shock_extraction_user_message,
 )
 from app.llm.schemas import (
     AnalogSelectionOutput,
     Citation,
     DecompositionOutput,
+    ShockEditPatch,
     ShockProposalOutput,
 )
 from app.llm.validation import validate_shock_proposal
@@ -155,6 +158,37 @@ class GeminiClient:
             ),
         )
         return response.text or "", extract_citations(response)
+
+    def propose_shock_edit(
+        self,
+        *,
+        prior_factor_shocks: list[dict],
+        adjustment_text: str,
+        envelope: pd.DataFrame,
+        factor_universe_descriptions: list[dict],
+    ) -> ShockEditPatch:
+        """Patch-only adjustment call: returns a ShockEditPatch, no Google Search.
+
+        Caller is responsible for re-validating the patch against the canonical
+        scenario's envelope and factor-name set (see `validate_factor_overrides`).
+        """
+        user_msg = format_shock_edit_user_message(
+            prior_factor_shocks=prior_factor_shocks,
+            adjustment_text=adjustment_text,
+            envelope=envelope,
+            factor_universe_descriptions=factor_universe_descriptions,
+        )
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=user_msg,
+            config=self._types.GenerateContentConfig(
+                system_instruction=SHOCK_EDIT_PROMPT,
+                temperature=self._temperature,
+                response_mime_type="application/json",
+                response_schema=ShockEditPatch,
+            ),
+        )
+        return ShockEditPatch.model_validate_json(response.text)
 
     def _extract_structured_shocks(
         self,

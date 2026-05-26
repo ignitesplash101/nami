@@ -20,7 +20,7 @@ import {
   getSamplePortfolios,
   getSampleScenarios,
   lock,
-  runScenario,
+  runScenarioStream,
   unlock,
   validatePortfolio
 } from "./api";
@@ -30,12 +30,16 @@ import {
   formatPercent,
   topContributor
 } from "./charts";
+import { AdjustmentPanel } from "./AdjustmentPanel";
+import { RunProgress } from "./RunProgress";
 import type {
   AccessResponse,
   AttributionMethod,
   SamplePortfolio,
   SampleScenario,
-  ScenarioRunResponse
+  ScenarioResult,
+  ScenarioRunResponse,
+  SsePipelineStage
 } from "./types";
 
 type WaterfallTrace = {
@@ -98,11 +102,16 @@ export default function App() {
   const [customRows, setCustomRows] = useState<HoldingRow[]>(defaultCustomRows);
   const [scenarioText, setScenarioText] = useState("");
   const [resultEnvelope, setResultEnvelope] = useState<ScenarioRunResponse | null>(null);
+  const [canonicalSnapshot, setCanonicalSnapshot] = useState<ScenarioResult | null>(null);
   const [methodology, setMethodology] = useState("");
   const [attributionMethod, setAttributionMethod] = useState<AttributionMethod>("naive");
   const [isRunning, setIsRunning] = useState(false);
   const [isDecomposing, setIsDecomposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentStage, setCurrentStage] = useState<SsePipelineStage | null>(null);
+  const [stageStatus, setStageStatus] = useState<"start" | "done" | null>(null);
+  const [completedStages, setCompletedStages] = useState<Set<SsePipelineStage>>(new Set());
+  const [cacheHit, setCacheHit] = useState(false);
 
   useEffect(() => {
     async function boot() {
@@ -150,6 +159,10 @@ export default function App() {
     if (!access) return;
     setError(null);
     setIsRunning(true);
+    setCurrentStage(null);
+    setStageStatus(null);
+    setCompletedStages(new Set());
+    setCacheHit(false);
     try {
       const payload = access.permissions.free_text_scenario
         ? {
@@ -163,8 +176,22 @@ export default function App() {
             sample_scenario_key: scenarioKey,
             portfolio_key: portfolioKey
           };
-      const response = await runScenario(payload);
+      const response = await runScenarioStream(payload, (event) => {
+        if (event.stage === "cache_hit") {
+          setCacheHit(true);
+          return;
+        }
+        if (event.stage === "done" || event.stage === "error") {
+          return;
+        }
+        setCurrentStage(event.stage);
+        setStageStatus(event.status ?? null);
+        if (event.status === "done") {
+          setCompletedStages((prev) => new Set(prev).add(event.stage));
+        }
+      });
       setResultEnvelope(response);
+      setCanonicalSnapshot(response.result);
       setAttributionMethod(
         response.result.portfolio_pnl.by_factor_conditional_shapley ? "conditional" : "naive"
       );
@@ -173,6 +200,14 @@ export default function App() {
     } finally {
       setIsRunning(false);
     }
+  }
+
+  function handleAdjustmentResult(response: ScenarioRunResponse) {
+    setResultEnvelope(response);
+  }
+
+  function handlePrefillRerun(text: string) {
+    setScenarioText(text);
   }
 
   async function handleDecompose() {
@@ -243,6 +278,15 @@ export default function App() {
           onRun={handleRun}
         />
 
+        {isRunning ? (
+          <RunProgress
+            currentStage={currentStage}
+            stageStatus={stageStatus}
+            completedStages={completedStages}
+            cacheHit={cacheHit}
+          />
+        ) : null}
+
         <ResultsPanel
           envelope={resultEnvelope}
           attributionMethod={attributionMethod}
@@ -251,6 +295,18 @@ export default function App() {
           isDecomposing={isDecomposing}
           onDecompose={handleDecompose}
         />
+
+        {resultEnvelope &&
+        canonicalSnapshot &&
+        access?.permissions.free_text_scenario &&
+        resultEnvelope.cache_key ? (
+          <AdjustmentPanel
+            envelope={resultEnvelope}
+            canonicalSnapshot={canonicalSnapshot}
+            onResult={handleAdjustmentResult}
+            prefillRerun={handlePrefillRerun}
+          />
+        ) : null}
 
         <MethodologyPanel markdown={methodology} onRefresh={refreshAccess} />
       </section>

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+import queue
+import threading
+from collections.abc import Generator
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.portfolio_validation import validate_holdings
@@ -17,6 +21,7 @@ from app.api.schemas import (
     PortfolioValidationResponse,
     SamplePortfolioResponse,
     SampleScenarioResponse,
+    ScenarioAdjustRequest,
     ScenarioRunRequest,
     ScenarioRunResponse,
     UnlockRequest,
@@ -38,7 +43,11 @@ from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio
 from app.factors.analogs import HistoricalEvent, load_events
 from app.llm.gemini_client import GeminiClient
 from app.llm.narrative_shapley import compute_narrative_shapley
-from app.llm.scenario import run_scenario
+from app.llm.scenario import (
+    adjust_scenario_shocks,
+    compute_scenario_cache_key,
+    run_scenario,
+)
 from app.utils.disclaimers import DISCLAIMER_SHORT
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -185,7 +194,95 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
     scenario_text = _resolve_scenario_text(body, mode)
     portfolio = _resolve_portfolio(body, mode)
     result = run_scenario(scenario_text, portfolio)
-    return ScenarioRunResponse(result=result, analog_events=_analog_events(load_events()))
+    cache_key = compute_scenario_cache_key(scenario_text, portfolio, market_date=result.market_date)
+    return ScenarioRunResponse(
+        result=result,
+        analog_events=_analog_events(load_events()),
+        cache_key=cache_key,
+    )
+
+
+@api.post("/api/scenarios/run-stream")
+def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> StreamingResponse:
+    """Same as /run but emits SSE progress events while the pipeline executes.
+
+    Event payloads:
+        {"stage": "<name>", "status": "start"|"done"}
+        {"stage": "done", "result": <ScenarioRunResponse>}   # final
+        {"stage": "error", "message": "..."}                  # on failure
+    """
+    mode = access_mode_for_request(request)
+    scenario_text = _resolve_scenario_text(body, mode)
+    portfolio = _resolve_portfolio(body, mode)
+
+    events_q: queue.Queue[dict] = queue.Queue()
+    SENTINEL = object()
+
+    def progress(stage: str, status: str) -> None:
+        events_q.put({"stage": stage, "status": status})
+
+    def worker() -> None:
+        try:
+            result = run_scenario(scenario_text, portfolio, progress=progress)
+            cache_key = compute_scenario_cache_key(
+                scenario_text, portfolio, market_date=result.market_date
+            )
+            response = ScenarioRunResponse(
+                result=result,
+                analog_events=_analog_events(load_events()),
+                cache_key=cache_key,
+            )
+            events_q.put({"stage": "done", "result": response.model_dump(mode="json")})
+        except Exception as exc:  # noqa: BLE001 — stream errors as SSE events
+            events_q.put({"stage": "error", "message": str(exc)})
+        finally:
+            events_q.put(SENTINEL)
+
+    def generator() -> Generator[str, None, None]:
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        while True:
+            event = events_q.get()
+            if event is SENTINEL:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+        thread.join(timeout=1.0)
+
+    return StreamingResponse(generator(), media_type="text/event-stream")
+
+
+@api.post("/api/scenarios/adjust-shocks", response_model=ScenarioRunResponse)
+def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> ScenarioRunResponse:
+    mode = access_mode_for_request(request)
+    if not can_use_free_text_scenario(mode):
+        raise HTTPException(status_code=403, detail="Shock adjustment requires admin mode.")
+
+    if (body.overrides is None) == (body.adjustment_text is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Exactly one of `overrides` or `adjustment_text` must be set.",
+        )
+
+    try:
+        result = adjust_scenario_shocks(
+            body.cache_key,
+            overrides=body.overrides,
+            adjustment_text=body.adjustment_text,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # scope="rerun_required" from the LLM patch path. The message is the
+        # rejection_reason the UI surfaces to the user.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ScenarioRunResponse(
+        result=result,
+        analog_events=_analog_events(load_events()),
+        cache_key=body.cache_key,
+    )
 
 
 @api.post("/api/scenarios/decompose", response_model=ScenarioRunResponse)

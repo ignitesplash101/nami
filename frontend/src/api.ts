@@ -3,8 +3,10 @@ import type {
   PortfolioValidationResponse,
   SamplePortfolio,
   SampleScenario,
+  ScenarioAdjustRequest,
   ScenarioResult,
-  ScenarioRunResponse
+  ScenarioRunResponse,
+  SseProgressEvent
 } from "./types";
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -76,10 +78,68 @@ export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunRes
   });
 }
 
+export async function runScenarioStream(
+  payload: RunScenarioPayload,
+  onProgress: (event: SseProgressEvent) => void
+): Promise<ScenarioRunResponse> {
+  const response = await fetch("/api/scenarios/run-stream", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: ScenarioRunResponse | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIdx;
+    while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, separatorIdx);
+      buffer = buffer.slice(separatorIdx + 2);
+      const dataLine = frame
+        .split("\n")
+        .find((line) => line.startsWith("data: "));
+      if (!dataLine) continue;
+      const event: SseProgressEvent = JSON.parse(dataLine.slice("data: ".length));
+      onProgress(event);
+      if (event.stage === "error") {
+        throw new Error(event.message ?? "Scenario stream failed.");
+      }
+      if (event.stage === "done" && event.result) {
+        finalResult = event.result;
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error("Scenario stream ended without a final result.");
+  }
+  return finalResult;
+}
+
 export function decomposeScenario(result: ScenarioResult): Promise<ScenarioRunResponse> {
   return requestJson<ScenarioRunResponse>("/api/scenarios/decompose", {
     method: "POST",
     body: JSON.stringify({ result })
+  });
+}
+
+export function adjustScenarioShocks(
+  payload: ScenarioAdjustRequest
+): Promise<ScenarioRunResponse> {
+  return requestJson<ScenarioRunResponse>("/api/scenarios/adjust-shocks", {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 

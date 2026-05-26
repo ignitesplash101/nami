@@ -75,8 +75,19 @@ class ScenarioRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     result: ScenarioResult
     analog_events: dict[str, AnalogEventResponse] = Field(default_factory=dict)
+    # Server-computed cache key for the canonical scenario. The client echoes this
+    # back on /api/scenarios/adjust-shocks; the server re-fetches the trusted
+    # canonical result from the GCS cache rather than trusting client-supplied data.
+    cache_key: str | None = None
 
 
 class NarrativeDecompositionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     result: ScenarioResult
+
+
+class ScenarioAdjustRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    cache_key: str
+    overrides: dict[str, float] | None = None  # manual mode: full factor->value map
+    adjustment_text: str | None = None  # prompt mode: natural-language edit

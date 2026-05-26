@@ -74,6 +74,13 @@ export interface NarrativeShapleyResult {
   n_subsets_evaluated: number;
 }
 
+export interface ShockAdjustment {
+  kind: "manual" | "prompt";
+  prompt_text: string | null;
+  timestamp: string;
+  changed_factors: Record<string, [number, number]>;
+}
+
 export interface ScenarioResult {
   scenario_text: string;
   market_date: string;
@@ -88,6 +95,7 @@ export interface ScenarioResult {
   factor_envelope: Record<string, Record<string, number>>;
   portfolio_pnl: PortfolioPnL;
   narrative_shapley: NarrativeShapleyResult | null;
+  adjustment_history: ShockAdjustment[];
 }
 
 export interface AnalogEvent {
@@ -102,6 +110,32 @@ export interface AnalogEvent {
 export interface ScenarioRunResponse {
   result: ScenarioResult;
   analog_events: Record<string, AnalogEvent>;
+  cache_key: string | null;
+}
+
+export interface ScenarioAdjustRequest {
+  cache_key: string;
+  overrides?: Record<string, number>;
+  adjustment_text?: string;
+}
+
+export type SsePipelineStage =
+  | "cache_check"
+  | "cache_hit"
+  | "market"
+  | "analogs"
+  | "envelope"
+  | "narrative"
+  | "betas"
+  | "attribution"
+  | "done"
+  | "error";
+
+export interface SseProgressEvent {
+  stage: SsePipelineStage;
+  status?: "start" | "done";
+  result?: ScenarioRunResponse;
+  message?: string;
 }
 
 export interface PortfolioValidationResponse {

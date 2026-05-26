@@ -25,7 +25,8 @@ function fixtureResult(): ScenarioResult {
       by_ticker_periphery: { AAPL: -0.02, MSFT: 0 },
       by_ticker_total: { AAPL: -0.06, MSFT: -0.02 }
     },
-    narrative_shapley: null
+    narrative_shapley: null,
+    adjustment_history: []
   };
 }
 
