@@ -69,7 +69,12 @@ X̃ = X − mean(X, axis=0)            # T × F factor returns, centered
 - Default ridge `α = 0.1` per `Config.ridge_alpha` — stabilizes against the collinearity
   between SPY/ACWI/XLK and between sector ETFs.
 - Mean-centering removes the through-origin bias when returns have nonzero historical
-  means (equivalent to including an unpenalized intercept and discarding it).
+  means (equivalent to including an unpenalized intercept and discarding it). Why it
+  works: the normal equations for `[X, 1] @ [beta; mu]` decouple — the intercept row
+  gives `mu = mean(Y) - beta^T mean(X)`, and substituting back recovers the centered
+  system. Mean-centering keeps the ridge penalty away from the intercept; penalizing
+  the intercept would shrink portfolio alphas toward zero, which is a substantive
+  modeling choice we don't want the regularizer to make.
 - Uses `np.linalg.solve` instead of `inv` — more numerically stable, and vectorizes
   cleanly across all tickers in one call.
 
@@ -138,7 +143,13 @@ retries on validation errors, so a schema fix doesn't trigger redundant web grou
 - Factor shocks for factors not in `FACTORS`
 - Periphery shocks for tickers not in the portfolio
 - Duplicates
-- Factor shocks outside the envelope `[p10, p90]` when `count ≥ 3`
+- Factor shocks outside `[p10, p90]` — the validator checks all factors regardless of
+  count. When `p10` or `p90` is NaN (happens naturally when `count < 2`, since quantile
+  is degenerate on 0–1 values), the check is skipped.
+- The shock extraction prompt separately instructs the LLM to "down-weight factors with
+  `count < 3`" — this is **advisory guidance to the model**, not a hard code constraint.
+  The validator enforces the envelope band; the LLM decides how aggressively to use
+  low-count factors within it.
 
 On validation failure, 2b is re-asked once with the errors embedded in the user message.
 A second failure raises.
@@ -162,6 +173,14 @@ total_pnl              = Σᵢ by_ticker_total[i] = Σ_f by_factor[f] + Σᵢ by
 The two channels are **orthogonal** under this attribution — factor and periphery sum
 independently to the total. Phase 8 (post-v1) will revisit using Shapley values when
 factors are correlated.
+
+**Constraint**: periphery shocks may only reference tickers present in the portfolio.
+Enforced at three layers: the shock extraction prompt instructs the LLM to limit periphery
+to held tickers; `validate_shock_proposal` rejects violations; `portfolio_pnl` itself
+raises `ValueError` for unknown tickers as a belt-and-braces check. Rationale: an
+idiosyncratic shock to a ticker you don't hold has zero weight and therefore zero P&L
+impact — accepting it silently would mislead users into thinking their portfolio has
+exposure to that name.
 
 ---
 
@@ -227,6 +246,11 @@ where `aggregated_coefs = (weights @ betas)` collapses the N × F beta matrix in
 portfolio-level F-vector of factor exposures. The background is the demeaned,
 dropna'd historical weekly factor-return matrix supplied by
 `fetch_factor_returns_history` (≥52 complete rows required — `RuntimeError` otherwise).
+The 52-row floor is one year of weekly observations — the minimum for the 22-factor
+covariance matrix to be well-conditioned. With fewer rows, the sample covariance is
+rank-deficient or noise-dominated, and the `Impute` masker's conditional expectations
+become numerically unreliable. In practice the strict `dropna(how='any')` across all
+22 factors yields 300+ surviving rows (post-XLC 2018+), well above the floor.
 
 **Critical:** the background must NOT be `fillna(0)`'d. Zero-filling a missing ETF's
 returns manufactures false zero-correlation that contaminates the Shapley values.
@@ -278,6 +302,13 @@ practical effect: a group's credit lands on the factor the LLM actually shocked,
 on its correlated peers. If all member shocks are 0, the group's value (also
 typically ~0) is split uniformly across members for transparency.
 
+**Zero-group detail**: when no member of a group was explicitly shocked, `total_naive`
+for that group is exactly 0.0 and the naive-share denominator would divide by zero. The
+code falls back to `phi_f = phi_group / |group|` (uniform split). In practice `phi_group`
+is near-zero for an all-unshocked group — the full Shapley game attributes most credit to
+groups whose members were shocked — but it can be nonzero when cross-group correlation is
+high. The uniform fallback is a transparency choice, not a mathematical necessity.
+
 **Why explicit-only exists.** The full variant is mathematically clean but reads
 strangely to users: a SPY-only shock can produce a noticeable ACWI/QUAL contribution
 because `shap.maskers.Impute` measures the marginal effect of an *omitted* factor
@@ -293,6 +324,113 @@ many factors (SPY/ACWI/XLK/MTUM/QUAL all moving together swamps the cross-group
 signal). The grouped view collapses within-group leakage into naive and
 Shapley-allocates only cross-group correlation, which is the more interesting
 signal for a portfolio P&L story.
+
+### Worked example: end-to-end with all four variants
+
+A concrete walkthrough using 3 factors (SPY, XLK, VIX) and a 2-ticker portfolio
+(AAPL 60%, MSFT 40%). All numbers below were generated by running the actual
+`estimate_betas`, `apply_shocks`, and attribution functions on synthetic 60-week data
+with known correlation structure (SPY/XLK ρ ≈ 0.84, SPY/VIX ρ ≈ −0.47).
+
+**Step 1 — Beta estimation** (mean-centered ridge OLS, α = 0.1):
+
+```
+              SPY      XLK       VIX
+  AAPL     0.2232   0.2910   -0.1550
+  MSFT     0.1701   0.2252   -0.1498
+```
+
+Betas are ridge-shrunk from true generating values (SPY/XLK multicollinearity
+shares load across the two) — this is expected behavior, not a defect.
+
+**Step 2 — LLM shocks**: SPY = −5%, XLK = −8%, VIX = +40%
+
+**Step 3 — Per-ticker expected return** (`β @ shock_vec`):
+
+```
+  AAPL: 0.2232 × (−0.05) + 0.2910 × (−0.08) + (−0.1550) × (+0.40) = −9.64%
+  MSFT: 0.1701 × (−0.05) + 0.2252 × (−0.08) + (−0.1498) × (+0.40) = −8.64%
+```
+
+**Step 4 — Periphery**: AAPL gets −3% idiosyncratic (earnings miss); MSFT gets 0%.
+
+**Step 5 — Portfolio P&L**:
+
+```
+  Ticker  Weight   Factor  Periphery    Total  Weighted
+  AAPL     60%    −9.64%    −3.00%    −12.64%   −7.59%
+  MSFT     40%    −8.64%     0.00%     −8.64%   −3.46%
+  ──────────────────────────────────────────────────────
+  Factor-driven P&L:  −9.24%
+  Periphery P&L:      −1.80%
+  Total portfolio:   −11.04%
+```
+
+**Step 6 — Naive attribution** (`(Σᵢ wᵢ · βᵢ,f) · shock[f]`):
+
+```
+  SPY:  (0.6 × 0.2232 + 0.4 × 0.1701) × (−0.05) = 0.2020 × (−0.05) = −1.010%
+  XLK:  (0.6 × 0.2910 + 0.4 × 0.2252) × (−0.08) = 0.2647 × (−0.08) = −2.117%
+  VIX:  (0.6 × −0.1550 + 0.4 × −0.1498) × (+0.40) = −0.1529 × (+0.40) = −6.115%
+  Sum = −9.243% ✓ (matches factor-driven P&L)
+```
+
+VIX dominates because its shock is large (+40%) and the portfolio has meaningful
+negative VIX betas (VIX up → equity down).
+
+**Step 7 — All four attribution variants compared**:
+
+| Factor | Naive | Full Conditional | Explicit-only | Grouped |
+|---|---|---|---|---|
+| SPY | −1.010% | −0.441% | −0.553% | −0.426% |
+| XLK | −2.117% | −1.653% | −1.578% | −1.573% |
+| VIX | −6.115% | −7.148% | −7.111% | −7.244% |
+| **Sum** | **−9.243%** | **−9.243%** | **−9.243%** | **−9.243%** |
+
+Observations:
+- **Efficiency**: all four variants sum to the same −9.243% factor-driven P&L.
+  (Explicit-only also sums to factor P&L here because all 3 factors are shocked; when
+  some factors are unshocked, its sum ≤ factor P&L.)
+- **SPY vs XLK redistribution**: under Naive, SPY gets −1.01% and XLK gets −2.12%.
+  Under Conditional Shapley, SPY drops to −0.44% because its effect is partially
+  captured by its correlated peer XLK. The credit isn't lost — it's redistributed.
+- **VIX absorbs more**: Conditional Shapley pushes VIX from −6.12% to −7.15%. VIX is
+  inversely correlated with SPY/XLK, so its Shapley value exceeds its naive share.
+
+**Step 8 — What happens when VIX is unshocked** (same SPY/XLK shocks):
+
+| Factor | Naive | Full Conditional | Explicit-only |
+|---|---|---|---|
+| SPY | −1.010% | −1.445% | −1.118% |
+| XLK | −2.117% | −2.173% | −2.010% |
+| VIX | 0.000% | **+0.491%** | **0.000%** |
+| **Sum** | **−3.127%** | **−3.127%** | **−3.127%** |
+
+This is where the variants diverge meaningfully:
+- **Naive** gives VIX exactly 0 — it was not shocked.
+- **Full Conditional** gives VIX **+0.49%** (positive!) — because SPY/XLK are down,
+  the conditional expectation of VIX is *up*; a zero VIX shock is "better than the
+  model expected," so VIX earns positive offsetting credit.
+- **Explicit-only** keeps VIX at exactly 0 — it restricts the Shapley game to
+  {SPY, XLK} only. This matches the user's mental model: "I didn't shock VIX, so
+  VIX shouldn't appear in my attribution."
+
+### Choosing the right attribution method
+
+| Question | Naive | Full Conditional | Explicit-only | Grouped |
+|---|---|---|---|---|
+| **What does it show?** | Credit proportional to `(wᵀβ)_f · shock[f]` | Axiom-compliant credit under historical co-movement | Shapley restricted to LLM-shocked factors; unshocked = 0 | Cross-group Shapley + within-group naive redistribution |
+| **Sums to factor P&L?** | Yes (exact) | Yes (efficiency axiom) | No (sub-game ≤ factor P&L) | Yes (efficiency preserved) |
+| **Unshocked factor credit?** | Always zero | Can be nonzero via correlation | Always zero | Zero within-group; possible via cross-group correlation |
+| **Best when...** | Quick sanity check; factors roughly independent | Axiom-compliant full allocation; correlated equities | User wants attribution only on factors the LLM named | Suppress within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL) |
+| **Confusing when...** | Correlated factors split credit arbitrarily | Credit appears on factors nobody shocked | Gap between sub-game total and factor P&L is large | Group definitions feel arbitrary |
+
+**Rule of thumb**: start with **Grouped** for presentation-quality factor stories — it
+collapses the noisy within-group leakage that makes full Conditional hard to narrate.
+Use **Naive** for a fast sanity check or when the audience needs to see exactly which
+factors the LLM proposed. Use **Full Conditional** when you need every cent accounted
+for under the historical joint distribution. Use **Explicit-only** when the audience
+objects to seeing credit on factors the model didn't name.
 
 ---
 

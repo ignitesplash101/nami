@@ -282,6 +282,16 @@ Users can now iterate on the LLM-proposed shocks without re-running the full pip
 - [x] **No `PROMPT_VERSION` bump needed.** New `adjustment_history` field on `ScenarioResult` uses `Field(default_factory=list)`, so cached v5 entries deserialize unchanged. Adjusted results are never cached, so the field never lands in the cache payload either.
 - [x] `tests/test_adjust_manual.py`, `tests/test_adjust_prompt.py`, `tests/test_api_adjust.py` — invariance tests (periphery/narrative/citations/analogs byte-for-byte unchanged), validation tests (missing/extra/out-of-envelope rejected, zero-removal accepted), endpoint tests (403/400/410/422 paths), SSE TestClient tests (progress + cache-hit + exception event paths).
 
+### Phase 10b — Methodology UX refactor
+The bottom-of-page methodology panel becomes a context-aware drawer; users can now deep-link from anywhere in the Results view straight to the relevant methodology section.
+
+- [x] **`MethodologyDrawer`** ([frontend/src/MethodologyDrawer.tsx](frontend/src/MethodologyDrawer.tsx)). Right-side slide-in drawer over a backdrop with body-scroll-lock and Esc-to-close (`useMethodologyDrawer.ts` hook). Auto-parses `docs/methodology.md` by splitting on `\n---\n`, slug-ifies section titles, renders an accordion — one expanded section at a time by default, scroll-spy nav at the top.
+- [x] **Deep-link API**: `methodologyDrawer.open(section?: string)` opens the drawer; if a section slug substring is provided, the drawer scrolls + expands the matching section on mount. Used by the AttributionGuide card and by the factor-name links in the shock table.
+- [x] **`AttributionGuide`** ([frontend/src/AttributionGuide.tsx](frontend/src/AttributionGuide.tsx)). A collapsible "Which method should I use?" card rendered under the attribution toggle. Shows the four methods with formulas + "best for" notes + a "Read full methodology" deep-link to the `factor-attribution` section of the drawer.
+- [x] **Clickable factor names**. Factors in the shock table render as `.factor-link` buttons; clicking opens the drawer to `factor-universe`. Replaces the prior inert `<td>{row.factor}</td>` with a route into the docs for users who don't recognize a factor name.
+- [x] **`docs/methodology.md` expansion (+142 lines)**: end-to-end worked example with 3 factors and a 2-ticker portfolio, showing actual numbers under all four attribution variants (full / explicit-only / grouped / naive) and an "unshocked-factor case" that demonstrates the correlation-credit difference. Decision table for choosing among the methods. Also: details on validation enforcement layers, zero-group fallback, 52-row background floor rationale, and the mean-centering normal-equations derivation.
+- [x] **Removed inline `MethodologyPanel`** from App.tsx — the drawer is the canonical surface; the prior bottom-of-page render was redundant. Methodology icon button in the top-bar (`.methodology-btn`) opens the drawer from anywhere.
+
 ---
 
 ## Key Design Decisions

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
 import Plot from "react-plotly.js";
 import {
   ArrowRight,
   BarChart3,
-  FileText,
+  BookOpen,
+
   Lock,
   LogOut,
   Shield,
@@ -31,7 +31,10 @@ import {
   topContributor
 } from "./charts";
 import { AdjustmentPanel } from "./AdjustmentPanel";
+import { AttributionGuide } from "./AttributionGuide";
+import { MethodologyDrawer } from "./MethodologyDrawer";
 import { RunProgress } from "./RunProgress";
+import { useMethodologyDrawer } from "./useMethodologyDrawer";
 import type {
   AccessResponse,
   AttributionMethod,
@@ -112,6 +115,7 @@ export default function App() {
   const [stageStatus, setStageStatus] = useState<"start" | "done" | null>(null);
   const [completedStages, setCompletedStages] = useState<Set<SsePipelineStage>>(new Set());
   const [cacheHit, setCacheHit] = useState(false);
+  const methodologyDrawer = useMethodologyDrawer();
 
   useEffect(() => {
     async function boot() {
@@ -256,6 +260,13 @@ export default function App() {
           <div className="status-strip">
             <span>{access?.access_mode ?? "loading"}</span>
             <span>{selectedPortfolio?.name ?? "No portfolio"}</span>
+            <button
+              className="methodology-btn"
+              onClick={() => methodologyDrawer.open()}
+              title="Open methodology"
+            >
+              <BookOpen size={16} />
+            </button>
           </div>
         </header>
 
@@ -294,6 +305,7 @@ export default function App() {
           canDecompose={Boolean(isAdmin && resultEnvelope)}
           isDecomposing={isDecomposing}
           onDecompose={handleDecompose}
+          onOpenMethodology={methodologyDrawer.open}
         />
 
         {resultEnvelope &&
@@ -308,8 +320,14 @@ export default function App() {
           />
         ) : null}
 
-        <MethodologyPanel markdown={methodology} onRefresh={refreshAccess} />
       </section>
+
+      <MethodologyDrawer
+        markdown={methodology}
+        isOpen={methodologyDrawer.isOpen}
+        initialSection={methodologyDrawer.initialSection}
+        onClose={methodologyDrawer.close}
+      />
     </main>
   );
 }
@@ -582,7 +600,8 @@ function ResultsPanel({
   setAttributionMethod,
   canDecompose,
   isDecomposing,
-  onDecompose
+  onDecompose,
+  onOpenMethodology
 }: {
   envelope: ScenarioRunResponse | null;
   attributionMethod: AttributionMethod;
@@ -590,6 +609,7 @@ function ResultsPanel({
   canDecompose: boolean;
   isDecomposing: boolean;
   onDecompose: () => void;
+  onOpenMethodology: (section?: string) => void;
 }) {
   if (!envelope) {
     return (
@@ -669,6 +689,7 @@ function ResultsPanel({
             </button>
           </div>
         </div>
+        <AttributionGuide onOpenMethodology={onOpenMethodology} />
         <Plot
           data={[
             {
@@ -716,7 +737,14 @@ function ResultsPanel({
             <tbody>
               {factorRows.map((row) => (
                 <tr key={row.factor}>
-                  <td>{row.factor}</td>
+                  <td>
+                    <button
+                      className="factor-link"
+                      onClick={() => onOpenMethodology("factor-universe")}
+                    >
+                      {row.factor}
+                    </button>
+                  </td>
                   <td>{formatPercent(row.shockApplied)}</td>
                   <td>{formatPercent(row.contribution)}</td>
                   <td>{row.reasoning}</td>
@@ -832,20 +860,6 @@ function ResultsPanel({
   );
 }
 
-function MethodologyPanel({ markdown }: { markdown: string; onRefresh: () => void }) {
-  return (
-    <section className="methodology result-card">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Methodology</p>
-          <h3>Model notes</h3>
-        </div>
-        <FileText size={18} />
-      </div>
-      {markdown ? <ReactMarkdown>{markdown}</ReactMarkdown> : <p className="muted">No methodology loaded.</p>}
-    </section>
-  );
-}
 
 function MiniHoldings({ holdings }: { holdings: Record<string, number> }) {
   return (
