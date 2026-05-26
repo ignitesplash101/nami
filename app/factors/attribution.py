@@ -85,10 +85,17 @@ def conditional_shapley_attribution_explicit(
 
     Unshocked factors stay at exactly 0.0 (matching naive's behavior for unshocked).
     Within the explicit sub-game, credit is allocated via Conditional Shapley using the
-    historical conditional distribution among only the named factors. The result sums
-    to `(wᵀβ_explicit) · shock_explicit`, which is generally < the full factor-driven
-    P&L — the gap is "unattributed factor P&L" that the full-Shapley variant would
-    spread across correlated peers.
+    historical conditional distribution among only the named factors.
+
+    Under nami's demeaned-background contract (`fetch_factor_returns_history` demeans
+    before this call), the sub-game's grand-coalition value equals
+    `(wᵀβ_explicit) · shock_explicit`, which is the full factor-driven P&L: factors
+    with shock=0 contribute 0 to factor-driven P&L by definition, so restricting the
+    Shapley game to shocked factors preserves the total. The distinguishing property
+    of this variant is **not** that the sum is smaller — it's that unshocked factors
+    stay at **exactly zero** regardless of historical correlation. Full Conditional
+    Shapley redistributes credit across correlated peers (including unshocked ones);
+    explicit-only suppresses that redistribution for the unshocked side.
 
     Why this variant: matches the user mental model "what did the LLM shock?". The
     full-Shapley variant can credit ACWI/QUAL when only SPY was shocked, which reads

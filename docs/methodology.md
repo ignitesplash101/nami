@@ -29,7 +29,12 @@ retrieved during grounding. Without citations the pipeline refuses to return.
 ## Factor universe (22 factors)
 
 All factors are tickers fetched via yfinance; each weekly "return" is the percent change in
-the factor's adjusted-close price.
+the factor's adjusted-close price. These are **tradeable-ETF proxies** for systematic risk
+factors, chosen for liquidity and observability rather than the canonical Fama-French
+portfolio-sort construction ([Fama & French, 1993](https://www.sciencedirect.com/science/article/abs/pii/0304405X93900235);
+[Fama & French, 2015](https://www.sciencedirect.com/science/article/abs/pii/S0304405X14002323);
+the momentum style factor MTUM follows the [Carhart, 1997](https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1997.tb03808.x)
+construction at the ETF level).
 
 | group | factors |
 |---|---|
@@ -67,7 +72,7 @@ X̃ = X − mean(X, axis=0)            # T × F factor returns, centered
 
 - Default lookback: 156 weeks (3 years) per `Config.beta_lookback_weeks`.
 - Default ridge `α = 0.1` per `Config.ridge_alpha` — stabilizes against the collinearity
-  between SPY/ACWI/XLK and between sector ETFs.
+  between SPY/ACWI/XLK and between sector ETFs ([Hoerl & Kennard, 1970](https://doi.org/10.1080/00401706.1970.10488634)).
 - Mean-centering removes the through-origin bias when returns have nonzero historical
   means (equivalent to including an unpenalized intercept and discarding it). Why it
   works: the normal equations for `[X, 1] @ [beta; mu]` decouple — the intercept row
@@ -171,8 +176,9 @@ total_pnl              = Σᵢ by_ticker_total[i] = Σ_f by_factor[f] + Σᵢ by
 ```
 
 The two channels are **orthogonal** under this attribution — factor and periphery sum
-independently to the total. Phase 8 (post-v1) will revisit using Shapley values when
-factors are correlated.
+independently to the total. Phase 8 (now shipped) added Conditional Shapley with the
+three variants documented below; Shapley redistributes credit *within* the factor
+channel only, never across the factor/periphery boundary.
 
 **Constraint**: periphery shocks may only reference tickers present in the portfolio.
 Enforced at three layers: the shock extraction prompt instructs the LLM to limit periphery
@@ -206,14 +212,21 @@ the LLM shocks SPY while leaving ACWI unshocked, naive attribution gives ACWI ex
 zero credit even though ACWI is what the SPY shock *implies* about global equities.
 Conversely, two near-identical factors that are both shocked can have their credit
 arbitrarily split based on which factor the LLM happened to name first.
+[Aas, Jullum, Løland (2021)](https://doi.org/10.1016/j.artint.2021.103502) motivates
+dependent-feature approximations to SHAP — measuring co-variation in the historical
+joint distribution rather than treating each feature in isolation — as the appropriate
+fix for this kind of correlation-driven attribution distortion.
 
 ### Conditional Shapley axioms
 
-Shapley values are the unique axiom-compliant credit allocation among:
+Shapley values are the unique axiom-compliant credit allocation among ([Shapley, 1953](https://www.degruyter.com/document/doi/10.1515/9781400881970-018/html)):
 - **Efficiency** — `Σ_f shapley[f] == factor-driven P&L`
 - **Symmetry** — factors with identical marginal effect get equal credit
 - **Linearity** — composing two games linearly composes the Shapley values
 - **Null player** — a factor with zero coefficient gets zero credit
+
+For the linear-model implementation we use [SHAP's `LinearExplainer`](https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html)
+with a `maskers.Impute` background ([Lundberg & Lee, 2017](https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html)).
 
 ### What Conditional Shapley is NOT
 
@@ -222,10 +235,18 @@ credit allocation under the historical conditional joint distribution* of factor
 returns. A factor with zero explicit LLM shock can receive nonzero Conditional
 Shapley credit because it is correlated with one that *was* shocked — the model's
 prediction at the conditional expectation differs from the prediction at the
-marginal expectation. This is the price of axiomatic credit allocation, not a bug,
-but it does mean Conditional Shapley should be read as "how much of the move is
-*explained by* factor f under the historical co-movement structure" rather than "how
-much would change if we toggled f in isolation."
+marginal expectation.
+
+[Janzing, Minorics, Blöbaum (2020)](https://proceedings.mlr.press/v108/janzing20a.html)
+frame this as a *modeling choice*: observational (conditional) and interventional
+Shapley answer different questions about feature attribution, and neither is universally
+"correct" — the choice depends on whether you want attribution under the empirical
+joint distribution or under feature-wise toggles. [Chen, Janizek, Lundberg, Lee (2020)](https://arxiv.org/abs/2006.16234)
+develop the same observation in depth ("True to the Model or True to the Data?").
+This is the price of axiomatic credit allocation, not a bug, but it does mean
+Conditional Shapley should be read as "how much of the move is *explained by* factor
+f under the historical co-movement structure" rather than "how much would change if
+we toggled f in isolation."
 
 The UI surfaces this honestly: rows labelled "No explicit LLM shock; attributed via
 correlation" show up only under Conditional Shapley, for factors the LLM didn't name
@@ -282,12 +303,17 @@ the credit across the correlated peer.
 Conditional Shapley ships in three flavors. All three are computed best-effort
 whenever a sufficient factor-return background is available; the API/UI surfaces
 all three under `PortfolioPnL.by_factor_conditional_shapley*` fields and the
-frontend picks which to render.
+frontend picks which to render. The taxonomy of Shapley operationalizations is
+discussed in [Sundararajan & Najmi (2020)](https://proceedings.mlr.press/v119/sundararajan20b.html);
+group-aware approaches related to (but distinct from) nami's grouped variant include
+[Frye, Rowat, Feige (2020)](https://proceedings.neurips.cc/paper/2020/hash/0d770c496aa3da6d2c3f2bd19e7b9d6b-Abstract.html)
+on asymmetric Shapley values and [Owen (1977)](https://link.springer.com/chapter/10.1007/978-3-642-45494-3_7)
+on coalition-structure values.
 
 | Variant | Players in the Shapley game | Sums to | When to read |
 |---|---|---|---|
 | **Full** (`by_factor_conditional_shapley`) | All F factors in the universe | Factor-driven P&L (efficiency axiom) | "How would credit flow under the full historical joint distribution?" |
-| **Explicit-only** (`by_factor_conditional_shapley_explicit`) | Only the factors the LLM explicitly shocked; unshocked factors stay at exactly 0.0 | A sub-game total ≤ factor-driven P&L | "Restrict attribution to factors the model actually named." Matches the user's mental model when reading "what did the LLM shock?" |
+| **Explicit-only** (`by_factor_conditional_shapley_explicit`) | Only the factors the LLM explicitly shocked; unshocked factors stay at exactly 0.0 | Factor-driven P&L (sub-game over shocked factors, under the demeaned-background contract) | "Restrict attribution to factors the model actually named." Matches the user's mental model when reading "what did the LLM shock?" |
 | **Grouped** (`by_factor_conditional_shapley_grouped`) | G=4 factor groups (market / sector / style / macro); within-group credit redistributed to members by naive weight | Factor-driven P&L (efficiency preserved) | "Collapse within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL) and only Shapley-allocate cross-group correlation." |
 
 **Within-group aggregation**: `conditional_shapley_attribution_grouped` aggregates
@@ -301,6 +327,14 @@ members proportionally to `(wᵀβ)_f · shock[f]` — the naive within-group sh
 practical effect: a group's credit lands on the factor the LLM actually shocked, not
 on its correlated peers. If all member shocks are 0, the group's value (also
 typically ~0) is split uniformly across members for transparency.
+
+**This redistribution rule is a design choice unique to nami, not derived from a
+Shapley-style axiom system.** It preserves efficiency by construction (by-naive-share
+within each group), and it has the UX property that shocked factors absorb the group's
+credit instead of correlated peers leaking credit to them. Alternative redistribution
+rules — uniform within-group, or [Owen (1977)](https://link.springer.com/chapter/10.1007/978-3-642-45494-3_7)-style
+coalition values that recursively apply Shapley within each group — would yield
+different per-factor attributions but the same group-level sums.
 
 **Zero-group detail**: when no member of a group was explicitly shocked, `total_naive`
 for that group is exactly 0.0 and the naive-share denominator would divide by zero. The
@@ -378,6 +412,13 @@ shares load across the two) — this is expected behavior, not a defect.
 VIX dominates because its shock is large (+40%) and the portfolio has meaningful
 negative VIX betas (VIX up → equity down).
 
+> **Note**: the specific Conditional Shapley values in the tables below are
+> illustrative — they may drift ±0.005 across `shap` library versions. The math
+> invariants (efficiency, sum-equality across variants, zero-on-unshocked for
+> explicit-only) are regression-tested in
+> [`tests/test_methodology_worked_example.py`](../tests/test_methodology_worked_example.py);
+> exact Shapley magnitudes are not pinned to specific library versions.
+
 **Step 7 — All four attribution variants compared**:
 
 | Factor | Naive | Full Conditional | Explicit-only | Grouped |
@@ -389,8 +430,11 @@ negative VIX betas (VIX up → equity down).
 
 Observations:
 - **Efficiency**: all four variants sum to the same −9.243% factor-driven P&L.
-  (Explicit-only also sums to factor P&L here because all 3 factors are shocked; when
-  some factors are unshocked, its sum ≤ factor P&L.)
+  (Explicit-only always sums to factor-driven P&L: the sub-game's grand-coalition
+  value is `Σ_{f∈shocked} (wᵀβ)_f · shock[f]`, which equals factor-driven P&L
+  because unshocked factors contribute zero to factor-driven P&L anyway. The
+  distinguishing property is that unshocked factors stay at exactly zero — no
+  correlation-driven credit. Step 8 below shows this concretely.)
 - **SPY vs XLK redistribution**: under Naive, SPY gets −1.01% and XLK gets −2.12%.
   Under Conditional Shapley, SPY drops to −0.44% because its effect is partially
   captured by its correlated peer XLK. The credit isn't lost — it's redistributed.
@@ -420,7 +464,7 @@ This is where the variants diverge meaningfully:
 | Question | Naive | Full Conditional | Explicit-only | Grouped |
 |---|---|---|---|---|
 | **What does it show?** | Credit proportional to `(wᵀβ)_f · shock[f]` | Axiom-compliant credit under historical co-movement | Shapley restricted to LLM-shocked factors; unshocked = 0 | Cross-group Shapley + within-group naive redistribution |
-| **Sums to factor P&L?** | Yes (exact) | Yes (efficiency axiom) | No (sub-game ≤ factor P&L) | Yes (efficiency preserved) |
+| **Sums to factor P&L?** | Yes (exact) | Yes (efficiency axiom) | Yes (sub-game on shocked factors only) | Yes (efficiency preserved) |
 | **Unshocked factor credit?** | Always zero | Can be nonzero via correlation | Always zero | Zero within-group; possible via cross-group correlation |
 | **Best when...** | Quick sanity check; factors roughly independent | Axiom-compliant full allocation; correlated equities | User wants attribution only on factors the LLM named | Suppress within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL) |
 | **Confusing when...** | Correlated factors split credit arbitrarily | Credit appears on factors nobody shocked | Gap between sub-game total and factor P&L is large | Group definitions feel arbitrary |
@@ -520,3 +564,64 @@ XLF beats SPY to the downside; Taiwan scenario → semis appear in periphery).
 - UI: `frontend/src/` (React + TypeScript + Plotly.js)
 
 For implementation conventions, see [`CLAUDE.md`](../CLAUDE.md).
+
+---
+
+## References
+
+The following sources ground the attribution methodology, the factor-model conventions,
+and the ridge-regression choice. Where a verified DOI / arXiv / publisher page is
+available it is linked; otherwise the entry cites by name and venue and a maintainer can
+swap in a verified link.
+
+- **Shapley, L. S. (1953).** *A value for n-person games.* In Kuhn & Tucker (eds.),
+  *Contributions to the Theory of Games II* (pp. 307–317). Princeton University Press.
+  Reprint: <https://www.degruyter.com/document/doi/10.1515/9781400881970-018/html>.
+  Origin of the Shapley value and the four axioms (efficiency, symmetry, linearity,
+  null player) the engine uses for factor-level credit allocation.
+- **Hoerl, A. E., & Kennard, R. W. (1970).** *Ridge regression: Biased estimation for
+  nonorthogonal problems.* *Technometrics* 12(1), 55–67.
+  DOI: [10.1080/00401706.1970.10488634](https://doi.org/10.1080/00401706.1970.10488634).
+  Foundation of the ridge regularization the beta-estimation step relies on.
+- **Fama, E. F., & French, K. R. (1993).** *Common risk factors in the returns on
+  stocks and bonds.* *Journal of Financial Economics* 33(1), 3–56.
+  <https://www.sciencedirect.com/science/article/abs/pii/0304405X93900235>.
+- **Carhart, M. M. (1997).** *On persistence in mutual fund performance.*
+  *Journal of Finance* 52(1), 57–82.
+  <https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1997.tb03808.x>.
+- **Fama, E. F., & French, K. R. (2015).** *A five-factor asset pricing model.*
+  *Journal of Financial Economics* 116(1), 1–22.
+  <https://www.sciencedirect.com/science/article/abs/pii/S0304405X14002323>.
+- **Lundberg, S. M., & Lee, S.-I. (2017).** *A unified approach to interpreting model
+  predictions.* In *Advances in Neural Information Processing Systems 30 (NeurIPS)*.
+  <https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html>.
+  Foundational SHAP paper; introduces `LinearExplainer` and the exact computation for
+  linear models that nami's `conditional_shapley_attribution` builds on.
+- **Janzing, D., Minorics, L., & Blöbaum, P. (2020).** *Feature relevance quantification
+  in explainable AI: A causal problem.* In *AISTATS, PMLR 108*.
+  <https://proceedings.mlr.press/v108/janzing20a.html>. Frames the observational
+  (conditional) vs interventional Shapley choice as a *modeling decision*, not a
+  universal correctness claim — the load-bearing citation for nami's "Conditional
+  Shapley ≠ causal attribution" disclaimer.
+- **Sundararajan, M., & Najmi, A. (2020).** *The many Shapley values for model
+  explanation.* In *ICML, PMLR 119*.
+  <https://proceedings.mlr.press/v119/sundararajan20b.html>. Taxonomy of Shapley
+  operationalizations relevant to the four-variants choice.
+- **Frye, C., Rowat, C., & Feige, I. (2020).** *Asymmetric Shapley values: Incorporating
+  causal knowledge into model-agnostic explainability.* In *NeurIPS 33*.
+  <https://proceedings.neurips.cc/paper/2020/hash/0d770c496aa3da6d2c3f2bd19e7b9d6b-Abstract.html>.
+  Related but distinct from nami's grouped variant.
+- **Owen, G. (1977).** *Values of games with a priori unions.* In Henn & Moeschlin
+  (eds.), *Mathematical Economics and Game Theory*. Springer.
+  <https://link.springer.com/chapter/10.1007/978-3-642-45494-3_7>. Coalition-structure
+  values; the lineage for "group-aware" credit allocations. nami's grouped variant is a
+  full-Shapley-then-redistribute design, NOT Owen's recursive coalition value.
+- **Aas, K., Jullum, M., & Løland, A. (2021).** *Explaining individual predictions when
+  features are dependent: More accurate approximations to Shapley values.*
+  *Artificial Intelligence* 298, 103502.
+  DOI: [10.1016/j.artint.2021.103502](https://doi.org/10.1016/j.artint.2021.103502).
+  Motivates dependent-feature SHAP approximations (which nami's `maskers.Impute` use).
+- **Chen, H., Janizek, J. D., Lundberg, S., & Lee, S.-I. (2020).** *True to the model
+  or true to the data?* arXiv:[2006.16234](https://arxiv.org/abs/2006.16234).
+  Develops the observational-vs-interventional choice as a modeling question in depth;
+  complements Janzing et al. (2020).

@@ -1,5 +1,7 @@
 # nami
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **波** — LLM-driven scenario explorer for equity portfolios.
 
 Describe a forward-looking market scenario in natural language; the engine grounds it against current market context (via Gemini web search), matches it to historical analogs, derives core and periphery factor shocks, and computes the portfolio P&L impact with cited reasoning.
@@ -413,7 +415,7 @@ gcloud builds submit --config cloudbuild.yaml
 
 ## License
 
-MIT (recommended for portfolio repos). Add `LICENSE` file before first public push.
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 ignitesplash101.
 
 ---
 
