@@ -36,22 +36,24 @@ export function SaveScenarioDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+  const openerRef = useRef<Element | null>(null);
 
+  // Dialog-specific focus management ONLY: body scroll lock + Escape are
+  // owned by the parent's useOverlay() (App.tsx::saveDialog). Capture the
+  // element that opened the dialog so we can restore focus on close, and
+  // focus the name input on open.
   useEffect(() => {
     if (!isOpen) return;
+    openerRef.current = document.activeElement;
     requestAnimationFrame(() => nameRef.current?.focus());
-
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      const opener = openerRef.current;
+      if (opener instanceof HTMLElement) {
+        opener.focus();
+      }
+      openerRef.current = null;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

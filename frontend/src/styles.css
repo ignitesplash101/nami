@@ -1227,6 +1227,7 @@ a {
 .save-dialog-body {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 16px 20px 24px;
   display: flex;
   flex-direction: column;
@@ -1384,4 +1385,54 @@ a {
 .snap-notes {
   margin: 4px 0 0 0;
   font-size: 12px;
+}
+
+/* Phase 11 mobile polish — close the gaps the responsive sweep missed. */
+@media (max-width: 640px) {
+  /* As-of date picker: outer flex stacks; the inner label uses a 2-col grid
+     so the icon+text stay inline on row 1 and the date input drops onto its
+     own full-width row instead of squeezing beside the label text. */
+  .asof-picker {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .asof-picker label {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    width: 100%;
+  }
+  .asof-picker input[type="date"] {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+  .asof-reset {
+    width: 100%;
+  }
+
+  /* Saved-scenario list rows: stack head + meta so long names don't crush
+     their right-aligned counterpart. Action buttons go full-width for tap. */
+  .saved-row-head,
+  .saved-row-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .saved-row-actions a,
+  .saved-row-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+  /* The scenario-name button was padding: 0 — bump for a real tap area
+     now that it's more isolated after the head stacks. */
+  .saved-open {
+    min-height: 40px;
+    padding: 6px 0;
+  }
+
+  /* Snapshot-create form: hardcoded 2-col grid collapses to single column. */
+  .snap-create {
+    grid-template-columns: 1fr;
+  }
 }
