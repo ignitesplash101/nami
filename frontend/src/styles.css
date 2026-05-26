@@ -21,7 +21,6 @@
 
 body {
   margin: 0;
-  min-width: 1100px;
   background:
     linear-gradient(90deg, rgba(139, 211, 255, 0.04) 1px, transparent 1px),
     linear-gradient(rgba(139, 211, 255, 0.035) 1px, transparent 1px),
@@ -53,12 +52,14 @@ button:disabled {
   display: grid;
   grid-template-columns: 360px minmax(720px, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .rail {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   overflow: auto;
   border-right: 1px solid var(--line);
   background: rgba(7, 10, 15, 0.88);
@@ -209,7 +210,7 @@ textarea {
   background: #0b1018;
   color: var(--text);
   outline: none;
-  padding: 10px 11px;
+  padding: 12px;
 }
 
 textarea {
@@ -223,6 +224,26 @@ textarea:focus {
   border-color: var(--cyan);
 }
 
+/* Larger slider thumbs for touch + parity with desktop accent. */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--cyan);
+  cursor: pointer;
+  border: 0;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--cyan);
+  cursor: pointer;
+  border: 0;
+}
+
 .primary-button,
 .ghost-button,
 .unlock-row button,
@@ -231,7 +252,7 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 13px;
   color: var(--text);
 }
@@ -424,7 +445,8 @@ a {
   background: none;
   border: 1px solid var(--line);
   color: var(--muted);
-  padding: 4px 8px;
+  padding: 8px;
+  min-height: 36px;
   border-radius: 6px;
   cursor: pointer;
   display: flex;
@@ -435,6 +457,12 @@ a {
 .methodology-btn:hover {
   color: var(--cyan);
   border-color: var(--cyan);
+}
+
+/* Hamburger trigger for the rail drawer. Hidden at desktop; shown via media
+   query below. Uses .methodology-btn baseline styling for visual consistency. */
+.rail-toggle-btn {
+  display: none;
 }
 
 .drawer-backdrop {
@@ -913,4 +941,199 @@ a {
 .adjustment-history .changes {
   font-family: ui-monospace, SFMono-Regular, monospace;
   color: #b8c4d3;
+}
+
+/* ============================================================================
+ * Rail drawer (off-canvas, left-anchored). Mirrors .drawer-panel for the
+ * methodology drawer but slides in from the left. Reuses .drawer-backdrop and
+ * .drawer-header / .drawer-close defined above.
+ * ========================================================================== */
+.rail-drawer-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(360px, 100vw);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.4);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  animation: slideInLeft 0.25s ease-out;
+  overscroll-behavior: contain;
+}
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.rail-drawer-body {
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 24px;
+}
+.drawer-body {
+  overscroll-behavior: contain;
+}
+
+/* ============================================================================
+ * Mobile + tablet responsive overrides.
+ *
+ * Breakpoints:
+ *   - Tablet / phone-landscape: max-width: 1079.98px
+ *   - Phone:                    max-width: 640px
+ *   - Tiny phone:               max-width: 380px
+ *
+ * Desktop layout (>=1080px) is the baseline above; these blocks override.
+ * ========================================================================== */
+
+@media (max-width: 1079.98px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .rail-toggle-btn {
+    display: inline-flex;
+    order: -1;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .scenario-grid {
+    grid-template-columns: 1fr;
+  }
+  .scenario-text {
+    grid-row: auto;
+  }
+  .two-column {
+    grid-template-columns: 1fr;
+  }
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Touch targets: bump to 44px for the iOS/Material guideline. */
+  .primary-button,
+  .ghost-button,
+  .unlock-row button,
+  .segmented button {
+    min-height: 44px;
+  }
+  input:not([type="range"]),
+  select {
+    min-height: 44px;
+  }
+  .methodology-btn {
+    min-height: 40px;
+  }
+  /* Methodology markdown tables: scroll horizontally inside .section-content
+     so they don't force the drawer panel itself wider than the viewport. */
+  .section-content {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .workbench {
+    padding: 16px 14px 32px;
+  }
+  .topbar h2 {
+    font-size: 1.25rem;
+  }
+  /* Hide the duplicated portfolio-name chip on phone (it's in the rail drawer).
+     Keeps the topbar from wrapping to three rows on narrow phones. */
+  .status-strip span.portfolio-name {
+    display: none;
+  }
+
+  /* Card heading: stack the h3 above any inline button/toggle so the segmented
+     attribution control isn't squeezed next to the chart title. */
+  .card-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .card-heading .segmented {
+    width: 100%;
+  }
+
+  /* Guide grid: collapse the 2x2 method comparison to a single column on phone. */
+  .guide-methods {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tables inside .table-scroll: force a min-width so wide tables scroll
+     horizontally instead of squishing to unreadable widths. Compact padding
+     and font for touch readability. */
+  .table-scroll {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+    position: relative;
+  }
+  .table-scroll::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    background: linear-gradient(
+      to right,
+      rgba(13, 22, 36, 0),
+      rgba(13, 22, 36, 0.6)
+    );
+    pointer-events: none;
+  }
+  .table-scroll > table {
+    min-width: 480px;
+  }
+  .table-scroll th,
+  .table-scroll td {
+    padding: 6px 8px;
+    font-size: 0.8rem;
+  }
+
+  /* AdjustmentPanel: stack slider/number/Remove vertically; full-width
+     controls so the touch keyboard doesn't crush them. */
+  .adjust-row-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .adjust-row-controls input[type="range"] {
+    width: 100%;
+  }
+  .adjust-row-controls input[type="number"] {
+    width: 100%;
+    min-height: 44px;
+  }
+  .adjust-row-controls button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .adjust-prompt textarea {
+    min-height: 96px;
+  }
+
+  /* RunProgress stepper: vertical list reads more clearly during the 10-20s
+     wait than a wrapped horizontal stepper. */
+  .run-progress ol {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .run-progress li .label {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 380px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
 }

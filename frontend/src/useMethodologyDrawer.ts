@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useOverlay } from "./useOverlay";
 
 export interface MethodologyDrawerState {
   isOpen: boolean;
@@ -8,37 +9,21 @@ export interface MethodologyDrawerState {
 }
 
 export function useMethodologyDrawer(): MethodologyDrawerState {
-  const [isOpen, setIsOpen] = useState(false);
   const [initialSection, setInitialSection] = useState<string | null>(null);
+  const overlay = useOverlay({ onClose: () => setInitialSection(null) });
 
-  const open = useCallback((section?: string) => {
-    setInitialSection(section ?? null);
-    setIsOpen(true);
-  }, []);
+  const open = useCallback(
+    (section?: string) => {
+      setInitialSection(section ?? null);
+      overlay.open();
+    },
+    [overlay]
+  );
 
-  const close = useCallback(() => {
-    setIsOpen(false);
-    setInitialSection(null);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setIsOpen(false);
-        setInitialSection(null);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [isOpen]);
-
-  return { isOpen, initialSection, open, close };
+  return {
+    isOpen: overlay.isOpen,
+    initialSection,
+    open,
+    close: overlay.close,
+  };
 }

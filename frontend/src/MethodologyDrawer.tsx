@@ -45,6 +45,21 @@ export function MethodologyDrawer({
   const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(new Set());
   const bodyRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<Element | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    openerRef.current = document.activeElement;
+    requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      const opener = openerRef.current;
+      if (opener instanceof HTMLElement) {
+        opener.focus();
+      }
+      openerRef.current = null;
+    };
+  }, [isOpen]);
 
   const toggleSection = useCallback((slug: string) => {
     setExpandedSlugs((prev) => {
@@ -118,11 +133,17 @@ export function MethodologyDrawer({
         className="drawer-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Methodology"
       >
         <header className="drawer-header">
           <h2>Methodology</h2>
-          <button className="drawer-close" onClick={onClose} aria-label="Close">
+          <button
+            ref={closeButtonRef}
+            className="drawer-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <X size={18} />
           </button>
         </header>

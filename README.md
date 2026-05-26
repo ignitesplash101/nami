@@ -292,6 +292,22 @@ The bottom-of-page methodology panel becomes a context-aware drawer; users can n
 - [x] **`docs/methodology.md` expansion (+142 lines)**: end-to-end worked example with 3 factors and a 2-ticker portfolio, showing actual numbers under all four attribution variants (full / explicit-only / grouped / naive) and an "unshocked-factor case" that demonstrates the correlation-credit difference. Decision table for choosing among the methods. Also: details on validation enforcement layers, zero-group fallback, 52-row background floor rationale, and the mean-centering normal-equations derivation.
 - [x] **Removed inline `MethodologyPanel`** from App.tsx — the drawer is the canonical surface; the prior bottom-of-page render was redundant. Methodology icon button in the top-bar (`.methodology-btn`) opens the drawer from anywhere.
 
+### Phase 10c — Mobile-friendly workbench
+The desktop-only layout becomes responsive. Phones and tablets get a usable workbench; iPads in portrait stop overflowing horizontally; desktop is byte-for-byte unchanged.
+
+- [x] **Removed `body { min-width: 1100px }`** — the single biggest blocker. The responsive grid below replaces it.
+- [x] **Breakpoint strategy**: phone (`@media (max-width: 640px)`) / tablet+phone-landscape (`@media (max-width: 1079.98px)`) / desktop (≥1080px baseline). Desktop boundary is 1080px (NOT 1024px) because `.app-shell` needs 360px rail + 720px workbench. iPad Pro portrait at 1024×1366 renders in tablet mode by design.
+- [x] **Off-canvas rail** ([frontend/src/RailDrawer.tsx](frontend/src/RailDrawer.tsx)). At ≤1079.98px, the left rail (Access + Portfolio panels) hides; a hamburger button in the topbar opens a left-anchored slide-in drawer. Reuses the existing `.drawer-backdrop` + body-scroll-lock pattern. Mutually exclusive with the methodology drawer.
+- [x] **Shared `useOverlay` hook** ([frontend/src/useOverlay.ts](frontend/src/useOverlay.ts)) — extracted body-scroll-lock + Esc + onClose-before-close-flip logic. Refactored `useMethodologyDrawer` to wrap it (cleaner cleanup for both Esc and explicit close paths).
+- [x] **SSR-safe `useMediaQuery` hook** ([frontend/src/useMediaQuery.ts](frontend/src/useMediaQuery.ts)) for viewport-aware render decisions (inline rail vs drawer, Plotly mobile layout).
+- [x] **Plotly mobile layout** ([App.tsx](frontend/src/App.tsx)): on phone, chart height drops to 320, bottom margin grows to 110, x-axis tick labels rotate to -90° at font size 9, plus `xaxis.automargin: true` as belt-and-braces for clipping.
+- [x] **Touch targets bumped to 40px baseline / 44px at tablet+phone** for primary/ghost/segmented buttons; inputs got `padding: 12px` + `min-height: 44px` at mobile. Slider thumbs sized to 22×22 globally.
+- [x] **Tables: scoped `.table-scroll > table { min-width: 480px }`** at phone (not a blanket `table` rule). Wraps the narrative-decomposition table that was previously bare. Methodology markdown tables inside `.section-content` get `overflow-x: auto` on the section instead.
+- [x] **AdjustmentPanel sliders stack on phone** (slider → number input → Remove button as three full-width rows); `RunProgress` stepper becomes vertical; `.card-heading` collapses to a column so the 4-button attribution toggle doesn't squish against the chart title.
+- [x] **iOS Safari `100dvh` fix** on `.app-shell` and `.rail` (declaration-order fallback to `100vh` for older browsers); `overscroll-behavior: contain` on drawer bodies to prevent rubber-band scroll propagation.
+- [x] **A11y baseline** on both drawers: `role="dialog" aria-modal="true"`, focus the close button on open, capture and restore opener focus on close. Full focus-trap (Tab cycling) deferred.
+- [x] `frontend/src/useOverlay.test.ts` — 6 unit tests covering matchMedia subscription, onClose-before-isOpen-flip, body scroll lock, Esc-key path.
+
 ---
 
 ## Key Design Decisions

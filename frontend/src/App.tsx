@@ -5,9 +5,9 @@ import {
   ArrowRight,
   BarChart3,
   BookOpen,
-
   Lock,
   LogOut,
+  Menu,
   Shield,
   Table2,
   Unlock,
@@ -33,8 +33,11 @@ import {
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AttributionGuide } from "./AttributionGuide";
 import { MethodologyDrawer } from "./MethodologyDrawer";
+import { RailDrawer } from "./RailDrawer";
 import { RunProgress } from "./RunProgress";
+import { useMediaQuery } from "./useMediaQuery";
 import { useMethodologyDrawer } from "./useMethodologyDrawer";
+import { useOverlay } from "./useOverlay";
 import type {
   AccessResponse,
   AttributionMethod,
@@ -116,6 +119,18 @@ export default function App() {
   const [completedStages, setCompletedStages] = useState<Set<SsePipelineStage>>(new Set());
   const [cacheHit, setCacheHit] = useState(false);
   const methodologyDrawer = useMethodologyDrawer();
+  const railDrawer = useOverlay();
+  const isMobileOrTablet = useMediaQuery("(max-width: 1079.98px)");
+
+  function openMethodology(section?: string) {
+    railDrawer.close();
+    methodologyDrawer.open(section);
+  }
+
+  function openRailDrawer() {
+    methodologyDrawer.close();
+    railDrawer.open();
+  }
 
   useEffect(() => {
     async function boot() {
@@ -228,42 +243,55 @@ export default function App() {
     }
   }
 
+  const railContent = (
+    <>
+      <div className="brand-block">
+        <div className="brand-kicker">nami</div>
+        <h1>Scenario Explorer</h1>
+        <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
+      </div>
+      <AccessPanel access={access} onAccessChange={setAccess} />
+      <PortfolioPanel
+        access={access}
+        portfolios={portfolios}
+        portfolioKey={portfolioKey}
+        setPortfolioKey={setPortfolioKey}
+        portfolioMode={portfolioMode}
+        setPortfolioMode={setPortfolioMode}
+        customName={customName}
+        setCustomName={setCustomName}
+        customRows={customRows}
+        setCustomRows={setCustomRows}
+      />
+    </>
+  );
+
   return (
     <main className="app-shell">
-      <aside className="rail">
-        <div className="brand-block">
-          <div className="brand-kicker">nami</div>
-          <h1>Scenario Explorer</h1>
-          <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
-        </div>
-        <AccessPanel access={access} onAccessChange={setAccess} />
-        <PortfolioPanel
-          access={access}
-          portfolios={portfolios}
-          portfolioKey={portfolioKey}
-          setPortfolioKey={setPortfolioKey}
-          portfolioMode={portfolioMode}
-          setPortfolioMode={setPortfolioMode}
-          customName={customName}
-          setCustomName={setCustomName}
-          customRows={customRows}
-          setCustomRows={setCustomRows}
-        />
-      </aside>
+      {!isMobileOrTablet ? <aside className="rail">{railContent}</aside> : null}
 
       <section className="workbench">
         <header className="topbar">
+          <button
+            className="methodology-btn rail-toggle-btn"
+            onClick={openRailDrawer}
+            aria-label="Open portfolio and access setup"
+            title="Open portfolio and access setup"
+          >
+            <Menu size={18} />
+          </button>
           <div>
             <p className="eyebrow">Live workbench</p>
             <h2>Forward scenario propagation</h2>
           </div>
           <div className="status-strip">
             <span>{access?.access_mode ?? "loading"}</span>
-            <span>{selectedPortfolio?.name ?? "No portfolio"}</span>
+            <span className="portfolio-name">{selectedPortfolio?.name ?? "No portfolio"}</span>
             <button
               className="methodology-btn"
-              onClick={() => methodologyDrawer.open()}
+              onClick={() => openMethodology()}
               title="Open methodology"
+              aria-label="Open methodology"
             >
               <BookOpen size={16} />
             </button>
@@ -305,7 +333,7 @@ export default function App() {
           canDecompose={Boolean(isAdmin && resultEnvelope)}
           isDecomposing={isDecomposing}
           onDecompose={handleDecompose}
-          onOpenMethodology={methodologyDrawer.open}
+          onOpenMethodology={openMethodology}
         />
 
         {resultEnvelope &&
@@ -321,6 +349,10 @@ export default function App() {
         ) : null}
 
       </section>
+
+      <RailDrawer isOpen={railDrawer.isOpen} onClose={railDrawer.close}>
+        {railContent}
+      </RailDrawer>
 
       <MethodologyDrawer
         markdown={methodology}
@@ -635,6 +667,7 @@ function ResultsPanel({
     (acc, value) => acc + value,
     0
   );
+  const isPhone = useMediaQuery("(max-width: 640px)");
 
   return (
     <section className="results-stack">
@@ -708,13 +741,17 @@ function ResultsPanel({
           ]}
           layout={{
             autosize: true,
-            height: 420,
+            height: isPhone ? 320 : 420,
             paper_bgcolor: "rgba(0,0,0,0)",
             plot_bgcolor: "rgba(0,0,0,0)",
             font: { color: "#dce7f3" },
-            margin: { l: 42, r: 18, t: 20, b: 70 },
+            margin: { l: 42, r: 18, t: 20, b: isPhone ? 110 : 70 },
             yaxis: { tickformat: ".1%", gridcolor: "rgba(220,231,243,0.08)" },
-            xaxis: { tickangle: -35 },
+            xaxis: {
+              tickangle: isPhone ? -90 : -35,
+              tickfont: isPhone ? { size: 9 } : undefined,
+              automargin: true
+            },
             showlegend: false
           }}
           config={{ displayModeBar: false, responsive: true }}
@@ -829,26 +866,28 @@ function ResultsPanel({
           </button>
         </div>
         {result.narrative_shapley ? (
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Sub-narrative</th>
-                <th>Shapley P&L</th>
-                <th>Relative</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.narrative_shapley.contributions.map((contribution) => (
-                <tr key={contribution.narrative_index}>
-                  <td>{contribution.narrative_index + 1}</td>
-                  <td>{contribution.narrative_text}</td>
-                  <td>{formatPercent(contribution.shapley_value)}</td>
-                  <td>{formatPercent(contribution.relative_contribution)}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Sub-narrative</th>
+                  <th>Shapley P&L</th>
+                  <th>Relative</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {result.narrative_shapley.contributions.map((contribution) => (
+                  <tr key={contribution.narrative_index}>
+                    <td>{contribution.narrative_index + 1}</td>
+                    <td>{contribution.narrative_text}</td>
+                    <td>{formatPercent(contribution.shapley_value)}</td>
+                    <td>{formatPercent(contribution.relative_contribution)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p className="muted">
             Admin-only. Runs the full pipeline over each subset, so it is slow and experimental.
