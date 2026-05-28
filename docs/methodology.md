@@ -148,13 +148,12 @@ retries on validation errors, so a schema fix doesn't trigger redundant web grou
 - Factor shocks for factors not in `FACTORS`
 - Periphery shocks for tickers not in the portfolio
 - Duplicates
-- Factor shocks outside `[p10, p90]` — the validator checks all factors regardless of
-  count. When `p10` or `p90` is NaN (happens naturally when `count < 2`, since quantile
-  is degenerate on 0–1 values), the check is skipped.
-- The shock extraction prompt separately instructs the LLM to "down-weight factors with
-  `count < 3`" — this is **advisory guidance to the model**, not a hard code constraint.
-  The validator enforces the envelope band; the LLM decides how aggressively to use
-  low-count factors within it.
+- Factor shocks outside `[p10, p90]` **when `count >= 3`**. Below that threshold the
+  band collapses (count=1: a single point; count=2: a 2-point span) and rejection on
+  floating-point divergence between the LLM's emitted value and the envelope is
+  unjustifiable, so the band check is skipped. The LLM is still shown the envelope in
+  the prompt and is separately instructed to "down-weight factors with `count < 3`" —
+  that prompt guidance remains the only constraint at low count.
 
 On validation failure, 2b is re-asked once with the errors embedded in the user message.
 A second failure raises.
