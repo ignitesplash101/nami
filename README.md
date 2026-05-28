@@ -1,15 +1,26 @@
 # nami
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/ignitesplash101/nami/actions/workflows/ci.yml/badge.svg)](https://github.com/ignitesplash101/nami/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
+[![Vertex AI](https://img.shields.io/badge/Vertex_AI-Gemini_3.5_Flash-4285F4.svg)](docs/llm-system-design.md)
 
 **波** — LLM-driven scenario explorer for equity portfolios.
+
+**[🚀 Live demo →](https://nami-wy4mdlp7hq-an.a.run.app)** · Visitor mode runs sample scenarios against sample portfolios with no signup. Free-text scenarios, custom portfolios, backdating, and saved analytics require an admin passcode.
 
 Describe a forward-looking market scenario in natural language; nami grounds it against current news, matches it to historical analogs, derives factor + idiosyncratic shocks, and computes the portfolio P&L impact with cited reasoning, four attribution variants, and full reproducibility metadata.
 
 The name *nami* (波) is Japanese for "wave" — markets move in waves, factor shocks propagate in waves, and the engine decomposes portfolio impact into its constituent wave components.
 
+<!-- Replace with actual screenshots/GIF once captured. See docs/img/README.md for capture guidance. -->
+<!-- ![nami scenario run](docs/img/demo.gif) -->
+
 📘 **[Methodology](docs/methodology.md)** — factor universe, beta estimation, conditional Shapley attribution, backdating semantics, references
-📊 **[Backtest results](docs/backtest_results.md)** — live-LLM evaluation snapshot + semantic invariants
+🧠 **[LLM systems design](docs/llm-system-design.md)** — three-call pipeline, grounding/schema split, `PROMPT_VERSION` discipline, semantic evals
+📊 **[Live-LLM eval snapshot](docs/backtest_results.md)** — dated snapshot + semantic invariants
+🕰️ **[Backdated retrospective case studies](docs/backdated-case-studies.md)** — three known regimes replayed under no-look-ahead, with explicit leakage controls
+💰 **[Cost controls](docs/cost-controls.md)** — auth audit + Console steps for billing budget + Vertex AI quota cap
 
 ---
 
@@ -43,7 +54,7 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 | **Backdated reports** | Run scenarios *as of* a historical date with strict no-look-ahead: events filtered by `end_date ≤ as_of`, yfinance fetches use `end=as_of`, analog-only narrative path (no Google Search, no current news). |
 | **Dated portfolios** | Save named portfolios with time-series of immutable holding snapshots in Firestore. "Run a scenario against my 2024-06-30 book." |
 | **Saved analytics library** | Persist any result with name, tags, notes, and full inline reproducibility metadata. Re-open via permalink (`?saved=<id>`) or browse a filterable library. |
-| **SSE progress streaming** | Real-time stepper through the 8-stage pipeline while a scenario runs (~10-20s on cache miss). |
+| **SSE progress streaming** | Real-time stepper through the 7-step pipeline (cache_check → market → analogs → envelope → narrative → betas → attribution) while a scenario runs (~10-20s on cache miss). |
 | **Methodology drawer** | Slide-in `docs/methodology.md` viewer with auto-parsed sections, deep-links from factor names + the attribution toggle, full academic citations. |
 | **Mobile-friendly** | Off-canvas rail drawer, responsive grids, 44px touch targets, vertical SSE stepper on phones. Tested at 375 / 414 / 768 / 1024 / 1080 / 1920 widths. |
 

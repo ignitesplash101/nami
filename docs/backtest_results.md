@@ -47,29 +47,47 @@ error embedded; if it still fails after the retry, the pipeline raises.
 
 ---
 
-## Snapshot — YYYY-MM-DD (TO BE POPULATED)
+## Snapshot — 2026-05-28
 
-Re-run the tests with `RUN_NETWORK_TESTS=1`, then paste the numeric outputs here as a
-historical record. Suggested table shape:
+Generated via `uv run python scripts/snapshot_live_evals.py`. Source data:
+[`scripts/live_evals_snapshot.json`](../scripts/live_evals_snapshot.json).
 
-```
-| scenario | portfolio | total P&L | top factor (shock → contrib) | analogs picked | citations |
+| scenario | portfolio | total P&L | top factor (shock → naive contrib) | analogs picked | citations |
 |---|---|---|---|---|---|
-| pandemic resurgence | msci_world | -X.XX% | SPY (-X.X% → -X.XX% of P&L) | covid-crash-2020, ... | N |
-| banking failures | msci_world | -X.XX% | XLF (-X.X% → -X.XX% of P&L) | lehman-gfc-2008, ... | N |
-| Taiwan invasion | us_tech_growth | -X.XX% | XLK (-X.X% → -X.XX% of P&L) | china-deval-2015, ... | N |
-```
+| pandemic resurgence | msci_world | **−10.28%** | VIX (+220% → −3.91% of P&L) | covid-crash-2020, lehman-gfc-2008 | 2 |
+| banking failures | msci_world | **−0.94%** | VIX (+50% → −0.89% of P&L) | svb-banking-2023, lehman-gfc-2008, covid-liquidity-2020 | 6 |
+| Taiwan invasion | us_tech_growth | **−21.37%** | VIX (+105% → −3.41% of P&L) | inflation-ukraine-2022, q4-trade-war-2018, china-deval-2015 | 5 |
+
+(Per-test pass/skip status from `tests/test_live_evals.py` on the same run: 2 passed,
+1 skipped. The `test_banking_stress_hits_xlf_harder_than_spy` test skipped because the
+LLM proposed VIX as the dominant shock rather than shocking both XLF and SPY — exactly
+the kind of run-to-run drift the test's `pytest.skip` guard exists for.)
 
 ---
 
-## Findings on this date (TO BE WRITTEN AFTER FIRST POPULATION)
+## Findings — 2026-05-28
 
-- Factor shocks were within envelope p10/p90 for all factors with count ≥ 3 (the validator
-  enforces this; recorded here as confirmation)
-- Periphery tickers were thematically relevant to the scenario (semis on Taiwan, banks on
-  banking stress, etc.)
-- Citation counts averaged X per scenario
-- Total wall-clock: ~Xs per scenario (2 Gemini calls + grounding + factor model + cache write)
+- **Factor shocks were within envelope p10/p90** for all factors with `count ≥ 3` — enforced
+  by `validate_shock_proposal` ([`app/llm/validation.py`](../app/llm/validation.py)) with
+  one-retry recovery; no scenario hit the retry path on this snapshot.
+- **Analog selection was mechanistically sensible**: pandemic resurgence picked the COVID
+  crash; banking failures picked SVB + Lehman + COVID liquidity squeeze (Fed-backstop
+  pattern matches); Taiwan invasion picked Ukraine inflation + 2018 trade war + 2015
+  China devaluation.
+- **VIX was the dominant proposed factor across all three scenarios.** This reflects
+  Gemini's tendency to lean on broad risk-off as the primary mechanism rather than
+  isolating sector-specific factors — a known calibration tendency. The
+  `test_banking_stress_hits_xlf_harder_than_spy` test catches the cases where the LLM
+  *does* break out sector factors; on this run it didn't shock XLF + SPY separately.
+- **Citation counts**: 2, 6, 5 — averaging 4.3 per scenario. All scenarios produced
+  grounded narratives (`narrative_mode = "grounded"`), so Google Search fired correctly.
+- **Wall-clock**: 2.3s, 2.6s, 3.6s per scenario — these are mostly cache hits from the
+  `pytest tests/test_live_evals.py` run that ran ~3 minutes prior. A genuine cache miss
+  is closer to 10–20s (3 Gemini calls + 2 yfinance fetches in parallel + 3 Shapley fits).
+- **Magnitudes are illustrative, not benchmarked.** A −21% predicted P&L on the Taiwan
+  scenario reflects the analog envelope (2018 trade war + 2022 inflation + 2015 deval
+  windows) intersected with the US tech portfolio's high beta to those factors — it is
+  not a forecast.
 
 ---
 

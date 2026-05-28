@@ -1,0 +1,64 @@
+[
+  {
+    "name": "pandemic_resurgence",
+    "scenario_text": "Sudden global pandemic resurgence; 30-day lockdown across major economies; risk-off liquidation across all asset classes.",
+    "portfolio_key": "msci_world",
+    "portfolio_name": "MSCI World Approximation",
+    "market_date": "2026-05-28",
+    "narrative_mode": "grounded",
+    "total_pnl": -0.10282217485709733,
+    "top_factor_name": "VIX",
+    "top_factor_shock": 2.2,
+    "top_factor_contrib_naive": -0.039147080765072145,
+    "analogs_selected_ids": [
+      "covid-crash-2020",
+      "lehman-gfc-2008"
+    ],
+    "citations_count": 2,
+    "factor_shock_count": 8,
+    "periphery_shock_count": 4,
+    "wall_clock_seconds": 3.6
+  },
+  {
+    "name": "banking_stress",
+    "scenario_text": "Several mid-sized US banks fail; deposit flight; Fed liquidity backstop announced.",
+    "portfolio_key": "msci_world",
+    "portfolio_name": "MSCI World Approximation",
+    "market_date": "2026-05-28",
+    "narrative_mode": "grounded",
+    "total_pnl": -0.009435659242846058,
+    "top_factor_name": "VIX",
+    "top_factor_shock": 0.5,
+    "top_factor_contrib_naive": -0.00889706381024367,
+    "analogs_selected_ids": [
+      "svb-banking-2023",
+      "lehman-gfc-2008",
+      "covid-liquidity-2020"
+    ],
+    "citations_count": 6,
+    "factor_shock_count": 5,
+    "periphery_shock_count": 4,
+    "wall_clock_seconds": 2.6
+  },
+  {
+    "name": "taiwan_semis",
+    "scenario_text": "China invades Taiwan; semiconductor supply chain disrupted; export controls tighten.",
+    "portfolio_key": "us_tech_growth",
+    "portfolio_name": "US Tech Growth",
+    "market_date": "2026-05-28",
+    "narrative_mode": "grounded",
+    "total_pnl": -0.21373635134432203,
+    "top_factor_name": "VIX",
+    "top_factor_shock": 1.05,
+    "top_factor_contrib_naive": -0.03406226471628781,
+    "analogs_selected_ids": [
+      "inflation-ukraine-2022",
+      "q4-trade-war-2018",
+      "china-deval-2015"
+    ],
+    "citations_count": 5,
+    "factor_shock_count": 5,
+    "periphery_shock_count": 5,
+    "wall_clock_seconds": 2.3
+  }
+]
