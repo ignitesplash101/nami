@@ -20,6 +20,7 @@ describe("access-gated UI controls", () => {
         access={{
           access_mode: "visitor",
           admin_available: true,
+          latest_market_date: "2026-05-28",
           permissions: {
             custom_portfolio: false,
             free_text_scenario: false,
@@ -40,6 +41,7 @@ describe("access-gated UI controls", () => {
         access={{
           access_mode: "admin",
           admin_available: true,
+          latest_market_date: "2026-05-28",
           permissions: {
             custom_portfolio: true,
             free_text_scenario: true,
