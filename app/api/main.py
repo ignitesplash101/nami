@@ -65,7 +65,7 @@ from app.llm.scenario import (
     compute_scenario_cache_key,
     run_scenario,
 )
-from app.utils.calendar import resolve_effective_market_date
+from app.utils.calendar import latest_market_date
 from app.utils.disclaimers import DISCLAIMER_SHORT
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -137,6 +137,7 @@ def _access_response(request: Request) -> AccessResponse:
         access_mode=mode,
         admin_available=configured_passcode() is not None,
         permissions=_permissions(mode),
+        latest_market_date=latest_market_date().isoformat(),
     )
 
 
@@ -209,6 +210,7 @@ def unlock(body: UnlockRequest, request: Request, response: Response) -> AccessR
         access_mode="admin",
         admin_available=True,
         permissions=_permissions("admin"),
+        latest_market_date=latest_market_date().isoformat(),
     )
 
 
@@ -219,6 +221,7 @@ def lock(request: Request, response: Response) -> AccessResponse:
         access_mode="visitor",
         admin_available=configured_passcode() is not None,
         permissions=_permissions("visitor"),
+        latest_market_date=latest_market_date().isoformat(),
     )
 
 
@@ -262,6 +265,11 @@ def _resolve_as_of(body: ScenarioRunRequest, mode: AccessMode) -> date_type | No
         raise HTTPException(
             status_code=403,
             detail="Visitor mode does not support backdated scenarios.",
+        )
+    if body.as_of_date > latest_market_date():
+        raise HTTPException(
+            status_code=422,
+            detail="As-of date cannot be after the latest market close.",
         )
     return body.as_of_date
 
@@ -663,14 +671,15 @@ def create_portfolio_snapshot_endpoint(
     store = get_firestore_store()
     if store.get_portfolio(portfolio_id) is None:
         raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
-    # Validate snapshot is not future-dated relative to today's effective trading day.
-    today_effective = resolve_effective_market_date(date_type.today())
+    # Validate snapshot is not future-dated relative to the latest NYSE close
+    # (the same live anchor used by run_scenario).
+    today_effective = latest_market_date()
     if body.as_of_date > today_effective:
         raise HTTPException(
             status_code=422,
             detail=(
                 f"Snapshot as_of_date {body.as_of_date.isoformat()} is in the "
-                f"future relative to today's NYSE close ({today_effective.isoformat()})."
+                f"future relative to the latest NYSE close ({today_effective.isoformat()})."
             ),
         )
     snap = PortfolioSnapshotRecord(

@@ -11,7 +11,11 @@ not added as a dependency in v1.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+_NYSE_TZ = ZoneInfo("America/New_York")
+_REGULAR_CLOSE = time(16, 0)
 
 # NYSE full-day closures, 2020-2030. Source: NYSE published calendars.
 # Half-days (1pm close) are NOT included — for as-of resolution the daily close
@@ -165,6 +169,28 @@ def resolve_effective_market_date(
         return requested
 
     candidate = requested
+    while not is_trading_day(candidate):
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def latest_market_date(now_et: datetime | None = None) -> date:
+    """Latest NYSE *regular-close clock* date (America/New_York).
+
+    A clock proxy, NOT a data-availability guarantee: returns today once the
+    16:00 ET regular close has passed, else the prior trading day. Half-days
+    (13:00 ET close) are treated conservatively — we still wait until 16:00, so
+    on an early-close day this lags a few hours (harmless: the live fetch uses
+    end=None regardless). Vendor bars can also lag the close; callers needing a
+    guaranteed-present bar must still tolerate yfinance dropping the latest day.
+
+    This is the single anchor for "what does live mean": the default as-of date
+    and the live-vs-backdated classification both derive from it.
+    """
+    now = now_et or datetime.now(_NYSE_TZ)
+    today = now.date()
+    closed_today = is_trading_day(today) and now.time() >= _REGULAR_CLOSE
+    candidate = today if closed_today else today - timedelta(days=1)
     while not is_trading_day(candidate):
         candidate -= timedelta(days=1)
     return candidate

@@ -33,6 +33,7 @@ import {
   formatCurrency,
   formatPercent,
   formatSignedCurrency,
+  normalizeTicker,
   parseNav,
   topContributor
 } from "./charts";
@@ -83,6 +84,20 @@ interface HoldingRow {
 
 type PortfolioMode = "sample" | "custom";
 
+type ValuationSortKey =
+  | "ticker"
+  | "weight"
+  | "shares"
+  | "mark"
+  | "value"
+  | "stressed"
+  | "delta"
+  | "deltaPct";
+interface ValuationSort {
+  key: ValuationSortKey;
+  dir: "asc" | "desc";
+}
+
 const defaultCustomRows: HoldingRow[] = [
   { id: "row-aapl", ticker: "AAPL", weight: "0.5" },
   { id: "row-msft", ticker: "MSFT", weight: "0.5" }
@@ -91,7 +106,7 @@ const defaultCustomRows: HoldingRow[] = [
 function holdingsFromRows(rows: HoldingRow[]): Record<string, number> {
   const holdings: Record<string, number> = {};
   for (const row of rows) {
-    const ticker = row.ticker.trim().toUpperCase();
+    const ticker = normalizeTicker(row.ticker);
     if (!ticker) continue;
     holdings[ticker] = Number(row.weight);
   }
@@ -106,7 +121,11 @@ function parseCsv(text: string): HoldingRow[] {
   const dataLines = lines[0]?.toLowerCase().includes("ticker") ? lines.slice(1) : lines;
   return dataLines.map((line, index) => {
     const [ticker, weight] = line.split(",").map((part) => part.trim());
-    return { id: `csv-${index}-${ticker}`, ticker: ticker ?? "", weight: weight ?? "" };
+    return {
+      id: `csv-${index}-${ticker}`,
+      ticker: normalizeTicker(ticker ?? ""),
+      weight: weight ?? ""
+    };
   });
 }
 
@@ -122,12 +141,18 @@ export default function App() {
   // MTM: "weights" = today's weight model (+ optional NAV scalar); "shares" = true
   // mark-to-market (server marks the share counts to the as-of close, FX→USD).
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
-  const [navInput, setNavInput] = useState("");
+  // Default every book to a $100k notional value so the dollar view (P&L,
+  // stressed values, position table) is populated out-of-the-box for everyone,
+  // incl. visitors. Pure client-side notional scaling — NOT mark-to-market.
+  const [navInput, setNavInput] = useState("100000");
   // Results display: percent (default) vs dollars (enabled once a NAV exists).
   const [displayMode, setDisplayMode] = useState<"pct" | "usd">("pct");
-  const [valuationSort, setValuationSort] = useState<"impact" | "worst" | "best">("impact");
+  // Position-valuation sort: click a column header to sort, click again to flip.
+  // Default = biggest losses first (the decision-relevant view for a shock).
+  const [valuationSort, setValuationSort] = useState<ValuationSort>({ key: "delta", dir: "asc" });
   const [scenarioText, setScenarioText] = useState("");
-  // As-of date (YYYY-MM-DD). Empty string means today/live.
+  // As-of date (YYYY-MM-DD). Seeded from access.latest_market_date on boot;
+  // equal-to-latest-close means live, earlier means backdated.
   const [asOfDate, setAsOfDate] = useState<string>("");
   const [resultEnvelope, setResultEnvelope] = useState<ScenarioRunResponse | null>(null);
   const [canonicalSnapshot, setCanonicalSnapshot] = useState<ScenarioResult | null>(null);
@@ -169,6 +194,9 @@ export default function App() {
           getMethodology().catch(() => "")
         ]);
       setAccess(accessResponse);
+      // Seed the as-of picker with the latest NYSE close (the live anchor), so
+      // "live" means the latest US close rather than the browser's local day.
+      setAsOfDate(accessResponse.latest_market_date);
       setPortfolios(portfolioResponse);
       setScenarios(scenarioResponse);
       setPortfolioKey(portfolioResponse[0]?.key ?? "us_tech_growth");
@@ -240,9 +268,11 @@ export default function App() {
         // (Notional dollar scaling is a client-side post-run control, not a run input.)
         position_quantities: sharesMode ? holdingsFromRows(customRows) : undefined,
         reporting_currency: sharesMode ? "USD" : undefined,
-        // Only thread as_of_date when admin chose a non-today date. Empty
-        // string and today both mean "live" — let the backend default.
-        as_of_date: asOfDate || undefined
+        // Only thread as_of_date when admin chose a date EARLIER than the latest
+        // close. The latest close (the default) means "live" — send undefined so
+        // the backend takes the grounded (Google Search) path.
+        as_of_date:
+          asOfDate && asOfDate !== access.latest_market_date ? asOfDate : undefined
       };
       const payload = access.permissions.free_text_scenario
         ? baseAdmin
@@ -702,7 +732,7 @@ function PortfolioPanel({
                   value={row.ticker}
                   onChange={(event) => {
                     const next = [...customRows];
-                    next[index] = { ...row, ticker: event.target.value };
+                    next[index] = { ...row, ticker: normalizeTicker(event.target.value) };
                     setCustomRows(next);
                   }}
                   placeholder="Ticker"
@@ -769,7 +799,8 @@ function ScenarioPanel({
   isRunning,
   onRun,
   asOfDate,
-  setAsOfDate
+  setAsOfDate,
+  latestClose
 }: {
   access: AccessResponse | null;
   scenarios: SampleScenario[];
@@ -782,6 +813,7 @@ function ScenarioPanel({
   onRun: () => void;
   asOfDate: string;
   setAsOfDate: (v: string) => void;
+  latestClose: string;
 }) {
   const canFreeText = Boolean(access?.permissions.free_text_scenario);
   return (
@@ -812,7 +844,12 @@ function ScenarioPanel({
         </label>
       </div>
       {canFreeText ? (
-        <AsOfDatePicker value={asOfDate} onChange={setAsOfDate} disabled={isRunning} />
+        <AsOfDatePicker
+          value={asOfDate}
+          latestClose={latestClose}
+          onChange={setAsOfDate}
+          disabled={isRunning}
+        />
       ) : null}
       <button className="primary-button" onClick={onRun} disabled={isRunning || !selectedScenario}>
         {isRunning ? "Running pipeline..." : "Run scenario"} <ArrowRight size={16} />
@@ -846,8 +883,8 @@ function ResultsPanel({
   setDisplayMode: (mode: "pct" | "usd") => void;
   navInput: string;
   setNavInput: (value: string) => void;
-  valuationSort: "impact" | "worst" | "best";
-  setValuationSort: (sort: "impact" | "worst" | "best") => void;
+  valuationSort: ValuationSort;
+  setValuationSort: (sort: ValuationSort) => void;
   canDecompose: boolean;
   isDecomposing: boolean;
   decomposeProgress: { done: number; total: number } | null;
@@ -876,10 +913,39 @@ function ResultsPanel({
   const showDollars = hasNav && displayMode === "usd";
   const valuations = nav != null ? buildPositionValuations(result, nav) : [];
   const sortedValuations = [...valuations].sort((a, b) => {
-    if (valuationSort === "worst") return a.delta - b.delta;
-    if (valuationSort === "best") return b.delta - a.delta;
-    return Math.abs(b.delta) - Math.abs(a.delta); // "impact" (default)
+    const { key, dir } = valuationSort;
+    const sign = dir === "asc" ? 1 : -1;
+    if (key === "ticker") return sign * a.ticker.localeCompare(b.ticker);
+    const av = (a[key] as number | undefined) ?? 0;
+    const bv = (b[key] as number | undefined) ?? 0;
+    return sign * (av - bv);
   });
+  const toggleSort = (key: ValuationSortKey) =>
+    setValuationSort(
+      valuationSort.key === key
+        ? { key, dir: valuationSort.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "ticker" ? "asc" : "desc" }
+    );
+  const sortHeader = (label: string, key: ValuationSortKey) => {
+    const active = valuationSort.key === key;
+    const arrow = active ? (valuationSort.dir === "asc" ? "▲" : "▼") : "";
+    return (
+      <th
+        className={`sortable${active ? " sorted" : ""}`}
+        aria-sort={active ? (valuationSort.dir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <button type="button" onClick={() => toggleSort(key)}>
+          {label}
+          {arrow ? (
+            <span className="sort-arrow" aria-hidden="true">
+              {" "}
+              {arrow}
+            </span>
+          ) : null}
+        </button>
+      </th>
+    );
+  };
   const waterfall =
     showDollars && nav != null
       ? buildWaterfallDataDollars(result, attributionMethod, nav, currency)
@@ -1170,52 +1236,19 @@ function ResultsPanel({
               <p className="eyebrow">Valuation</p>
               <h3>Position valuation — original → stressed</h3>
             </div>
-            <div
-              className="segmented results-units sort-toggle"
-              role="radiogroup"
-              aria-label="Sort positions"
-            >
-              <button
-                role="radio"
-                aria-checked={valuationSort === "impact"}
-                className={valuationSort === "impact" ? "active" : ""}
-                onClick={() => setValuationSort("impact")}
-                title="Largest absolute impact first"
-              >
-                Impact
-              </button>
-              <button
-                role="radio"
-                aria-checked={valuationSort === "worst"}
-                className={valuationSort === "worst" ? "active" : ""}
-                onClick={() => setValuationSort("worst")}
-                title="Biggest losses first"
-              >
-                Worst
-              </button>
-              <button
-                role="radio"
-                aria-checked={valuationSort === "best"}
-                className={valuationSort === "best" ? "active" : ""}
-                onClick={() => setValuationSort("best")}
-                title="Biggest gains first"
-              >
-                Best
-              </button>
-            </div>
           </div>
           <div className="table-scroll">
-            <table>
+            <table className="valuation-table">
               <thead>
                 <tr>
-                  <th>Ticker</th>
-                  <th>Weight</th>
-                  {isMarked ? <th>Shares</th> : null}
-                  {isMarked ? <th>Mark</th> : null}
-                  <th>Value</th>
-                  <th>Stressed</th>
-                  <th>Δ$</th>
-                  <th>Δ%</th>
+                  {sortHeader("Ticker", "ticker")}
+                  {sortHeader("Weight", "weight")}
+                  {isMarked ? sortHeader("Shares", "shares") : null}
+                  {isMarked ? sortHeader("Mark", "mark") : null}
+                  {sortHeader("Value", "value")}
+                  {sortHeader("Stressed", "stressed")}
+                  {sortHeader("Δ$", "delta")}
+                  {sortHeader("Δ%", "deltaPct")}
                 </tr>
               </thead>
               <tbody>

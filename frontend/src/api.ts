@@ -24,12 +24,19 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...init
   });
   if (!response.ok) {
+    // Read the body ONCE as text, then try to parse JSON — reading json() then
+    // text() on a failed parse throws "body stream already read" and masks the
+    // real server error.
     let detail = `${response.status} ${response.statusText}`;
-    try {
-      const body = await response.json();
-      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
-    } catch {
-      detail = await response.text();
+    const text = await response.text();
+    if (text) {
+      try {
+        const body = JSON.parse(text);
+        detail =
+          typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+      } catch {
+        detail = text;
+      }
     }
     throw new Error(detail);
   }

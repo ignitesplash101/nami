@@ -28,7 +28,12 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 #           the same (scenario_text, portfolio, market_date) key could have
 #           produced a different result under v5 if any analog event was
 #           still in progress on market_date.
-PROMPT_VERSION = "v6"
+# v7 — Live anchor moved from date.today() to latest NYSE close
+#      (app/utils/calendar.py::latest_market_date). A fixed past as-of (e.g. the
+#      last close) is now classified LIVE (grounded, Google-Search citations)
+#      where v6 classified it backdated/analog-only — same key, different
+#      semantics — so v6 entries must be invalidated.
+PROMPT_VERSION = "v7"
 
 
 ANALOG_SELECTION_PROMPT = f"""\

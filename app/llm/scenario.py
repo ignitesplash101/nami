@@ -42,7 +42,7 @@ from app.llm.schemas import (
     ScenarioResult,
     ShockAdjustment,
 )
-from app.utils.calendar import resolve_effective_market_date
+from app.utils.calendar import latest_market_date, resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
 
 # Minimum number of historical analog events required for envelope computation.
@@ -82,8 +82,11 @@ def compute_scenario_cache_key(
     the hash — mirroring `run_scenario`.
     """
     config = config or load_config()
-    requested_as_of = market_date or date.today()
-    effective_as_of = resolve_effective_market_date(requested_as_of)
+    # Mirror run_scenario's anchoring exactly so keys never diverge: the live
+    # anchor is the latest NYSE close, computed once.
+    live_as_of = latest_market_date()
+    requested_as_of = market_date or live_as_of
+    effective_as_of = resolve_effective_market_date(requested_as_of, today_fn=lambda: live_as_of)
     portfolio_obj, resolved_key = _resolve_portfolio(portfolio, None)
     return scenario_cache_key(
         scenario_text=scenario_text,
@@ -211,9 +214,13 @@ def run_scenario(
     if cache is None:
         cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
 
-    requested_as_of = market_date or date.today()
-    effective_as_of = resolve_effective_market_date(requested_as_of)
-    is_backdated = effective_as_of < date.today()
+    # The latest NYSE close is the single anchor for "live": the default as-of
+    # AND the live-vs-backdated classification both derive from it, computed once
+    # so a run crossing 16:00 ET can't classify itself inconsistently.
+    live_as_of = latest_market_date()
+    requested_as_of = market_date or live_as_of
+    effective_as_of = resolve_effective_market_date(requested_as_of, today_fn=lambda: live_as_of)
+    is_backdated = effective_as_of < live_as_of
     # Pinned-analog runs (narrative-decomposition subsets) skip analog selection and
     # the live Google-Search grounding so subset payoffs are deterministic. They
     # share the analog-only narrative path with backdated runs.
@@ -574,7 +581,7 @@ def adjust_scenario_shocks(
     # otherwise the new P&L would mix backdated shocks with current betas/factor
     # history, which is a look-ahead leak. Backdated path also bypasses the warm
     # cache (which always returns current data).
-    canonical_is_backdated = canonical.market_date < date.today()
+    canonical_is_backdated = canonical.market_date < latest_market_date()
     yf_end = (canonical.market_date + timedelta(days=1)) if canonical_is_backdated else None
 
     with ThreadPoolExecutor(max_workers=2) as pool:

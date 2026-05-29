@@ -1,18 +1,14 @@
 import { Clock } from "lucide-react";
 
 interface AsOfDatePickerProps {
-  value: string;            // YYYY-MM-DD; "" or today means live
+  value: string;            // YYYY-MM-DD; "" or latestClose means live
+  latestClose: string;      // YYYY-MM-DD; latest NYSE regular close (the live anchor)
   onChange: (v: string) => void;
   disabled?: boolean;
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-export function AsOfDatePicker({ value, onChange, disabled }: AsOfDatePickerProps) {
-  const today = todayIso();
-  const isBackdated = Boolean(value) && value < today;
+export function AsOfDatePicker({ value, latestClose, onChange, disabled }: AsOfDatePickerProps) {
+  const isBackdated = Boolean(value) && Boolean(latestClose) && value < latestClose;
 
   return (
     <div className="asof-picker">
@@ -21,8 +17,8 @@ export function AsOfDatePicker({ value, onChange, disabled }: AsOfDatePickerProp
         <input
           id="asof-input"
           type="date"
-          max={today}
-          value={value || today}
+          max={latestClose || undefined}
+          value={value || latestClose}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
         />
@@ -31,10 +27,10 @@ export function AsOfDatePicker({ value, onChange, disabled }: AsOfDatePickerProp
         <button
           type="button"
           className="ghost-button asof-reset"
-          onClick={() => onChange(today)}
+          onClick={() => onChange(latestClose)}
           disabled={disabled}
         >
-          Reset to today
+          Reset to latest close
         </button>
       ) : null}
     </div>

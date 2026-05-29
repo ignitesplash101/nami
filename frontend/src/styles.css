@@ -1420,11 +1420,33 @@ a {
 .results-units button {
   padding: 0 16px;
 }
-.results-units.sort-toggle {
-  grid-template-columns: repeat(3, auto);
+.valuation-table th.sortable {
+  padding: 0;
 }
-.results-units.sort-toggle button {
-  padding: 0 12px;
+.valuation-table th.sortable button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--motion), background var(--motion);
+}
+.valuation-table th.sortable button:hover {
+  color: var(--accent);
+}
+.valuation-table th.sortable.sorted button {
+  color: var(--accent);
+}
+.valuation-table th.sortable .sort-arrow {
+  font-size: 0.7em;
+  opacity: 0.85;
 }
 
 /* Notional NAV knob in the results toolbar (instant client-side $ scaling). */

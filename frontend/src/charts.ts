@@ -137,6 +137,20 @@ export function parseNav(input: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/**
+ * Canonical ticker form, mirroring the server's normalize_ticker: trim, then
+ * uppercase. A Yahoo suffix after the LAST dot is uppercased too (e.g. "7203.t"
+ * -> "7203.T", "brk-b" -> "BRK-B"). Applied live on input so the editor shows
+ * exactly what the server will store — no submit-time surprise.
+ */
+export function normalizeTicker(raw: string): string {
+  const s = raw.trim();
+  const i = s.lastIndexOf(".");
+  return i === -1
+    ? s.toUpperCase()
+    : `${s.slice(0, i).toUpperCase()}.${s.slice(i + 1).toUpperCase()}`;
+}
+
 export interface PositionValuation {
   ticker: string;
   weight: number;

@@ -10,6 +10,8 @@ export interface AccessResponse {
   access_mode: AccessMode;
   admin_available: boolean;
   permissions: Permissions;
+  // Latest NYSE regular-close date (YYYY-MM-DD); seeds the as-of picker default.
+  latest_market_date: string;
 }
 
 export interface SamplePortfolio {

@@ -20,6 +20,9 @@ class AccessResponse(BaseModel):
     access_mode: str
     admin_available: bool
     permissions: Permissions
+    # Latest NYSE regular-close date (YYYY-MM-DD). The UI seeds the as-of picker
+    # with this so "live" means the latest US close, not the browser's local day.
+    latest_market_date: str
 
 
 class UnlockRequest(BaseModel):
