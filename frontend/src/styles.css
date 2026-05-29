@@ -1406,6 +1406,20 @@ a {
   gap: 10px;
   margin-bottom: 14px;
 }
+.results-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Compact %/$ units toggle in the results toolbar (reuses .segmented styling). */
+.results-units {
+  margin: 0;
+  width: max-content;
+}
+.results-units button {
+  padding: 0 16px;
+}
 .reproducibility-chip {
   font-family: var(--font-mono);
   font-size: 11px;

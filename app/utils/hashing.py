@@ -24,19 +24,30 @@ def scenario_cache_key(
     prompt_version: str,
     factor_universe_version: str,
     events_version: str,
+    position_quantities: dict[str, float] | None = None,
 ) -> str:
-    """SHA256 hex digest of normalized inputs."""
-    payload = json.dumps(
-        {
-            "scenario_text": scenario_text.strip().lower(),
-            "portfolio_key": portfolio_key,
-            "portfolio_holdings": sorted((t, round(w, 6)) for t, w in portfolio_holdings.items()),
-            "market_date": market_date.isoformat(),
-            "model_id": model_id,
-            "prompt_version": prompt_version,
-            "factor_universe_version": factor_universe_version,
-            "events_version": events_version,
-        },
-        sort_keys=True,
-    )
+    """SHA256 hex digest of normalized inputs.
+
+    `position_quantities` (mark-to-market share counts) is folded in ONLY when
+    present: in quantity mode the weights are price-derived, so the return-space
+    P&L depends on the quantities. When absent (weight-only / NAV-scalar runs) the
+    payload is byte-identical to before, so existing cache entries are preserved.
+    NAV / FX / mark prices are intentionally NOT keyed — NAV is a pure post-cache
+    overlay and marks derive from the already-keyed `market_date`.
+    """
+    payload_obj: dict[str, object] = {
+        "scenario_text": scenario_text.strip().lower(),
+        "portfolio_key": portfolio_key,
+        "portfolio_holdings": sorted((t, round(w, 6)) for t, w in portfolio_holdings.items()),
+        "market_date": market_date.isoformat(),
+        "model_id": model_id,
+        "prompt_version": prompt_version,
+        "factor_universe_version": factor_universe_version,
+        "events_version": events_version,
+    }
+    if position_quantities:
+        payload_obj["position_quantities"] = sorted(
+            (t, round(q, 6)) for t, q in position_quantities.items()
+        )
+    payload = json.dumps(payload_obj, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

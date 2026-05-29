@@ -12,6 +12,9 @@ interface PortfolioHistoryPanelProps {
   // Holdings currently in the active custom-portfolio editor; the "Save
   // current as snapshot" action stamps these as a dated snapshot.
   currentHoldings: Record<string, number>;
+  // When set, snapshotting is disabled (e.g. the editor is in Shares/MTM mode and
+  // snapshots store weights in v1). The string is shown as the reason.
+  snapshotDisabledReason?: string;
   onLoadSnapshot: (snapshot: PortfolioSnapshotRecord) => void;
 }
 
@@ -21,6 +24,7 @@ function todayIso(): string {
 
 export function PortfolioHistoryPanel({
   currentHoldings,
+  snapshotDisabledReason,
   onLoadSnapshot
 }: PortfolioHistoryPanelProps) {
   const [portfolios, setPortfolios] = useState<SavedPortfolioRecord[]>([]);
@@ -67,6 +71,10 @@ export function PortfolioHistoryPanel({
   }
 
   async function handleSnapshot() {
+    if (snapshotDisabledReason) {
+      setError(snapshotDisabledReason);
+      return;
+    }
     if (!activeId) {
       setError("Select a saved portfolio first.");
       return;
@@ -157,9 +165,19 @@ export function PortfolioHistoryPanel({
                     placeholder="Pre-rebalance, etc."
                   />
                 </label>
-                <button className="primary-button" onClick={handleSnapshot}>
+                <button
+                  className="primary-button"
+                  onClick={handleSnapshot}
+                  disabled={Boolean(snapshotDisabledReason)}
+                  title={snapshotDisabledReason}
+                >
                   Save current holdings as snapshot
                 </button>
+                {snapshotDisabledReason ? (
+                  <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                    {snapshotDisabledReason}
+                  </p>
+                ) : null}
               </div>
 
               <div className="snap-list">

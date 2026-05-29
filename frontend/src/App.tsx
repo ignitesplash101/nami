@@ -27,8 +27,11 @@ import {
 } from "./api";
 import {
   buildWaterfallData,
+  buildWaterfallDataDollars,
   factorReasoningRows,
+  formatCurrency,
   formatPercent,
+  formatSignedCurrency,
   topContributor
 } from "./charts";
 import { AdjustmentPanel } from "./AdjustmentPanel";
@@ -114,6 +117,12 @@ export default function App() {
   const [portfolioMode, setPortfolioMode] = useState<PortfolioMode>("sample");
   const [customName, setCustomName] = useState("Custom Book");
   const [customRows, setCustomRows] = useState<HoldingRow[]>(defaultCustomRows);
+  // MTM: "weights" = today's weight model (+ optional NAV scalar); "shares" = true
+  // mark-to-market (server marks the share counts to the as-of close, FX→USD).
+  const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
+  const [navInput, setNavInput] = useState("");
+  // Results display: percent (default) vs dollars (enabled once a run carries a NAV).
+  const [displayMode, setDisplayMode] = useState<"pct" | "usd">("pct");
   const [scenarioText, setScenarioText] = useState("");
   // As-of date (YYYY-MM-DD). Empty string means today/live.
   const [asOfDate, setAsOfDate] = useState<string>("");
@@ -214,12 +223,19 @@ export default function App() {
     setCompletedStages(new Set());
     setCacheHit(false);
     try {
+      const sharesMode = portfolioMode === "custom" && customUnits === "shares";
+      const navValue = navInput.trim() ? Number(navInput) : undefined;
       const baseAdmin = {
         scenario_text: scenarioText || selectedScenario?.text,
         portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
         portfolio_name: portfolioMode === "custom" ? customName : undefined,
         portfolio_holdings:
-          portfolioMode === "custom" ? holdingsFromRows(customRows) : undefined,
+          portfolioMode === "custom" && !sharesMode ? holdingsFromRows(customRows) : undefined,
+        // Mark-to-market: share quantities (true MTM) OR an optional NAV scalar for
+        // weight-based books. reporting_currency is USD in v1.
+        position_quantities: sharesMode ? holdingsFromRows(customRows) : undefined,
+        portfolio_nav: !sharesMode && navValue ? navValue : undefined,
+        reporting_currency: sharesMode || navValue ? "USD" : undefined,
         // Only thread as_of_date when admin chose a non-today date. Empty
         // string and today both mean "live" — let the backend default.
         as_of_date: asOfDate || undefined
@@ -249,6 +265,8 @@ export default function App() {
       setAttributionMethod(
         response.result.portfolio_pnl.by_factor_conditional_shapley ? "conditional" : "naive"
       );
+      // Surface dollars by default once a run is marked; otherwise stay in percent.
+      setDisplayMode(response.result.portfolio_nav != null ? "usd" : "pct");
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -299,6 +317,10 @@ export default function App() {
         setCustomName={setCustomName}
         customRows={customRows}
         setCustomRows={setCustomRows}
+        customUnits={customUnits}
+        setCustomUnits={setCustomUnits}
+        navInput={navInput}
+        setNavInput={setNavInput}
       />
     </>
   );
@@ -378,6 +400,8 @@ export default function App() {
           envelope={resultEnvelope}
           attributionMethod={attributionMethod}
           setAttributionMethod={setAttributionMethod}
+          displayMode={displayMode}
+          setDisplayMode={setDisplayMode}
           canDecompose={Boolean(isAdmin && resultEnvelope)}
           isDecomposing={isDecomposing}
           onDecompose={handleDecompose}
@@ -412,6 +436,11 @@ export default function App() {
           <PortfolioHistoryPanel
             currentHoldings={
               portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
+            }
+            snapshotDisabledReason={
+              portfolioMode === "custom" && customUnits === "shares"
+                ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
+                : undefined
             }
             onLoadSnapshot={(snap) => {
               setPortfolioMode("custom");
@@ -540,7 +569,11 @@ function PortfolioPanel({
   customName,
   setCustomName,
   customRows,
-  setCustomRows
+  setCustomRows,
+  customUnits,
+  setCustomUnits,
+  navInput,
+  setNavInput
 }: {
   access: AccessResponse | null;
   portfolios: SamplePortfolio[];
@@ -552,11 +585,18 @@ function PortfolioPanel({
   setCustomName: (name: string) => void;
   customRows: HoldingRow[];
   setCustomRows: (rows: HoldingRow[]) => void;
+  customUnits: "weights" | "shares";
+  setCustomUnits: (units: "weights" | "shares") => void;
+  navInput: string;
+  setNavInput: (value: string) => void;
 }) {
   const selected = portfolios.find((portfolio) => portfolio.key === portfolioKey);
   const [validation, setValidation] = useState<string[]>([]);
+  const isShares = customUnits === "shares";
 
   async function validateCustom(rows = customRows) {
+    // Shares mode is validated server-side (raw share counts, no sum-to-1 rule).
+    if (isShares) return;
     const response = await validatePortfolio(holdingsFromRows(rows));
     setValidation(response.errors);
   }
@@ -613,6 +653,37 @@ function PortfolioPanel({
             Portfolio name
             <input value={customName} onChange={(event) => setCustomName(event.target.value)} />
           </label>
+          <div className="segmented" role="radiogroup" aria-label="Holding units">
+            <button
+              role="radio"
+              aria-checked={!isShares}
+              className={!isShares ? "active" : ""}
+              onClick={() => setCustomUnits("weights")}
+            >
+              Weights
+            </button>
+            <button
+              role="radio"
+              aria-checked={isShares}
+              className={isShares ? "active" : ""}
+              onClick={() => setCustomUnits("shares")}
+              title="Mark-to-market: enter share counts; nami marks each position to the as-of close and converts to USD"
+            >
+              Shares (MTM)
+            </button>
+          </div>
+          {!isShares ? (
+            <label>
+              Portfolio value (USD)
+              <input
+                value={navInput}
+                onChange={(event) => setNavInput(event.target.value)}
+                placeholder="optional — enables $ P&L"
+                inputMode="decimal"
+                aria-label="Portfolio value in USD (optional)"
+              />
+            </label>
+          ) : null}
           <div className="upload-control">
             <Upload size={15} />
             <input
@@ -625,7 +696,7 @@ function PortfolioPanel({
           <div className="holding-editor">
             <div className="holding-row holding-row-head" aria-hidden="true">
               <span>Ticker</span>
-              <span>Weight</span>
+              <span>{isShares ? "Shares" : "Weight"}</span>
             </div>
             {customRows.map((row, index) => (
               <div className="holding-row" key={row.id}>
@@ -646,9 +717,9 @@ function PortfolioPanel({
                     next[index] = { ...row, weight: event.target.value };
                     setCustomRows(next);
                   }}
-                  placeholder="0.25"
-                  inputMode="decimal"
-                  aria-label={`Weight for holding ${index + 1}`}
+                  placeholder={isShares ? "100" : "0.25"}
+                  inputMode={isShares ? "numeric" : "decimal"}
+                  aria-label={`${isShares ? "Shares" : "Weight"} for holding ${index + 1}`}
                 />
               </div>
             ))}
@@ -665,12 +736,21 @@ function PortfolioPanel({
             >
               Add row
             </button>
-            <button className="ghost-button" onClick={() => validateCustom()}>
-              Validate
-            </button>
+            {!isShares ? (
+              <button className="ghost-button" onClick={() => validateCustom()}>
+                Validate
+              </button>
+            ) : null}
           </div>
-          {validation.length ? (
-            <div className="inline-error" role="alert">{validation.join(" ")}</div>
+          {isShares ? (
+            <p className="muted">
+              Enter share counts. nami marks each position to the as-of close, converts to USD,
+              and derives weights — true mark-to-market.
+            </p>
+          ) : validation.length ? (
+            <div className="inline-error" role="alert">
+              {validation.join(" ")}
+            </div>
           ) : (
             <p className="muted">Weights may be decimals near 1.0 or percentages near 100.</p>
           )}
@@ -747,6 +827,8 @@ function ResultsPanel({
   envelope,
   attributionMethod,
   setAttributionMethod,
+  displayMode,
+  setDisplayMode,
   canDecompose,
   isDecomposing,
   onDecompose,
@@ -757,6 +839,8 @@ function ResultsPanel({
   envelope: ScenarioRunResponse | null;
   attributionMethod: AttributionMethod;
   setAttributionMethod: (method: AttributionMethod) => void;
+  displayMode: "pct" | "usd";
+  setDisplayMode: (mode: "pct" | "usd") => void;
   canDecompose: boolean;
   isDecomposing: boolean;
   onDecompose: () => void;
@@ -774,7 +858,14 @@ function ResultsPanel({
     );
   }
   const { result, analog_events } = envelope;
-  const waterfall = buildWaterfallData(result, attributionMethod);
+  const nav = result.portfolio_nav;
+  const currency = result.reporting_currency ?? "USD";
+  const hasNav = nav != null;
+  const showDollars = hasNav && displayMode === "usd";
+  const waterfall =
+    showDollars && nav != null
+      ? buildWaterfallDataDollars(result, attributionMethod, nav, currency)
+      : buildWaterfallData(result, attributionMethod);
   const top = topContributor(result, attributionMethod);
   const factorRows = factorReasoningRows(result, attributionMethod);
   const hasConditional = Boolean(result.portfolio_pnl.by_factor_conditional_shapley);
@@ -833,21 +924,60 @@ function ResultsPanel({
   return (
     <section className="results-stack">
       <div className="results-toolbar">
-        {canSave ? (
-          <button className="ghost-button" onClick={onSave}>
-            <Save size={14} /> Save scenario
-          </button>
-        ) : null}
+        <div className="results-toolbar-left">
+          {canSave ? (
+            <button className="ghost-button" onClick={onSave}>
+              <Save size={14} /> Save scenario
+            </button>
+          ) : null}
+          {hasNav ? (
+            <div className="segmented results-units" role="radiogroup" aria-label="P&L units">
+              <button
+                role="radio"
+                aria-checked={!showDollars}
+                className={!showDollars ? "active" : ""}
+                onClick={() => setDisplayMode("pct")}
+                title="Show P&L as percentages"
+              >
+                %
+              </button>
+              <button
+                role="radio"
+                aria-checked={showDollars}
+                className={showDollars ? "active" : ""}
+                onClick={() => setDisplayMode("usd")}
+                title="Show P&L in USD (marked to market)"
+              >
+                $
+              </button>
+            </div>
+          ) : null}
+        </div>
         {envelope.reproducibility ? (
           <span className="muted reproducibility-chip">
             prompt {envelope.reproducibility.prompt_version} · model{" "}
             {envelope.reproducibility.model_id} · as-of{" "}
             <code>{envelope.reproducibility.effective_as_of_date}</code>
+            {hasNav ? (
+              <>
+                {" "}
+                · NAV <code>{formatCurrency(nav ?? 0, currency)}</code>
+              </>
+            ) : null}
           </span>
         ) : null}
       </div>
       <div className="metric-grid">
-        <Metric label="Portfolio P&L" value={formatPercent(result.portfolio_pnl.total_pnl)} />
+        {hasNav ? <Metric label="Portfolio NAV" value={formatCurrency(nav ?? 0, currency)} /> : null}
+        <Metric
+          label="Portfolio P&L"
+          value={
+            showDollars
+              ? formatSignedCurrency(result.portfolio_pnl.total_pnl * (nav ?? 0), currency)
+              : formatPercent(result.portfolio_pnl.total_pnl)
+          }
+          sub={showDollars ? formatPercent(result.portfolio_pnl.total_pnl) : undefined}
+        />
         <Metric
           label="Top contributor"
           value={top.factor}
@@ -917,7 +1047,10 @@ function ResultsPanel({
             plot_bgcolor: "rgba(0,0,0,0)",
             font: { color: "#eef2ec", family: "IBM Plex Mono, monospace" },
             margin: { l: 42, r: 18, t: 20, b: isPhone ? 110 : 70 },
-            yaxis: { tickformat: ".1%", gridcolor: "rgba(238,242,236,0.08)" },
+            yaxis: {
+              tickformat: showDollars ? "$,.0f" : ".1%",
+              gridcolor: "rgba(238,242,236,0.08)"
+            },
             xaxis: {
               tickangle: isPhone ? -90 : -35,
               tickfont: isPhone ? { size: 9 } : undefined,
@@ -970,6 +1103,7 @@ function ResultsPanel({
                 <th>Factor</th>
                 <th>Periphery</th>
                 <th>Total</th>
+                {showDollars ? <th>$ P&L</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -982,12 +1116,56 @@ function ResultsPanel({
                     <td>{formatPercent(result.portfolio_pnl.by_ticker_factor[ticker] ?? 0)}</td>
                     <td>{formatPercent(result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0)}</td>
                     <td>{formatPercent(total)}</td>
+                    {showDollars ? (
+                      <td>{formatSignedCurrency(total * (nav ?? 0), currency)}</td>
+                    ) : null}
                   </tr>
                 ))}
             </tbody>
           </table>
         </TableCard>
       </div>
+
+      {hasNav && result.position_values ? (
+        <TableCard title="Marks (raw close, as-of date, USD market value)">
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Shares</th>
+                <th>Mark (native)</th>
+                <th>Mark date</th>
+                <th>Market value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(result.position_values)
+                .sort((a, b) => b[1] - a[1])
+                .map(([ticker, mv]) => (
+                  <tr key={ticker}>
+                    <td>{ticker}</td>
+                    <td>{result.position_quantities?.[ticker] ?? "—"}</td>
+                    <td>{result.mark_prices?.[ticker]?.toLocaleString() ?? "—"}</td>
+                    <td>{result.price_date_by_ticker?.[ticker] ?? "—"}</td>
+                    <td>{formatCurrency(mv, currency)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          {result.fx_rates && Object.keys(result.fx_rates).length > 1 ? (
+            <p className="muted">
+              FX → USD:{" "}
+              {Object.entries(result.fx_rates)
+                .filter(([ccy]) => ccy !== "USD")
+                .map(
+                  ([ccy, rate]) =>
+                    `${ccy} ${rate.toPrecision(4)} (${result.fx_date_by_currency?.[ccy] ?? "?"})`
+                )
+                .join(" · ")}
+            </p>
+          ) : null}
+        </TableCard>
+      ) : null}
 
       <div className="two-column">
         <section className="result-card narrative">

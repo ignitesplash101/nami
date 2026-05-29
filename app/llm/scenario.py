@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
 from app.data.market import compute_weekly_returns, fetch_weekly_prices
+from app.data.marking import MarkResult, mark_book
 from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.analogs import (
     compute_envelope,
@@ -67,12 +68,17 @@ def compute_scenario_cache_key(
     *,
     config: Config | None = None,
     market_date: date | None = None,
+    position_quantities: dict[str, float] | None = None,
 ) -> str:
     """Compute the cache key the same way `run_scenario` does.
 
     Used by API handlers to surface the key to the client so subsequent
     adjustment requests can reference the canonical cached result. `market_date`
     is resolved to the effective NYSE trading day to match run_scenario's keying.
+
+    In quantity (MTM) mode the weights are price-derived, so the key is folded on
+    the raw `position_quantities` and the (provisional) holdings are dropped from
+    the hash — mirroring `run_scenario`.
     """
     config = config or load_config()
     requested_as_of = market_date or date.today()
@@ -81,12 +87,13 @@ def compute_scenario_cache_key(
     return scenario_cache_key(
         scenario_text=scenario_text,
         portfolio_key=resolved_key,
-        portfolio_holdings=portfolio_obj.holdings,
+        portfolio_holdings={} if position_quantities else portfolio_obj.holdings,
         market_date=effective_as_of,
         model_id=config.vertex_model_id,
         prompt_version=PROMPT_VERSION,
         factor_universe_version=factor_universe_version(),
         events_version=events_version(),
+        position_quantities=position_quantities,
     )
 
 
@@ -107,6 +114,48 @@ def _resolve_portfolio(
     return get_portfolio(portfolio_key), portfolio_key
 
 
+def _apply_mtm(
+    result: ScenarioResult,
+    *,
+    position_quantities: dict[str, float] | None = None,
+    portfolio_nav: float | None = None,
+    reporting_currency: str | None = None,
+    precomputed: MarkResult | None = None,
+) -> ScenarioResult:
+    """Attach marked dollar metadata to a return-space result (never mutates in place).
+
+    Quantity mode marks the book — reusing `precomputed` if supplied, else
+    re-marking from `position_quantities` at `result.market_date` — and is
+    fail-closed (a missing/stale price or FX raises `MarkingError`). NAV-scalar
+    mode attaches the given NAV. Dollars themselves are derived client-side as
+    `return_field × portfolio_nav` (the engine is linear), so nothing dollar-valued
+    is stored beyond NAV + marking metadata. Returns `result` unchanged when no MTM
+    was requested. These fields are intentionally NEVER written back to the cache.
+    """
+    currency = reporting_currency or "USD"
+    if position_quantities:
+        mark = precomputed or mark_book(
+            position_quantities, as_of=result.market_date, reporting_currency=currency
+        )
+        return result.model_copy(
+            update={
+                "portfolio_nav": mark.nav,
+                "reporting_currency": mark.reporting_currency,
+                "position_quantities": dict(position_quantities),
+                "position_values": mark.position_values,
+                "mark_prices": mark.mark_prices,
+                "price_date_by_ticker": mark.price_date_by_ticker,
+                "fx_rates": mark.fx_rates,
+                "fx_date_by_currency": mark.fx_date_by_currency,
+            }
+        )
+    if portfolio_nav is not None:
+        return result.model_copy(
+            update={"portfolio_nav": float(portfolio_nav), "reporting_currency": currency}
+        )
+    return result
+
+
 def run_scenario(
     scenario_text: str,
     portfolio: str | Portfolio | None = None,
@@ -118,6 +167,9 @@ def run_scenario(
     skip_cache: bool = False,
     portfolio_key: str | None = None,
     progress: ProgressCallback | None = None,
+    position_quantities: dict[str, float] | None = None,
+    portfolio_nav: float | None = None,
+    reporting_currency: str | None = None,
 ) -> ScenarioResult:
     """End-to-end pipeline.
 
@@ -165,24 +217,53 @@ def run_scenario(
     # Cache key uses effective_as_of — that's what determines the actual data
     # used. A user picking a weekend resolves to the prior Friday, and both
     # requests should share a cache entry.
+    # In quantity (MTM) mode the weights are derived from marks, so the key is
+    # folded on the raw quantities and the provisional holdings are dropped from
+    # the hash (NAV / FX / marks are never keyed — applied post-retrieval).
     progress("cache_check", "start")
     key = scenario_cache_key(
         scenario_text=scenario_text,
         portfolio_key=resolved_key,
-        portfolio_holdings=portfolio_obj.holdings,
+        portfolio_holdings={} if position_quantities else portfolio_obj.holdings,
         market_date=effective_as_of,
         model_id=config.vertex_model_id,
         prompt_version=PROMPT_VERSION,
         factor_universe_version=factor_universe_version(),
         events_version=events_version(),
+        position_quantities=position_quantities,
     )
 
     if not skip_cache:
         cached = cache.get_json(key, ttl_hours=24 * config.llm_cache_ttl_days)
         if cached is not None:
             progress("cache_hit", "done")
-            return ScenarioResult.model_validate(cached)
+            # Cache holds the return-space canonical (+ quantity inputs); the NAV /
+            # marks are recomputed here so a cache hit never serves stale dollars.
+            cached_result = ScenarioResult.model_validate(cached)
+            return _apply_mtm(
+                cached_result,
+                position_quantities=position_quantities or cached_result.position_quantities,
+                portfolio_nav=portfolio_nav,
+                reporting_currency=reporting_currency or cached_result.reporting_currency,
+            )
     progress("cache_check", "done")
+
+    # Quantity (MTM) mode: mark the book BEFORE the Gemini chain so the LLM prompt
+    # AND the engine both see the price-derived weights. Marking is a short serial
+    # prefix here and is fail-closed (a missing/stale price or FX raises MarkingError
+    # → the API surfaces 503, never a percentage-only valuation).
+    mark_result: MarkResult | None = None
+    if position_quantities:
+        mark_result = mark_book(
+            position_quantities,
+            as_of=effective_as_of,
+            reporting_currency=reporting_currency or "USD",
+        )
+        portfolio_obj = Portfolio(
+            name=portfolio_obj.name,
+            description=portfolio_obj.description,
+            holdings=mark_result.weights,
+        )
 
     # Event registry — full for live runs, end-date-filtered for backdated runs.
     full_events = load_events()
@@ -339,10 +420,23 @@ def run_scenario(
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if is_backdated else "grounded",
         selected_event_ids=selected_ids,
+        # Cache the quantity INPUTS (already in the key, deterministic) so a hit or
+        # an adjustment can re-mark; the marked dollar OUTPUTS (nav/values/marks/fx)
+        # are deliberately left None here and attached post-retrieval, never cached.
+        position_quantities=dict(position_quantities) if position_quantities else None,
+        reporting_currency=(reporting_currency or "USD") if position_quantities else None,
     )
 
+    # Persist the return-space canonical only (no NAV / dollars / marks).
     cache.put_json(key, result.model_dump(mode="json"))
-    return result
+
+    return _apply_mtm(
+        result,
+        position_quantities=position_quantities,
+        portfolio_nav=portfolio_nav,
+        reporting_currency=reporting_currency,
+        precomputed=mark_result,
+    )
 
 
 def adjust_scenario_shocks(
@@ -527,12 +621,22 @@ def adjust_scenario_shocks(
         changed_factors=changed,
     )
 
-    return canonical.model_copy(
+    adjusted = canonical.model_copy(
         update={
             "factor_shocks": new_factor_shocks,
             "portfolio_pnl": PortfolioPnL(**pnl),
             "adjustment_history": [*canonical.adjustment_history, new_entry],
         }
+    )
+
+    # Re-attach mark-to-market: in quantity mode the canonical carries the cached
+    # quantity inputs, so re-mark at the canonical's (vintage-controlled) as-of date
+    # to refresh NAV + marks on the adjusted result. Dollars stay client-side
+    # (return_field × NAV); only the shocks/P&L changed.
+    return _apply_mtm(
+        adjusted,
+        position_quantities=adjusted.position_quantities,
+        reporting_currency=adjusted.reporting_currency,
     )
 
 

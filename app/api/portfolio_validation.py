@@ -52,3 +52,58 @@ def validate_holdings(raw_holdings: dict[str, float]) -> tuple[dict[str, float],
         errors.append(f"Weights must sum to 1.00 (currently {total:.4f}).")
 
     return normalized, errors
+
+
+def validate_quantities(raw_quantities: dict[str, float]) -> tuple[dict[str, float], list[str]]:
+    """Validate share quantities for mark-to-market.
+
+    Like `validate_holdings` (uppercase tickers, reject blanks/dupes/non-finite)
+    but with NO sum-to-1 normalization (these are raw share counts) and a
+    non-negative rule (v1 does not support shorts). Requires ≥1 positive position.
+    """
+    errors: list[str] = []
+    normalized: dict[str, float] = {}
+
+    if not raw_quantities:
+        return {}, ["No positions; add at least one holding with a share quantity."]
+
+    for ticker, qty in raw_quantities.items():
+        normalized_ticker = normalize_ticker(ticker)
+        if not normalized_ticker:
+            errors.append("Every row needs a non-blank ticker.")
+            continue
+        if normalized_ticker in normalized:
+            errors.append(f"Duplicate ticker not allowed: {normalized_ticker}")
+            continue
+        try:
+            qty_value = float(qty)
+        except (TypeError, ValueError):
+            errors.append(f"{normalized_ticker} quantity must be numeric.")
+            continue
+        if not math.isfinite(qty_value):
+            errors.append(f"{normalized_ticker} quantity must be finite.")
+        elif qty_value < 0:
+            errors.append(
+                f"{normalized_ticker} quantity cannot be negative "
+                "(short positions are not supported in v1)."
+            )
+        else:
+            normalized[normalized_ticker] = qty_value
+
+    if not errors and sum(normalized.values()) <= 0:
+        errors.append("At least one position must have a positive share quantity.")
+
+    return normalized, errors
+
+
+def validate_nav(nav: object) -> tuple[float, list[str]]:
+    """Validate a portfolio NAV scalar: finite and strictly positive."""
+    try:
+        value = float(nav)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0, ["Portfolio value (NAV) must be numeric."]
+    if not math.isfinite(value):
+        return value, ["Portfolio value (NAV) must be finite."]
+    if value <= 0:
+        return value, ["Portfolio value (NAV) must be positive."]
+    return value, []

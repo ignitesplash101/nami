@@ -185,3 +185,17 @@ class ScenarioResult(BaseModel):
     # event_ids selected for the analog envelope. Already on `analogs_selected`
     # but duplicated here for reproducibility-block convenience.
     selected_event_ids: list[str] = Field(default_factory=list)
+    # Mark-to-market metadata. None on return-only runs; populated when the run
+    # supplied share quantities (true MTM, USD-marked) or a NAV scalar. Dollars
+    # are DERIVED client-side as `return_field × portfolio_nav` (the engine is
+    # linear in weights), so no dollar P&L is stored. All optional with defaults
+    # so pre-MTM cached payloads deserialize unchanged. NOTE: these are attached
+    # AFTER cache retrieval — they are never persisted in the GCS scenario cache.
+    portfolio_nav: float | None = None
+    reporting_currency: str | None = None
+    position_quantities: dict[str, float] | None = None
+    position_values: dict[str, float] | None = None  # USD market value per ticker
+    mark_prices: dict[str, float] | None = None  # raw close in native quote unit
+    price_date_by_ticker: dict[str, str] | None = None
+    fx_rates: dict[str, float] | None = None  # major currency -> USD per unit
+    fx_date_by_currency: dict[str, str] | None = None

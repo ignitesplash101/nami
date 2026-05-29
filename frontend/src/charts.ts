@@ -102,3 +102,39 @@ export function formatPercent(value: number, digits = 2): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+export function formatCurrency(value: number, currency = "USD", digits = 0): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits
+    }).format(value);
+  } catch {
+    // Unknown/invalid currency code → plain prefixed number.
+    return `${currency} ${value.toLocaleString("en-US", { maximumFractionDigits: digits })}`;
+  }
+}
+
+/** Signed dollar P&L: "+$12,340" / "-$5,400". */
+export function formatSignedCurrency(value: number, currency = "USD", digits = 0): string {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatCurrency(value, currency, digits)}`;
+}
+
+/** A dollar waterfall = the return-space waterfall scaled by NAV. */
+export function buildWaterfallDataDollars(
+  result: ScenarioResult,
+  method: AttributionMethod,
+  nav: number,
+  currency = "USD"
+): WaterfallData {
+  const base = buildWaterfallData(result, method);
+  return {
+    x: base.x,
+    y: base.y.map((value) => value * nav),
+    measure: base.measure,
+    text: base.y.map((value) => formatSignedCurrency(value * nav, currency))
+  };
+}
+

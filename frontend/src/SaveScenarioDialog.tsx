@@ -160,6 +160,12 @@ export function SaveScenarioDialog({
               Narrative mode: <code>{result.narrative_mode}</code>
             </span>
             <span>Total P&amp;L: {(result.portfolio_pnl.total_pnl * 100).toFixed(2)}%</span>
+            {result.portfolio_nav != null ? (
+              <span>
+                NAV ({result.reporting_currency ?? "USD"}):{" "}
+                <code>{result.portfolio_nav.toLocaleString()}</code>
+              </span>
+            ) : null}
           </div>
           {error ? (
             <div className="inline-error" id="save-dialog-error" role="alert">

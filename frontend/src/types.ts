@@ -103,6 +103,17 @@ export interface ScenarioResult {
   requested_as_of_date: string | null;
   narrative_mode: NarrativeMode;
   selected_event_ids: string[];
+  // Mark-to-market metadata (null on return-only runs). Dollars are DERIVED in
+  // the UI as `return_field × portfolio_nav` (the engine is linear), so no dollar
+  // P&L is sent — only NAV + the marks/FX used.
+  portfolio_nav?: number | null;
+  reporting_currency?: string | null;
+  position_quantities?: Record<string, number> | null;
+  position_values?: Record<string, number> | null; // USD market value per ticker
+  mark_prices?: Record<string, number> | null; // raw close, native quote unit
+  price_date_by_ticker?: Record<string, string> | null;
+  fx_rates?: Record<string, number> | null; // major currency -> USD per unit
+  fx_date_by_currency?: Record<string, string> | null;
 }
 
 export interface ScenarioReproducibility {
@@ -120,6 +131,14 @@ export interface ScenarioReproducibility {
   portfolio_key: string;
   market_data_source: "yfinance";
   nami_engine_version: string;
+  portfolio_nav?: number | null;
+  reporting_currency?: string | null;
+  position_quantities?: Record<string, number> | null;
+  position_values?: Record<string, number> | null;
+  mark_prices?: Record<string, number> | null;
+  price_date_by_ticker?: Record<string, string> | null;
+  fx_rates?: Record<string, number> | null;
+  fx_date_by_currency?: Record<string, string> | null;
 }
 
 export interface AnalogEvent {
@@ -150,6 +169,7 @@ export interface SavedScenarioListItem {
   effective_as_of_date: string;
   narrative_mode: NarrativeMode;
   total_pnl: number;
+  portfolio_nav?: number | null;
 }
 
 export interface SavedScenarioRecord {

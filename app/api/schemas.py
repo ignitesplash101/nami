@@ -66,6 +66,13 @@ class ScenarioRunRequest(BaseModel):
     # standard live-grounded path. When < today, runs in vintage-controlled
     # backdated mode (events filtered, yfinance end=, analog-only narrative).
     as_of_date: date | None = None
+    # Mark-to-market (admin-only). `position_quantities` = share counts → true MTM
+    # (marked to the as-of raw close, FX-converted to USD, weights derived).
+    # `portfolio_nav` (alone, with weights) = illustrative dollar scaling. Both None
+    # → return-space only (today's behavior).
+    position_quantities: dict[str, float] | None = None
+    portfolio_nav: float | None = None
+    reporting_currency: str | None = None
 
 
 class AnalogEventResponse(BaseModel):
@@ -99,6 +106,17 @@ class ScenarioReproducibility(BaseModel):
     portfolio_key: str
     market_data_source: Literal["yfinance"] = "yfinance"
     nami_engine_version: str
+    # Frozen mark-to-market block (None on return-only runs). Snapshotting the
+    # NAV, the exact marks, and the FX rates + dates makes a saved MTM scenario
+    # re-render identically even after live prices/FX drift.
+    portfolio_nav: float | None = None
+    reporting_currency: str | None = None
+    position_quantities: dict[str, float] | None = None
+    position_values: dict[str, float] | None = None
+    mark_prices: dict[str, float] | None = None
+    price_date_by_ticker: dict[str, str] | None = None
+    fx_rates: dict[str, float] | None = None
+    fx_date_by_currency: dict[str, str] | None = None
 
 
 class ScenarioRunResponse(BaseModel):
@@ -178,6 +196,9 @@ class SavedScenarioListItem(BaseModel):
     effective_as_of_date: date
     narrative_mode: Literal["grounded", "analog_only"]
     total_pnl: float
+    # NAV for MTM runs (None otherwise); the UI shows total dollar P&L as
+    # `total_pnl × portfolio_nav` without inflating the list payload.
+    portfolio_nav: float | None = None
 
 
 class SavePortfolioRequest(BaseModel):

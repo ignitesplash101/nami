@@ -39,6 +39,7 @@ def _fetch_prices(
     end: date | datetime | str | None,
     lookback_periods: int | None,
     period_unit: str,
+    auto_adjust: bool = True,
     cache: MarketCacheProtocol | None | str = "default",
 ) -> pd.DataFrame:
     """Shared implementation for fetch_weekly_prices and fetch_daily_prices.
@@ -68,7 +69,9 @@ def _fetch_prices(
         get_market_cache() if cache == "default" else cache  # type: ignore[assignment]
     )
 
-    cache_key = market_cache_key(sorted_tickers, interval=interval, start=start, end=end)
+    cache_key = market_cache_key(
+        sorted_tickers, interval=interval, start=start, end=end, auto_adjust=auto_adjust
+    )
 
     if cache_instance is not None:
         try:
@@ -83,7 +86,7 @@ def _fetch_prices(
         start=start,
         end=end,
         interval=interval,
-        auto_adjust=True,
+        auto_adjust=auto_adjust,
         progress=False,
         threads=True,
         timeout=_YF_DOWNLOAD_TIMEOUT_SECONDS,
@@ -139,13 +142,19 @@ def fetch_daily_prices(
     end: date | datetime | str | None = None,
     lookback_days: int | None = None,
     *,
+    auto_adjust: bool = True,
     cache: MarketCacheProtocol | None | str = "default",
 ) -> pd.DataFrame:
-    """Fetch daily adjusted close prices.
+    """Fetch daily close prices.
 
     Returns a DataFrame indexed by trading-day date, with one column per ticker.
     `end` is exclusive (yfinance convention) — pass end+1 day to include the
     end_date's closing bar. Tickers yfinance fails to return are silently dropped.
+
+    `auto_adjust=True` (default) returns split/dividend-adjusted close for return
+    modeling. Pass `auto_adjust=False` to get the RAW close — required for
+    mark-to-market valuation of share quantities (shares × raw close = position
+    market value); the cache keeps raw and adjusted in separate keyspaces.
     """
     return _fetch_prices(
         tickers,
@@ -154,6 +163,7 @@ def fetch_daily_prices(
         end=end,
         lookback_periods=lookback_days,
         period_unit="D",
+        auto_adjust=auto_adjust,
         cache=cache,
     )
 

@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.portfolio_validation import validate_holdings
+from app.api.portfolio_validation import validate_holdings, validate_nav, validate_quantities
 from app.api.samples import SAMPLE_SCENARIOS
 from app.api.schemas import (
     AccessResponse,
@@ -53,6 +53,7 @@ from app.data.firestore_store import (
     SavedScenarioStore,
     utcnow,
 )
+from app.data.marking import MarkingError
 from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio
 from app.factors.analogs import HistoricalEvent, events_version, load_events
 from app.factors.universe import factor_universe_version
@@ -109,6 +110,16 @@ def _build_reproducibility(
         portfolio_holdings=dict(result.portfolio_holdings),
         portfolio_key=portfolio_key,
         nami_engine_version=NAMI_ENGINE_VERSION,
+        # Frozen mark-to-market block (None on return-only runs) so a saved MTM
+        # scenario re-renders with the same NAV / marks / FX it was run against.
+        portfolio_nav=result.portfolio_nav,
+        reporting_currency=result.reporting_currency,
+        position_quantities=result.position_quantities,
+        position_values=result.position_values,
+        mark_prices=result.mark_prices,
+        price_date_by_ticker=result.price_date_by_ticker,
+        fx_rates=result.fx_rates,
+        fx_date_by_currency=result.fx_date_by_currency,
     )
 
 
@@ -255,18 +266,76 @@ def _resolve_as_of(body: ScenarioRunRequest, mode: AccessMode) -> date_type | No
     return body.as_of_date
 
 
+def _resolve_mtm(
+    body: ScenarioRunRequest, mode: AccessMode
+) -> tuple[dict[str, float] | None, float | None, str | None, Portfolio | str]:
+    """Resolve the portfolio AND mark-to-market inputs together. Returns
+    (position_quantities, portfolio_nav, reporting_currency, portfolio). MTM
+    (quantities OR a NAV scalar) is admin-only.
+
+    Quantity mode builds a PROVISIONAL weight Portfolio from the share tickers —
+    `run_scenario` overrides those weights with the price-derived marks, so the
+    provisional values are never used for P&L and never hashed (the cache key
+    folds on the raw quantities). Non-quantity modes fall back to the normal
+    weight/sample-key resolution.
+    """
+    has_mtm = body.position_quantities is not None or body.portfolio_nav is not None
+    if has_mtm and mode == "visitor":
+        raise HTTPException(status_code=403, detail="Mark-to-market requires admin mode.")
+
+    currency: str | None = None
+    if has_mtm:
+        currency = (body.reporting_currency or "USD").upper()
+        if currency != "USD":
+            raise HTTPException(status_code=422, detail="Only USD reporting is supported in v1.")
+
+    if body.position_quantities is not None:
+        quantities, errors = validate_quantities(body.position_quantities)
+        if errors:
+            raise HTTPException(status_code=400, detail={"errors": errors})
+        total = sum(quantities.values())
+        provisional = {ticker: qty / total for ticker, qty in quantities.items()}
+        mtm_portfolio = Portfolio(
+            name=body.portfolio_name or "Custom (MTM)",
+            description="User mark-to-market portfolio (share quantities)",
+            holdings=provisional,
+        )
+        return quantities, None, currency, mtm_portfolio
+
+    portfolio = _resolve_portfolio(body, mode)
+    if body.portfolio_nav is not None:
+        nav, nav_errors = validate_nav(body.portfolio_nav)
+        if nav_errors:
+            raise HTTPException(status_code=422, detail={"errors": nav_errors})
+        return None, nav, currency, portfolio
+    return None, None, None, portfolio
+
+
 @api.post("/api/scenarios/run", response_model=ScenarioRunResponse)
 def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> ScenarioRunResponse:
     mode = access_mode_for_request(request)
     scenario_text = _resolve_scenario_text(body, mode)
-    portfolio = _resolve_portfolio(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
+    quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
     try:
-        result = run_scenario(scenario_text, portfolio, market_date=requested_as_of)
+        result = run_scenario(
+            scenario_text,
+            portfolio,
+            market_date=requested_as_of,
+            position_quantities=quantities,
+            portfolio_nav=nav,
+            reporting_currency=currency,
+        )
+    except MarkingError as exc:
+        # Requested valuation could not be marked (missing/stale price or FX):
+        # fail closed with 503 rather than return a percentage-only result.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         # Insufficient analogs / data when backdating; user-facing 422.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    cache_key = compute_scenario_cache_key(scenario_text, portfolio, market_date=result.market_date)
+    cache_key = compute_scenario_cache_key(
+        scenario_text, portfolio, market_date=result.market_date, position_quantities=quantities
+    )
     portfolio_key = portfolio if isinstance(portfolio, str) else "custom"
     reproducibility = _build_reproducibility(
         result,
@@ -293,8 +362,8 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
     """
     mode = access_mode_for_request(request)
     scenario_text = _resolve_scenario_text(body, mode)
-    portfolio = _resolve_portfolio(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
+    quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
 
     events_q: queue.Queue[dict] = queue.Queue()
     SENTINEL = object()
@@ -305,10 +374,19 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
     def worker() -> None:
         try:
             result = run_scenario(
-                scenario_text, portfolio, market_date=requested_as_of, progress=progress
+                scenario_text,
+                portfolio,
+                market_date=requested_as_of,
+                progress=progress,
+                position_quantities=quantities,
+                portfolio_nav=nav,
+                reporting_currency=currency,
             )
             cache_key = compute_scenario_cache_key(
-                scenario_text, portfolio, market_date=result.market_date
+                scenario_text,
+                portfolio,
+                market_date=result.market_date,
+                position_quantities=quantities,
             )
             portfolio_key = portfolio if isinstance(portfolio, str) else "custom"
             reproducibility = _build_reproducibility(
@@ -362,6 +440,10 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
         )
     except LookupError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except MarkingError as exc:
+        # Re-marking the adjusted result failed (missing/stale price or FX) —
+        # fail closed. MUST precede RuntimeError (MarkingError subclasses it).
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RuntimeError as exc:
         # scope="rerun_required" from the LLM patch path. The message is the
         # rejection_reason the UI surfaces to the user.

@@ -77,6 +77,11 @@ export interface RunScenarioPayload {
   // Backdated runs (admin-only): YYYY-MM-DD. Server resolves to the last NYSE
   // trading day on or before this date.
   as_of_date?: string;
+  // Mark-to-market (admin-only). `position_quantities` = share counts (true MTM);
+  // `portfolio_nav` = illustrative dollar scaling for weight-based books.
+  position_quantities?: Record<string, number>;
+  portfolio_nav?: number;
+  reporting_currency?: string;
 }
 
 export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunResponse> {

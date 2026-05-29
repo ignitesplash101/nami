@@ -530,6 +530,38 @@ hit cache in <500ms; the 7-day TTL forces eventual refresh against drifted news.
 
 ---
 
+## Mark-to-market valuation
+
+By default nami works in **return space**: a portfolio is a set of weights and P&L is a percentage. **Mark-to-market (MTM)** mode lets you enter **share quantities** instead and reports the book in **US dollars**.
+
+**Marking.** For each holding nami fetches the **raw** (un-split/dividend-adjusted) daily close on the as-of date — a dedicated fetch, distinct from the adjusted-close series used for return modelling, because valuing a share count needs the actual traded price. Each position is converted to USD:
+
+```
+position_value_usd[i] = shares[i] · raw_close[i] · pence_scale[i] · fx_to_usd[ccy(i)]
+NAV                    = Σ position_value_usd[i]
+weight[i]              = position_value_usd[i] / NAV        (price-derived; drifts from any target)
+```
+
+The quote currency is inferred from the Yahoo exchange suffix (e.g. `.T` → JPY; `.L` → GBP quoted in **pence**, so the price is divided by 100; no suffix → USD). FX uses explicit, direction-checked pairs (e.g. `USDJPY=X` inverted to USD-per-JPY) marked on the **same as-of date**, and the per-instrument close date and per-currency FX date are recorded.
+
+**Dollars are a linear overlay.** Because the factor engine is linear in weights, the entire dollar view is the return-space result scaled by NAV — no separate dollar P&L is computed or stored:
+
+```
+total $ P&L         = total_pnl · NAV
+position $ P&L[i]   = by_ticker_total[i] · NAV          (the weight cancels exactly)
+post-shock value[i] = position_value_usd[i] + by_ticker_total[i] · NAV
+```
+
+**Vintage consistency.** A backdated MTM run marks at the as-of date's raw close and the as-of FX rate, so the valuation carries no look-ahead — consistent with the rest of the backdating contract.
+
+**Fail-closed.** If any requested position cannot be marked (missing, stale, delisted) or an FX rate is unavailable, the run **fails with an error** rather than silently returning a percentage-only result — a requested valuation is never quietly degraded.
+
+**Caching.** The scenario cache stores the **return-space** result only; NAV, marks, and FX are recomputed after retrieval and never persisted, so the same scenario at a different NAV can never serve stale dollars. The share-quantity *inputs* are cached (they are deterministic and part of the cache key) so a cache hit or a shock adjustment can re-mark.
+
+**Limitations (v1).** USD reporting only; long positions only (no shorts); no cost basis or realised/unrealised split; currency is suffix-inferred (not security-master-grade); portfolio snapshots store weights, not share counts. The analog envelope and factor shocks are unaffected by MTM — it is a valuation layer over the same scenario engine.
+
+---
+
 ## Calibration evidence
 
 See [`docs/backtest_results.md`](backtest_results.md) for the live-LLM evaluation snapshot

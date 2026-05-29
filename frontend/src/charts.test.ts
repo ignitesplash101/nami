@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildWaterfallData, factorReasoningRows, topContributor } from "./charts";
+import {
+  buildWaterfallData,
+  buildWaterfallDataDollars,
+  factorReasoningRows,
+  formatCurrency,
+  formatSignedCurrency,
+  topContributor
+} from "./charts";
 import type { ScenarioResult } from "./types";
 
 function fixtureResult(): ScenarioResult {
@@ -77,6 +84,30 @@ describe("chart data helpers", () => {
     const top = topContributor(fixtureResult(), "conditional_grouped");
     expect(top.factor).toBe("SPY");
     expect(top.contribution).toBe(-0.06);
+  });
+});
+
+describe("currency formatting + dollar waterfall (MTM)", () => {
+  it("formats USD with no fractional cents by default", () => {
+    expect(formatCurrency(1284500, "USD")).toBe("$1,284,500");
+  });
+
+  it("signs dollar P&L", () => {
+    expect(formatSignedCurrency(12340, "USD")).toBe("+$12,340");
+    expect(formatSignedCurrency(-5400, "USD")).toBe("-$5,400");
+  });
+
+  it("does not throw on an unknown currency code", () => {
+    expect(formatCurrency(1000, "ZZZ")).toContain("1,000");
+  });
+
+  it("scales the waterfall by NAV for the dollar view", () => {
+    const nav = 1_000_000;
+    const pct = buildWaterfallData(fixtureResult(), "naive");
+    const usd = buildWaterfallDataDollars(fixtureResult(), "naive", nav, "USD");
+    expect(usd.x).toEqual(pct.x);
+    expect(usd.y[usd.y.length - 1]).toBeCloseTo(-0.08 * nav); // total bar = total_pnl × NAV
+    expect(usd.text[usd.text.length - 1]).toContain("$");
   });
 });
 

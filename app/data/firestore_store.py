@@ -65,6 +65,7 @@ def _to_list_item(rec: SavedScenarioRecord) -> SavedScenarioListItem:
         effective_as_of_date=rec.reproducibility.effective_as_of_date,
         narrative_mode=rec.reproducibility.narrative_mode,
         total_pnl=rec.result.portfolio_pnl.total_pnl,
+        portfolio_nav=rec.result.portfolio_nav,
     )
 
 

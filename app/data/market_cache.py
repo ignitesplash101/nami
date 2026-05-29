@@ -58,21 +58,28 @@ def market_cache_key(
     interval: str,
     start: date | datetime | str | None,
     end: date | datetime | str | None,
+    auto_adjust: bool = True,
 ) -> str:
     """Stable SHA256-derived key, short enough for a GCS blob name.
 
     Tickers are sorted before hashing — callers can pass sets/lists in any order
     and still collide on the same cache entry.
+
+    `auto_adjust` distinguishes split/dividend-adjusted close (return modeling) from
+    RAW close (mark-to-market valuation of share quantities) — the two must never
+    collide. The flag is appended only for raw fetches so existing adjusted-close
+    cache entries keep their keys (no invalidation of the common path).
     """
-    payload = "|".join(
-        [
-            MARKET_CACHE_VERSION,
-            interval,
-            _normalize_date(start),
-            _normalize_date(end),
-            ",".join(sorted(tickers)),
-        ]
-    )
+    parts = [
+        MARKET_CACHE_VERSION,
+        interval,
+        _normalize_date(start),
+        _normalize_date(end),
+        ",".join(sorted(tickers)),
+    ]
+    if not auto_adjust:
+        parts.append("raw")
+    payload = "|".join(parts)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
     return f"{interval}_{digest}"
 

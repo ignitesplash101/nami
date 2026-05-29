@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from app.config import Config
+from app.data.marking import MarkingError, MarkResult
 from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.universe import FACTORS
 from app.llm.gemini_client import GeminiClient
@@ -303,6 +304,126 @@ def test_run_scenario_rejects_unknown_analog_id(monkeypatch):
             cache=InMemoryCache(),
             market_date=date(2026, 5, 25),
         )
+
+
+def _fake_mark_book(nav: float = 1_000_000.0):
+    """Return a stand-in mark_book that derives weights from quantities, no network."""
+
+    def fake(quantities, *, as_of, reporting_currency="USD", cache="default"):
+        total = sum(quantities.values())
+        weights = {t: q / total for t, q in quantities.items()}
+        return MarkResult(
+            nav=nav,
+            weights=weights,
+            position_values={t: nav * w for t, w in weights.items()},
+            mark_prices=dict.fromkeys(quantities, 100.0),
+            price_date_by_ticker=dict.fromkeys(quantities, as_of.isoformat()),
+            fx_rates={"USD": 1.0},
+            fx_date_by_currency={"USD": as_of.isoformat()},
+            reporting_currency=reporting_currency,
+        )
+
+    return fake
+
+
+def test_run_scenario_quantity_mode_attaches_nav_and_caches_return_space_only(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    monkeypatch.setattr("app.llm.scenario.mark_book", _fake_mark_book(1_000_000.0))
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+    provisional = Portfolio(name="MTM book", description="x", holdings={"AAPL": 0.5, "MSFT": 0.5})
+
+    result = run_scenario(
+        "stress",
+        provisional,
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+        position_quantities={"AAPL": 10, "MSFT": 5},
+    )
+
+    assert result.portfolio_nav == 1_000_000.0
+    assert result.reporting_currency == "USD"
+    assert result.position_quantities == {"AAPL": 10, "MSFT": 5}
+    assert result.position_values is not None
+    # The price-derived marks (not the provisional 0.5/0.5) drive P&L.
+    assert result.portfolio_holdings["AAPL"] == pytest.approx(10 / 15)
+
+    # The GCS cache holds the RETURN-SPACE canonical only: NAV / marks are never
+    # persisted (so a different NAV can never serve stale dollars), but the
+    # quantity INPUTS are kept so a hit / adjustment can re-mark.
+    (cached,) = cache.store.values()
+    assert cached["portfolio_nav"] is None
+    assert cached["position_values"] is None
+    assert cached["position_quantities"] == {"AAPL": 10, "MSFT": 5}
+
+
+def test_run_scenario_quantity_mode_cache_hit_remarks(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    calls = {"n": 0}
+
+    def counting_mark(quantities, *, as_of, reporting_currency="USD", cache="default"):
+        calls["n"] += 1
+        return _fake_mark_book(2_000_000.0)(
+            quantities, as_of=as_of, reporting_currency=reporting_currency, cache=cache
+        )
+
+    monkeypatch.setattr("app.llm.scenario.mark_book", counting_mark)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+    prov = Portfolio(name="m", description="x", holdings={"AAPL": 1.0})
+    kwargs = {
+        "config": _config(),
+        "gemini": gemini,
+        "cache": cache,
+        "market_date": date(2026, 5, 25),
+        "position_quantities": {"AAPL": 7},
+    }
+
+    r1 = run_scenario("s", prov, **kwargs)
+    r2 = run_scenario("s", prov, **kwargs)  # cache hit on the return-space canonical
+    assert gemini.shock_calls == 1, "second run must hit the return-space cache"
+    assert calls["n"] == 2, "MTM is re-marked on the hit (NAV is never cached)"
+    assert r1.portfolio_nav == r2.portfolio_nav == 2_000_000.0
+
+
+def test_run_scenario_quantity_mode_fail_closed(monkeypatch):
+    _patch_market_layer(monkeypatch)
+
+    def boom(*args, **kwargs):
+        raise MarkingError("no price for FOO")
+
+    monkeypatch.setattr("app.llm.scenario.mark_book", boom)
+    with pytest.raises(MarkingError):
+        run_scenario(
+            "s",
+            Portfolio(name="m", description="x", holdings={"AAPL": 1.0}),
+            config=_config(),
+            gemini=_MockGeminiClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+            position_quantities={"AAPL": 10},
+        )
+
+
+def test_run_scenario_nav_scalar_mode_not_cached(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    result = run_scenario(
+        "s",
+        "us_tech_growth",
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=cache,
+        market_date=date(2026, 5, 25),
+        portfolio_nav=500_000.0,
+    )
+    assert result.portfolio_nav == 500_000.0
+    assert result.reporting_currency == "USD"
+    # NAV scalar is a pure post-cache overlay; the canonical must not carry it.
+    (cached,) = cache.store.values()
+    assert cached["portfolio_nav"] is None
 
 
 def test_get_portfolio_smoke():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.data.market_cache import market_cache_key
 from app.utils.hashing import scenario_cache_key
 
 
@@ -63,3 +64,40 @@ def test_scenario_cache_key_sensitive_to_text_case_only_via_normalization():
     # But genuinely different text DOES change the key.
     k3 = scenario_cache_key(**_base_kwargs(scenario_text="Different scenario entirely"))
     assert k1 != k3
+
+
+# --- Mark-to-market cache-key behavior ---
+
+
+def test_scenario_cache_key_quantities_change_the_key():
+    base = _base_kwargs()
+    k_no = scenario_cache_key(**base)
+    k_q = scenario_cache_key(**base, position_quantities={"AAPL": 10, "MSFT": 5})
+    assert k_no != k_q, "MTM quantity inputs must produce a distinct cache key"
+
+
+def test_scenario_cache_key_absent_quantities_is_byte_identical():
+    # Back-compat guard: weight-only / NAV-scalar runs (no quantities) must hash
+    # EXACTLY as before, so adding MTM did not invalidate any existing cache entry.
+    base = _base_kwargs()
+    assert scenario_cache_key(**base) == scenario_cache_key(**base, position_quantities=None)
+    assert scenario_cache_key(**base) == scenario_cache_key(**base, position_quantities={})
+
+
+def test_scenario_cache_key_quantities_order_independent():
+    base = _base_kwargs()
+    k1 = scenario_cache_key(**base, position_quantities={"AAPL": 10, "MSFT": 5})
+    k2 = scenario_cache_key(**base, position_quantities={"MSFT": 5, "AAPL": 10})
+    assert k1 == k2
+
+
+def test_market_cache_key_distinguishes_raw_from_adjusted():
+    adj = market_cache_key(["AAPL"], interval="1d", start="2024-01-01", end="2024-01-10")
+    raw = market_cache_key(
+        ["AAPL"], interval="1d", start="2024-01-01", end="2024-01-10", auto_adjust=False
+    )
+    assert adj != raw, "raw close and adjusted close must not collide in the market cache"
+    # The default (adjusted) key is unchanged by the new param — no invalidation.
+    assert adj == market_cache_key(
+        ["AAPL"], interval="1d", start="2024-01-01", end="2024-01-10", auto_adjust=True
+    )
