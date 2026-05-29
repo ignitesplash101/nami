@@ -91,6 +91,19 @@ def test_scenario_cache_key_quantities_order_independent():
     assert k1 == k2
 
 
+def test_scenario_cache_key_pinned_event_ids_behavior():
+    base = _base_kwargs()
+    # Present -> distinct keyspace (fixed-context decomposition subset).
+    assert scenario_cache_key(**base) != scenario_cache_key(**base, pinned_event_ids=["covid"])
+    # Absent / empty -> byte-identical to a normal run (no invalidation).
+    assert scenario_cache_key(**base) == scenario_cache_key(**base, pinned_event_ids=None)
+    assert scenario_cache_key(**base) == scenario_cache_key(**base, pinned_event_ids=[])
+    # Order-independent.
+    assert scenario_cache_key(**base, pinned_event_ids=["a", "b"]) == scenario_cache_key(
+        **base, pinned_event_ids=["b", "a"]
+    )
+
+
 def test_market_cache_key_distinguishes_raw_from_adjusted():
     adj = market_cache_key(["AAPL"], interval="1d", start="2024-01-01", end="2024-01-10")
     raw = market_cache_key(

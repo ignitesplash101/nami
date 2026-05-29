@@ -482,6 +482,66 @@ def decompose_endpoint(
     return ScenarioRunResponse(result=result, analog_events=_analog_events(load_events()))
 
 
+@api.post("/api/scenarios/decompose-stream")
+def decompose_stream_endpoint(
+    body: NarrativeDecompositionRequest, request: Request
+) -> StreamingResponse:
+    """SSE variant of /decompose. Emits subset-progress so the UI can show
+    "X / Y subset runs" during the (slow) 2^N pipeline reruns.
+
+    Event payloads:
+        {"stage": "subset", "done": <int>, "total": <int>}
+        {"stage": "done", "result": <ScenarioRunResponse>}   # final
+        {"stage": "error", "message": "..."}                  # on failure
+    """
+    mode = access_mode_for_request(request)
+    if not can_use_narrative_decomposition(mode):
+        raise HTTPException(status_code=403, detail="Narrative decomposition requires admin mode.")
+
+    config = load_config()
+    gemini = GeminiClient(config)
+    scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
+    decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
+
+    events_q: queue.Queue[dict] = queue.Queue()
+    SENTINEL = object()
+
+    def progress(done: int, total: int) -> None:
+        events_q.put({"stage": "subset", "done": done, "total": total})
+
+    def worker() -> None:
+        try:
+            result = compute_narrative_shapley(
+                body.result,
+                config=config,
+                gemini=gemini,
+                cache=scenario_cache,
+                decomposition_cache=decomposition_cache,
+                market_date=body.result.market_date,
+                progress=progress,
+            )
+            response = ScenarioRunResponse(
+                result=result, analog_events=_analog_events(load_events())
+            )
+            events_q.put({"stage": "done", "result": response.model_dump(mode="json")})
+        except Exception as exc:  # noqa: BLE001 — stream errors as SSE events
+            events_q.put({"stage": "error", "message": str(exc)})
+        finally:
+            events_q.put(SENTINEL)
+
+    def generator() -> Generator[str, None, None]:
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        while True:
+            event = events_q.get()
+            if event is SENTINEL:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+        thread.join(timeout=1.0)
+
+    return StreamingResponse(generator(), media_type="text/event-stream")
+
+
 # ============================================================================
 # Saved analytics (Firestore-backed) — Phase 11
 # ============================================================================

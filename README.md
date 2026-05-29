@@ -51,7 +51,7 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 | | |
 |---|---|
 | **Iterative shock adjustment** | Sliders or natural-language prompts ("make rates shock larger", "drop credit") edit the LLM's shocks in seconds without re-running analog selection or narrative grounding. |
-| **Mark-to-market (USD)** | Enter **share quantities** and nami marks each position to the as-of raw close, FX-converts to USD, and reports portfolio **NAV + dollar P&L** (a `%`/`$` toggle) beside the percentage view. Mixed-currency books (e.g. JPY, GBp) are handled; backdated runs mark at the as-of date; a missing/stale price or FX **fails closed** rather than showing a partial valuation. |
+| **Dollar view & mark-to-market** | Apply a **notional portfolio value** to any run (incl. visitors) for an instant dollar view — **original → stressed** position values, NAV→stressed NAV, and `$` P&L, recomputed live as you change the value (no re-run). Admins can instead enter **share quantities** for true **mark-to-market**: each position marked to the as-of raw close, FX-converted to USD (mixed-currency books like JPY/GBp handled; fails closed on a missing/stale mark). |
 | **Backdated reports** | Run scenarios *as of* a historical date with strict no-look-ahead: events filtered by `end_date ≤ as_of`, yfinance fetches use `end=as_of`, analog-only narrative path (no Google Search, no current news). |
 | **Dated portfolios** | Save named portfolios with time-series of immutable holding snapshots in Firestore. "Run a scenario against my 2024-06-30 book." |
 | **Saved analytics library** | Persist any result with name, tags, notes, and full inline reproducibility metadata. Re-open via permalink (`?saved=<id>`) or browse a filterable library. |

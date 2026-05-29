@@ -162,6 +162,50 @@ def test_narrative_shapley_symmetry_with_identical_subs(monkeypatch):
     assert abs(phi_x + phi_y - pnls["X. Y."]) < 1e-12
 
 
+def test_narrative_shapley_pins_source_analogs(monkeypatch):
+    """Every subset run reuses the source scenario's analog set (fixed-context)."""
+    seen_pinned: list = []
+
+    def _fake(text, portfolio, **kwargs):  # noqa: ARG001
+        seen_pinned.append(kwargs.get("pinned_event_ids"))
+        return ScenarioResult(
+            scenario_text=text,
+            market_date=date(2026, 5, 25),
+            portfolio_key="custom",
+            portfolio_name=portfolio.name,
+            portfolio_holdings=dict(portfolio.holdings),
+            analogs_selected=[],
+            factor_shocks=[],
+            periphery_shocks=[],
+            narrative="mock",
+            citations=[],
+            factor_envelope={},
+            portfolio_pnl=PortfolioPnL(
+                total_pnl=-0.01,
+                by_factor_naive={},
+                by_ticker_factor={},
+                by_ticker_periphery={},
+                by_ticker_total={},
+            ),
+        )
+
+    monkeypatch.setattr("app.llm.narrative_shapley.run_scenario", _fake)
+    base = _base_result().model_copy(
+        update={"selected_event_ids": ["covid-crash-2020", "lehman-gfc-2008"]}
+    )
+    compute_narrative_shapley(
+        base,
+        config=_config(),
+        gemini=None,
+        cache=InMemoryCache(),
+        decomposition_cache=InMemoryCache(),
+        market_date=date(2026, 5, 25),
+        sub_narratives_override=["A.", "B."],
+    )
+    assert len(seen_pinned) == 3  # 2^2 - 1 non-empty subsets
+    assert all(p == ["covid-crash-2020", "lehman-gfc-2008"] for p in seen_pinned)
+
+
 def test_compute_narrative_shapley_rejects_out_of_range_count():
     """N must be in [2, 4]."""
     base = _base_result()

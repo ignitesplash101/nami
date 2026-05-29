@@ -15,7 +15,7 @@ import {
   Upload
 } from "lucide-react";
 import {
-  decomposeScenario,
+  decomposeScenarioStream,
   getAccess,
   getMethodology,
   getSamplePortfolios,
@@ -26,12 +26,14 @@ import {
   validatePortfolio
 } from "./api";
 import {
+  buildPositionValuations,
   buildWaterfallData,
   buildWaterfallDataDollars,
   factorReasoningRows,
   formatCurrency,
   formatPercent,
   formatSignedCurrency,
+  parseNav,
   topContributor
 } from "./charts";
 import { AdjustmentPanel } from "./AdjustmentPanel";
@@ -121,8 +123,9 @@ export default function App() {
   // mark-to-market (server marks the share counts to the as-of close, FX→USD).
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
   const [navInput, setNavInput] = useState("");
-  // Results display: percent (default) vs dollars (enabled once a run carries a NAV).
+  // Results display: percent (default) vs dollars (enabled once a NAV exists).
   const [displayMode, setDisplayMode] = useState<"pct" | "usd">("pct");
+  const [valuationSort, setValuationSort] = useState<"impact" | "worst" | "best">("impact");
   const [scenarioText, setScenarioText] = useState("");
   // As-of date (YYYY-MM-DD). Empty string means today/live.
   const [asOfDate, setAsOfDate] = useState<string>("");
@@ -134,6 +137,9 @@ export default function App() {
   const [attributionMethod, setAttributionMethod] = useState<AttributionMethod>("naive");
   const [isRunning, setIsRunning] = useState(false);
   const [isDecomposing, setIsDecomposing] = useState(false);
+  const [decomposeProgress, setDecomposeProgress] = useState<{ done: number; total: number } | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [currentStage, setCurrentStage] = useState<SsePipelineStage | null>(null);
   const [stageStatus, setStageStatus] = useState<"start" | "done" | null>(null);
@@ -224,18 +230,16 @@ export default function App() {
     setCacheHit(false);
     try {
       const sharesMode = portfolioMode === "custom" && customUnits === "shares";
-      const navValue = navInput.trim() ? Number(navInput) : undefined;
       const baseAdmin = {
         scenario_text: scenarioText || selectedScenario?.text,
         portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
         portfolio_name: portfolioMode === "custom" ? customName : undefined,
         portfolio_holdings:
           portfolioMode === "custom" && !sharesMode ? holdingsFromRows(customRows) : undefined,
-        // Mark-to-market: share quantities (true MTM) OR an optional NAV scalar for
-        // weight-based books. reporting_currency is USD in v1.
+        // Mark-to-market: admin share quantities marked to the as-of close + FX.
+        // (Notional dollar scaling is a client-side post-run control, not a run input.)
         position_quantities: sharesMode ? holdingsFromRows(customRows) : undefined,
-        portfolio_nav: !sharesMode && navValue ? navValue : undefined,
-        reporting_currency: sharesMode || navValue ? "USD" : undefined,
+        reporting_currency: sharesMode ? "USD" : undefined,
         // Only thread as_of_date when admin chose a non-today date. Empty
         // string and today both mean "live" — let the backend default.
         as_of_date: asOfDate || undefined
@@ -265,8 +269,11 @@ export default function App() {
       setAttributionMethod(
         response.result.portfolio_pnl.by_factor_conditional_shapley ? "conditional" : "naive"
       );
-      // Surface dollars by default once a run is marked; otherwise stay in percent.
-      setDisplayMode(response.result.portfolio_nav != null ? "usd" : "pct");
+      // Surface dollars by default when the run is marked (shares) OR a notional
+      // portfolio value is already entered (sticky knob); otherwise stay in percent.
+      setDisplayMode(
+        response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
+      );
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -286,13 +293,17 @@ export default function App() {
     if (!resultEnvelope) return;
     setError(null);
     setIsDecomposing(true);
+    setDecomposeProgress(null);
     try {
-      const response = await decomposeScenario(resultEnvelope.result);
+      const response = await decomposeScenarioStream(resultEnvelope.result, (done, total) =>
+        setDecomposeProgress({ done, total })
+      );
       setResultEnvelope(response);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
     } finally {
       setIsDecomposing(false);
+      setDecomposeProgress(null);
     }
   }
 
@@ -319,8 +330,6 @@ export default function App() {
         setCustomRows={setCustomRows}
         customUnits={customUnits}
         setCustomUnits={setCustomUnits}
-        navInput={navInput}
-        setNavInput={setNavInput}
       />
     </>
   );
@@ -402,8 +411,13 @@ export default function App() {
           setAttributionMethod={setAttributionMethod}
           displayMode={displayMode}
           setDisplayMode={setDisplayMode}
+          navInput={navInput}
+          setNavInput={setNavInput}
+          valuationSort={valuationSort}
+          setValuationSort={setValuationSort}
           canDecompose={Boolean(isAdmin && resultEnvelope)}
           isDecomposing={isDecomposing}
+          decomposeProgress={decomposeProgress}
           onDecompose={handleDecompose}
           onOpenMethodology={openMethodology}
           canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
@@ -571,9 +585,7 @@ function PortfolioPanel({
   customRows,
   setCustomRows,
   customUnits,
-  setCustomUnits,
-  navInput,
-  setNavInput
+  setCustomUnits
 }: {
   access: AccessResponse | null;
   portfolios: SamplePortfolio[];
@@ -587,8 +599,6 @@ function PortfolioPanel({
   setCustomRows: (rows: HoldingRow[]) => void;
   customUnits: "weights" | "shares";
   setCustomUnits: (units: "weights" | "shares") => void;
-  navInput: string;
-  setNavInput: (value: string) => void;
 }) {
   const selected = portfolios.find((portfolio) => portfolio.key === portfolioKey);
   const [validation, setValidation] = useState<string[]>([]);
@@ -672,18 +682,6 @@ function PortfolioPanel({
               Shares (MTM)
             </button>
           </div>
-          {!isShares ? (
-            <label>
-              Portfolio value (USD)
-              <input
-                value={navInput}
-                onChange={(event) => setNavInput(event.target.value)}
-                placeholder="optional — enables $ P&L"
-                inputMode="decimal"
-                aria-label="Portfolio value in USD (optional)"
-              />
-            </label>
-          ) : null}
           <div className="upload-control">
             <Upload size={15} />
             <input
@@ -829,8 +827,13 @@ function ResultsPanel({
   setAttributionMethod,
   displayMode,
   setDisplayMode,
+  navInput,
+  setNavInput,
+  valuationSort,
+  setValuationSort,
   canDecompose,
   isDecomposing,
+  decomposeProgress,
   onDecompose,
   onOpenMethodology,
   canSave,
@@ -841,8 +844,13 @@ function ResultsPanel({
   setAttributionMethod: (method: AttributionMethod) => void;
   displayMode: "pct" | "usd";
   setDisplayMode: (mode: "pct" | "usd") => void;
+  navInput: string;
+  setNavInput: (value: string) => void;
+  valuationSort: "impact" | "worst" | "best";
+  setValuationSort: (sort: "impact" | "worst" | "best") => void;
   canDecompose: boolean;
   isDecomposing: boolean;
+  decomposeProgress: { done: number; total: number } | null;
   onDecompose: () => void;
   onOpenMethodology: (section?: string) => void;
   canSave: boolean;
@@ -858,10 +866,20 @@ function ResultsPanel({
     );
   }
   const { result, analog_events } = envelope;
-  const nav = result.portfolio_nav;
   const currency = result.reporting_currency ?? "USD";
+  // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
+  // NAV is a client-side notional knob — instant what-if, no re-run.
+  const isMarked = Boolean(result.position_quantities);
+  const nav = isMarked ? result.portfolio_nav ?? null : parseNav(navInput);
   const hasNav = nav != null;
+  const stressedNav = nav != null ? nav * (1 + result.portfolio_pnl.total_pnl) : null;
   const showDollars = hasNav && displayMode === "usd";
+  const valuations = nav != null ? buildPositionValuations(result, nav) : [];
+  const sortedValuations = [...valuations].sort((a, b) => {
+    if (valuationSort === "worst") return a.delta - b.delta;
+    if (valuationSort === "best") return b.delta - a.delta;
+    return Math.abs(b.delta) - Math.abs(a.delta); // "impact" (default)
+  });
   const waterfall =
     showDollars && nav != null
       ? buildWaterfallDataDollars(result, attributionMethod, nav, currency)
@@ -930,6 +948,25 @@ function ResultsPanel({
               <Save size={14} /> Save scenario
             </button>
           ) : null}
+          {isMarked ? (
+            <span className="muted nav-marked" title="Marked to the as-of close + FX">
+              NAV <code>{formatCurrency(result.portfolio_nav ?? 0, currency)}</code> · marked
+            </span>
+          ) : (
+            <label className="nav-knob">
+              <span>Portfolio value</span>
+              <input
+                value={navInput}
+                onChange={(event) => {
+                  setNavInput(event.target.value);
+                  if (parseNav(event.target.value) != null) setDisplayMode("usd");
+                }}
+                placeholder="e.g. $1,000,000"
+                inputMode="decimal"
+                aria-label="Portfolio value (USD) for the dollar view"
+              />
+            </label>
+          )}
           {hasNav ? (
             <div className="segmented results-units" role="radiogroup" aria-label="P&L units">
               <button
@@ -946,7 +983,7 @@ function ResultsPanel({
                 aria-checked={showDollars}
                 className={showDollars ? "active" : ""}
                 onClick={() => setDisplayMode("usd")}
-                title="Show P&L in USD (marked to market)"
+                title="Show P&L in dollars"
               >
                 $
               </button>
@@ -958,17 +995,21 @@ function ResultsPanel({
             prompt {envelope.reproducibility.prompt_version} · model{" "}
             {envelope.reproducibility.model_id} · as-of{" "}
             <code>{envelope.reproducibility.effective_as_of_date}</code>
-            {hasNav ? (
-              <>
-                {" "}
-                · NAV <code>{formatCurrency(nav ?? 0, currency)}</code>
-              </>
-            ) : null}
           </span>
         ) : null}
       </div>
       <div className="metric-grid">
-        {hasNav ? <Metric label="Portfolio NAV" value={formatCurrency(nav ?? 0, currency)} /> : null}
+        {hasNav ? (
+          <Metric
+            label="Portfolio NAV"
+            value={formatCurrency(nav ?? 0, currency)}
+            sub={
+              stressedNav != null
+                ? `-> ${formatCurrency(stressedNav, currency)} stressed`
+                : undefined
+            }
+          />
+        ) : null}
         <Metric
           label="Portfolio P&L"
           value={
@@ -1103,7 +1144,6 @@ function ResultsPanel({
                 <th>Factor</th>
                 <th>Periphery</th>
                 <th>Total</th>
-                {showDollars ? <th>$ P&L</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -1116,9 +1156,6 @@ function ResultsPanel({
                     <td>{formatPercent(result.portfolio_pnl.by_ticker_factor[ticker] ?? 0)}</td>
                     <td>{formatPercent(result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0)}</td>
                     <td>{formatPercent(total)}</td>
-                    {showDollars ? (
-                      <td>{formatSignedCurrency(total * (nav ?? 0), currency)}</td>
-                    ) : null}
                   </tr>
                 ))}
             </tbody>
@@ -1126,33 +1163,80 @@ function ResultsPanel({
         </TableCard>
       </div>
 
-      {hasNav && result.position_values ? (
-        <TableCard title="Marks (raw close, as-of date, USD market value)">
-          <table>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Shares</th>
-                <th>Mark (native)</th>
-                <th>Mark date</th>
-                <th>Market value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(result.position_values)
-                .sort((a, b) => b[1] - a[1])
-                .map(([ticker, mv]) => (
-                  <tr key={ticker}>
-                    <td>{ticker}</td>
-                    <td>{result.position_quantities?.[ticker] ?? "—"}</td>
-                    <td>{result.mark_prices?.[ticker]?.toLocaleString() ?? "—"}</td>
-                    <td>{result.price_date_by_ticker?.[ticker] ?? "—"}</td>
-                    <td>{formatCurrency(mv, currency)}</td>
+      {hasNav ? (
+        <section className="result-card">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Valuation</p>
+              <h3>Position valuation — original → stressed</h3>
+            </div>
+            <div
+              className="segmented results-units sort-toggle"
+              role="radiogroup"
+              aria-label="Sort positions"
+            >
+              <button
+                role="radio"
+                aria-checked={valuationSort === "impact"}
+                className={valuationSort === "impact" ? "active" : ""}
+                onClick={() => setValuationSort("impact")}
+                title="Largest absolute impact first"
+              >
+                Impact
+              </button>
+              <button
+                role="radio"
+                aria-checked={valuationSort === "worst"}
+                className={valuationSort === "worst" ? "active" : ""}
+                onClick={() => setValuationSort("worst")}
+                title="Biggest losses first"
+              >
+                Worst
+              </button>
+              <button
+                role="radio"
+                aria-checked={valuationSort === "best"}
+                className={valuationSort === "best" ? "active" : ""}
+                onClick={() => setValuationSort("best")}
+                title="Biggest gains first"
+              >
+                Best
+              </button>
+            </div>
+          </div>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Weight</th>
+                  {isMarked ? <th>Shares</th> : null}
+                  {isMarked ? <th>Mark</th> : null}
+                  <th>Value</th>
+                  <th>Stressed</th>
+                  <th>Δ$</th>
+                  <th>Δ%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedValuations.map((row) => (
+                  <tr key={row.ticker}>
+                    <td>{row.ticker}</td>
+                    <td>{formatPercent(row.weight, 1)}</td>
+                    {isMarked ? <td>{row.shares ?? "—"}</td> : null}
+                    {isMarked ? (
+                      <td>{row.mark != null ? row.mark.toLocaleString() : "—"}</td>
+                    ) : null}
+                    <td>{formatCurrency(row.value, currency)}</td>
+                    <td>{formatCurrency(row.stressed, currency)}</td>
+                    <td>{formatSignedCurrency(row.delta, currency)}</td>
+                    <td>{formatPercent(row.deltaPct)}</td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
-          {result.fx_rates && Object.keys(result.fx_rates).length > 1 ? (
+              </tbody>
+            </table>
+          </div>
+          {isMarked && result.fx_rates && Object.keys(result.fx_rates).length > 1 ? (
             <p className="muted">
               FX → USD:{" "}
               {Object.entries(result.fx_rates)
@@ -1163,8 +1247,12 @@ function ResultsPanel({
                 )
                 .join(" · ")}
             </p>
-          ) : null}
-        </TableCard>
+          ) : (
+            <p className="muted">
+              Notional dollar view — sample weights × the portfolio value (positions are not marked).
+            </p>
+          )}
+        </section>
       ) : null}
 
       <div className="two-column">
@@ -1208,10 +1296,18 @@ function ResultsPanel({
         <div className="card-heading">
           <div>
             <p className="eyebrow">Experimental</p>
-            <h3>Narrative decomposition</h3>
+            <h3>Fixed-context shock attribution</h3>
           </div>
-          <button className="ghost-button" onClick={onDecompose} disabled={!canDecompose || isDecomposing}>
-            {isDecomposing ? "Running subset evaluations..." : "Run decomposition"}
+          <button
+            className="ghost-button"
+            onClick={onDecompose}
+            disabled={!canDecompose || isDecomposing}
+          >
+            {isDecomposing
+              ? decomposeProgress
+                ? `Decomposing… ${decomposeProgress.done}/${decomposeProgress.total}`
+                : "Decomposing…"
+              : "Run decomposition"}
           </button>
         </div>
         {result.narrative_shapley ? (
@@ -1222,6 +1318,7 @@ function ResultsPanel({
                   <th>#</th>
                   <th>Sub-narrative</th>
                   <th>Shapley P&L</th>
+                  {hasNav ? <th>$</th> : null}
                   <th>Relative</th>
                 </tr>
               </thead>
@@ -1231,6 +1328,9 @@ function ResultsPanel({
                     <td>{contribution.narrative_index + 1}</td>
                     <td>{contribution.narrative_text}</td>
                     <td>{formatPercent(contribution.shapley_value)}</td>
+                    {hasNav ? (
+                      <td>{formatSignedCurrency(contribution.shapley_value * (nav ?? 0), currency)}</td>
+                    ) : null}
                     <td>{formatPercent(contribution.relative_contribution)}</td>
                   </tr>
                 ))}
@@ -1239,8 +1339,10 @@ function ResultsPanel({
           </div>
         ) : (
           <p className="muted">
-            Admin-only. Runs the full pipeline over each subset, so it is slow and experimental.
-            Current periphery total: {formatPercent(peripheryTotal)}.
+            Admin-only · ~3–15 pipeline runs (~30–90s). The marginal shock each theme adds
+            <em> within the original analog context</em> (analogs pinned, no re-grounding) — a
+            decomposition-sensitivity view, illustrative, not causal. Current periphery total:{" "}
+            {formatPercent(peripheryTotal)}.
           </p>
         )}
       </section>

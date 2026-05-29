@@ -190,6 +190,54 @@ export function decomposeScenario(result: ScenarioResult): Promise<ScenarioRunRe
   });
 }
 
+/** SSE variant: reports "{done}/{total} subset runs" while the 2^N pipeline reruns. */
+export async function decomposeScenarioStream(
+  result: ScenarioResult,
+  onProgress: (done: number, total: number) => void
+): Promise<ScenarioRunResponse> {
+  const response = await fetch("/api/scenarios/decompose-stream", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ result })
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: ScenarioRunResponse | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let separatorIdx;
+    while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, separatorIdx);
+      buffer = buffer.slice(separatorIdx + 2);
+      const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
+      if (!dataLine) continue;
+      const event = JSON.parse(dataLine.slice("data: ".length));
+      if (event.stage === "subset") {
+        onProgress(event.done as number, event.total as number);
+      } else if (event.stage === "error") {
+        throw new Error(event.message ?? "Decomposition failed.");
+      } else if (event.stage === "done" && event.result) {
+        finalResult = event.result as ScenarioRunResponse;
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error("Decomposition stream ended without a result.");
+  }
+  return finalResult;
+}
+
 export function adjustScenarioShocks(
   payload: ScenarioAdjustRequest
 ): Promise<ScenarioRunResponse> {

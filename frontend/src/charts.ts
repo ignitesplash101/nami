@@ -122,6 +122,57 @@ export function formatSignedCurrency(value: number, currency = "USD", digits = 0
   return `${prefix}${formatCurrency(value, currency, digits)}`;
 }
 
+/**
+ * Parse a free-text portfolio value into a positive number, or null.
+ * Accepts "$1,000,000", "1,000,000", "1m", "250k", "2.5b". Rejects junk,
+ * non-finite, and non-positive (so JSON never carries a silent NaN/null NAV).
+ */
+export function parseNav(input: string): number | null {
+  if (!input) return null;
+  const cleaned = input.trim().toLowerCase().replace(/[$,\s]/g, "");
+  const match = cleaned.match(/^([0-9]*\.?[0-9]+)([kmb])?$/);
+  if (!match) return null;
+  const mult = match[2] === "k" ? 1e3 : match[2] === "m" ? 1e6 : match[2] === "b" ? 1e9 : 1;
+  const value = parseFloat(match[1]) * mult;
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export interface PositionValuation {
+  ticker: string;
+  weight: number;
+  shares?: number;
+  mark?: number;
+  markDate?: string;
+  value: number; // original USD market value
+  stressed: number; // post-shock USD market value
+  delta: number; // stressed - value (= NAV * by_ticker_total[t])
+  deltaPct: number; // delta / value (= the name's scenario return)
+}
+
+/**
+ * Original → stressed per-position valuation, all derived from NAV (the engine is
+ * linear): value = position_values[t] (marked) ?? weight·NAV (notional);
+ * delta = NAV·by_ticker_total[t]; stressed = value + delta.
+ */
+export function buildPositionValuations(result: ScenarioResult, nav: number): PositionValuation[] {
+  return Object.keys(result.portfolio_holdings).map((ticker) => {
+    const weight = result.portfolio_holdings[ticker] ?? 0;
+    const value = result.position_values?.[ticker] ?? weight * nav;
+    const delta = nav * (result.portfolio_pnl.by_ticker_total[ticker] ?? 0);
+    return {
+      ticker,
+      weight,
+      shares: result.position_quantities?.[ticker],
+      mark: result.mark_prices?.[ticker],
+      markDate: result.price_date_by_ticker?.[ticker],
+      value,
+      stressed: value + delta,
+      delta,
+      deltaPct: value !== 0 ? delta / value : 0
+    };
+  });
+}
+
 /** A dollar waterfall = the return-space waterfall scaled by NAV. */
 export function buildWaterfallDataDollars(
   result: ScenarioResult,

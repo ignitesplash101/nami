@@ -426,6 +426,46 @@ def test_run_scenario_nav_scalar_mode_not_cached(monkeypatch):
     assert cached["portfolio_nav"] is None
 
 
+def test_run_scenario_pinned_event_ids_skip_selection_and_force_analog_only(monkeypatch):
+    """Fixed-context decomposition: pinned analogs skip select_analogs and force the
+    analog-only (no-Search) narrative path even on a LIVE run."""
+    _patch_market_layer(monkeypatch)
+
+    class _NoSelectClient(_MockGeminiClient):
+        def select_analogs(self, scenario_text, event_summaries):
+            raise AssertionError("select_analogs must not be called when analogs are pinned")
+
+    gemini = _NoSelectClient()
+    result = run_scenario(
+        "stress",
+        "us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=InMemoryCache(),
+        market_date=None,  # live — isolate pinned's effect from backdating
+        pinned_event_ids=["covid-crash-2020", "lehman-gfc-2008"],
+    )
+
+    assert result.narrative_mode == "analog_only"
+    assert type(gemini).last_analog_grounded is True
+    assert result.selected_event_ids == ["covid-crash-2020", "lehman-gfc-2008"]
+    assert result.citations == []  # analog-only path returns no Google-Search citations
+
+
+def test_run_scenario_pinned_unknown_id_raises(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    with pytest.raises(ValueError, match="not in the"):
+        run_scenario(
+            "x",
+            "us_tech_growth",
+            config=_config(),
+            gemini=_MockGeminiClient(),
+            cache=InMemoryCache(),
+            market_date=None,
+            pinned_event_ids=["not-a-real-event"],
+        )
+
+
 def test_get_portfolio_smoke():
     # Sanity check the imports work; placeholder for future portfolio-tests file.
     assert get_portfolio("us_tech_growth") is not None

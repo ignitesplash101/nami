@@ -477,32 +477,32 @@ objects to seeing credit on factors the model didn't name.
 
 ---
 
-## Experimental: narrative decomposition
+## Fixed-context shock attribution (narrative decomposition)
 
-The opt-in "Also compute experimental narrative decomposition" checkbox in the
-Scenario tab triggers a different kind of Shapley analysis: it splits the scenario
-text itself into N ∈ {2, 3, 4} self-contained sub-narratives, re-runs the **full
-pipeline** on each of the 2^N subset combinations, and assigns each sub-narrative its
-exact Shapley value over the pipeline payoff function `v(S) = total_pnl(run_scenario(
-" ".join(S)))`.
+The opt-in "Run decomposition" action splits the scenario text into N ∈ {2, 3, 4}
+self-contained sub-narratives and assigns each its exact Shapley value over the payoff
+`v(S) = total_pnl(run_scenario(" ".join(S)))`, with `v(∅) := 0`.
 
-The empty-subset payoff is hardcoded to `v(∅) := 0` — no narrative → no pipeline run
-→ no P&L move. This is defensible but not the only choice; documented here so an
-advanced reader doesn't expect a market-drift baseline.
+**Fixed context.** Each subset run **pins the source scenario's analog set** and uses the
+**analog-only narrative path (no Google re-grounding)** — so the only thing that varies
+across subsets is the shock proposal for that fragment's text. This makes `v(S)`
+deterministic and reproducible (modulo temperature + cache), versus the earlier design
+that re-selected analogs and re-grounded per subset (noisy, news-dependent).
 
-**Framing**: this is *counterfactual pipeline attribution*, NOT a clean causal
-decomposition. Each subset reruns analog selection + grounded narrative + shock
-extraction, so the values reflect pipeline behavior on the subset, not a true causal
-contribution of the named sub-narrative. The UI label and methodology caption both say
-"experimental" for that reason.
+**What it measures — and doesn't.** This is *decomposition sensitivity*: the marginal
+shock each theme adds **within the original analog context**. It is NOT a causal
+decomposition (a fragment in isolation may still propose different shocks than it does in
+context). The UI and this caption label it "experimental / illustrative" for that reason.
+When a portfolio value is set, each contribution is also shown in dollars
+(`shapley_value · NAV`).
 
-Cost: `2^N − 1` full scenario runs (the empty subset is the hardcoded zero). For N=4
-that's 15 runs ≈ $0.015 and ~3-4 min sequential wall-clock. N is capped at 4 because
-N=5 takes 31 runs and ~8 min — too long for a synchronous request/response UX.
+**UX + cost.** Served over SSE (`/api/scenarios/decompose-stream`) so the UI shows
+"X / Y subset runs". Cost: `2^N − 1` runs (empty subset is the hardcoded zero) — N=4 is
+15 runs (~30–90s, ≈ $0.015). N is capped at 4 (N=5 = 31 runs, too long for a synchronous UX).
 
 Both Shapley sums (factor-level and narrative-level) satisfy the **efficiency axiom**
-exactly modulo float-point noise (factor) or float-point + LLM-variance drift
-(narrative). The methodology doc and UI both flag narrative-level drift as expected.
+exactly (modulo float noise); pinning analogs + skipping re-grounding removes the
+news-drift variance the narrative-level sum previously carried.
 
 ---
 
@@ -532,9 +532,14 @@ hit cache in <500ms; the 7-day TTL forces eventual refresh against drifted news.
 
 ## Mark-to-market valuation
 
-By default nami works in **return space**: a portfolio is a set of weights and P&L is a percentage. **Mark-to-market (MTM)** mode lets you enter **share quantities** instead and reports the book in **US dollars**.
+By default nami works in **return space**: a portfolio is a set of weights and P&L is a percentage. There are two ways to see dollars:
 
-**Marking.** For each holding nami fetches the **raw** (un-split/dividend-adjusted) daily close on the as-of date — a dedicated fetch, distinct from the adjusted-close series used for return modelling, because valuing a share count needs the actual traded price. Each position is converted to USD:
+- **Notional dollar view** (any run, including visitors): apply a **portfolio value (NAV)** as a post-run control. Because the engine is linear, every dollar figure is just `field × NAV`, recomputed **instantly in the browser** as you change the value — no re-run, no marking. Nothing is "marked"; it is a notional scaling of the weights. Per-position value here is `weight · NAV`.
+- **Mark-to-market** (admin, share quantities): enter **share counts** and nami marks each position to the as-of close + FX (below), deriving an authoritative NAV and price-derived weights.
+
+Both surface the same **original → stressed** view: `stressed_value = value + NAV·by_ticker_total[t]`, `stressed_NAV = NAV·(1 + total_pnl)`, and per-name `Δ% = delta / value` (the position's scenario return).
+
+**Marking (share-quantity mode).** For each holding nami fetches the **raw** (un-split/dividend-adjusted) daily close on the as-of date — a dedicated fetch, distinct from the adjusted-close series used for return modelling, because valuing a share count needs the actual traded price. Each position is converted to USD:
 
 ```
 position_value_usd[i] = shares[i] · raw_close[i] · pence_scale[i] · fx_to_usd[ccy(i)]

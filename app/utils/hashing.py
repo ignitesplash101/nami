@@ -25,6 +25,7 @@ def scenario_cache_key(
     factor_universe_version: str,
     events_version: str,
     position_quantities: dict[str, float] | None = None,
+    pinned_event_ids: list[str] | None = None,
 ) -> str:
     """SHA256 hex digest of normalized inputs.
 
@@ -49,5 +50,10 @@ def scenario_cache_key(
         payload_obj["position_quantities"] = sorted(
             (t, round(q, 6)) for t, q in position_quantities.items()
         )
+    if pinned_event_ids:
+        # Fixed-context decomposition subsets use a pinned analog set + analog-only
+        # narrative — semantically distinct from a normal run of the same text, so
+        # they get their own keyspace (and don't collide with / pollute it).
+        payload_obj["pinned_event_ids"] = sorted(pinned_event_ids)
     payload = json.dumps(payload_obj, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

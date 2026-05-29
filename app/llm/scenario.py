@@ -36,6 +36,7 @@ from app.llm.adjust_validation import validate_factor_overrides
 from app.llm.gemini_client import GeminiClient
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.schemas import (
+    AnalogSelection,
     FactorShock,
     PortfolioPnL,
     ScenarioResult,
@@ -170,6 +171,7 @@ def run_scenario(
     position_quantities: dict[str, float] | None = None,
     portfolio_nav: float | None = None,
     reporting_currency: str | None = None,
+    pinned_event_ids: list[str] | None = None,
 ) -> ScenarioResult:
     """End-to-end pipeline.
 
@@ -212,6 +214,10 @@ def run_scenario(
     requested_as_of = market_date or date.today()
     effective_as_of = resolve_effective_market_date(requested_as_of)
     is_backdated = effective_as_of < date.today()
+    # Pinned-analog runs (narrative-decomposition subsets) skip analog selection and
+    # the live Google-Search grounding so subset payoffs are deterministic. They
+    # share the analog-only narrative path with backdated runs.
+    use_analog_only = is_backdated or pinned_event_ids is not None
     progress = progress or _noop
 
     # Cache key uses effective_as_of — that's what determines the actual data
@@ -231,6 +237,7 @@ def run_scenario(
         factor_universe_version=factor_universe_version(),
         events_version=events_version(),
         position_quantities=position_quantities,
+        pinned_event_ids=pinned_event_ids,
     )
 
     if not skip_cache:
@@ -313,13 +320,25 @@ def run_scenario(
             )
 
         progress("analogs", "start")
-        analog_out = gemini.select_analogs(scenario_text, analog_summaries)
-        selected_ids = [a.event_id for a in analog_out.selected_events]
+        if pinned_event_ids is not None:
+            # Fixed-context decomposition: reuse the source scenario's analog set
+            # verbatim (no LLM re-selection) so subset payoffs are deterministic.
+            selected_ids = list(pinned_event_ids)
+            selected_events = [
+                AnalogSelection(
+                    event_id=eid,
+                    why_relevant="Pinned from the source scenario (fixed-context decomposition).",
+                )
+                for eid in selected_ids
+            ]
+        else:
+            analog_out = gemini.select_analogs(scenario_text, analog_summaries)
+            selected_events = analog_out.selected_events
+            selected_ids = [a.event_id for a in selected_events]
         # Guard against the selector hallucinating an event id outside the
-        # (possibly backdate-filtered) registry. compute_envelope would otherwise
-        # raise a bare KeyError, which the /run endpoint does not map (it catches
-        # ValueError -> 422). Raising ValueError here keeps both the blocking and
-        # SSE paths graceful instead of surfacing a 500.
+        # (possibly backdate-filtered) registry — or a pinned id no longer present.
+        # compute_envelope would otherwise raise a bare KeyError, which the /run
+        # endpoint does not map (it catches ValueError -> 422).
         unknown_ids = sorted({eid for eid in selected_ids if eid not in events})
         if unknown_ids:
             raise ValueError(
@@ -334,9 +353,9 @@ def run_scenario(
         progress("envelope", "done")
 
         progress("narrative", "start")
-        if is_backdated:
-            # Build the selected-analog payload the analog-grounded prompt needs:
-            # full event details (name, dates, tags, description), not just ids.
+        if use_analog_only:
+            # Backdated OR pinned-decomposition: ground the narrative in the selected
+            # analog events only (no Google Search). Build the full event payload.
             selected_analog_events = [
                 {
                     "id": e.id,
@@ -410,7 +429,7 @@ def run_scenario(
         portfolio_key=resolved_key,
         portfolio_name=portfolio_obj.name,
         portfolio_holdings=dict(portfolio_obj.holdings),
-        analogs_selected=analog_out.selected_events,
+        analogs_selected=selected_events,
         factor_shocks=shock_out.factor_shocks,
         periphery_shocks=shock_out.periphery_shocks,
         narrative=shock_out.narrative,
@@ -418,7 +437,7 @@ def run_scenario(
         factor_envelope=factor_envelope,
         portfolio_pnl=PortfolioPnL(**pnl),
         requested_as_of_date=requested_as_of,
-        narrative_mode="analog_only" if is_backdated else "grounded",
+        narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,
         # Cache the quantity INPUTS (already in the key, deterministic) so a hit or
         # an adjustment can re-mark; the marked dollar OUTPUTS (nav/values/marks/fx)

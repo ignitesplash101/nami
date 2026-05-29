@@ -1420,6 +1420,34 @@ a {
 .results-units button {
   padding: 0 16px;
 }
+.results-units.sort-toggle {
+  grid-template-columns: repeat(3, auto);
+}
+.results-units.sort-toggle button {
+  padding: 0 12px;
+}
+
+/* Notional NAV knob in the results toolbar (instant client-side $ scaling). */
+.nav-knob {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.nav-knob input {
+  width: 150px;
+  padding: 6px 10px;
+  min-height: 34px;
+}
+.nav-marked {
+  font-size: 0.78rem;
+}
+.nav-marked code {
+  color: var(--accent-2);
+}
 .reproducibility-chip {
   font-family: var(--font-mono);
   font-size: 11px;

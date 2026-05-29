@@ -1,13 +1,15 @@
-"""Experimental counterfactual *pipeline* attribution: per-sub-narrative Shapley values.
+"""Fixed-context shock attribution: per-sub-narrative Shapley values.
 
-This orchestrator decomposes a scenario into N sub-narratives (2 ≤ N ≤ 4), reruns the
-FULL `run_scenario` pipeline on each of the 2^N subset combinations, and computes the
-exact Shapley value of each sub-narrative under the pipeline payoff function v(S) :=
-total_pnl(run_scenario(" ".join(S))).
+Decomposes a scenario into N sub-narratives (2 ≤ N ≤ 4) and computes the exact Shapley
+value of each under the payoff v(S) := total_pnl(run_scenario(" ".join(S))). Each subset
+run is **fixed-context**: it reuses the SOURCE scenario's analog set (`pinned_event_ids`)
+and the analog-only narrative path (no Google re-grounding), so the only thing varying
+across subsets is the shock proposal for that fragment text. This makes v(S) deterministic
+(modulo temperature) and reproducible — versus re-selecting analogs + re-grounding per
+subset, which was noisy and news-dependent.
 
-NOT a clean causal decomposition. Each subset reruns analog selection + grounded
-narrative + shock extraction, so the result reflects pipeline behavior on the subset,
-not a true causal contribution of the named sub-narrative. Frame this honestly in UI
+This is decomposition SENSITIVITY, not a causal decomposition: it measures the marginal
+shock each theme adds WITHIN the original analog context. Frame it as illustrative in UI
 and docs.
 
 Lives OUTSIDE `run_scenario` (which it calls). Putting it inside would invite recursion
@@ -83,6 +85,13 @@ def compute_narrative_shapley(
 
     max_workers = max(1, min(config.narrative_shapley_max_workers, non_empty_count))
 
+    # Fixed-context attribution: pin the SOURCE scenario's analog set across every
+    # subset and skip per-subset Google re-grounding, so the only thing that varies
+    # is the shock proposal for that sub-narrative text. This makes the payoff
+    # v(S) deterministic (vs. re-selecting analogs + re-grounding per subset). Falls
+    # back to per-subset selection if the source carried no event ids (old cache).
+    pinned_ids = original_result.selected_event_ids or None
+
     def _run_one(mask: int) -> float:
         included = [sub_narratives[i] for i in range(N) if mask & (1 << i)]
         subset_text = " ".join(included)
@@ -93,6 +102,7 @@ def compute_narrative_shapley(
             gemini=gemini,
             cache=cache,
             market_date=market_date,
+            pinned_event_ids=pinned_ids,
         )
         return float(sub_result.portfolio_pnl.total_pnl)
 

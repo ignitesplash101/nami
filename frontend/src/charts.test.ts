@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPositionValuations,
   buildWaterfallData,
   buildWaterfallDataDollars,
   factorReasoningRows,
   formatCurrency,
   formatSignedCurrency,
+  parseNav,
   topContributor
 } from "./charts";
 import type { ScenarioResult } from "./types";
@@ -108,6 +110,37 @@ describe("currency formatting + dollar waterfall (MTM)", () => {
     expect(usd.x).toEqual(pct.x);
     expect(usd.y[usd.y.length - 1]).toBeCloseTo(-0.08 * nav); // total bar = total_pnl × NAV
     expect(usd.text[usd.text.length - 1]).toContain("$");
+  });
+});
+
+describe("parseNav", () => {
+  it("parses plain, $, commas, and k/m/b suffixes", () => {
+    expect(parseNav("1000000")).toBe(1_000_000);
+    expect(parseNav("$1,000,000")).toBe(1_000_000);
+    expect(parseNav("1m")).toBe(1_000_000);
+    expect(parseNav("250k")).toBe(250_000);
+    expect(parseNav("2.5b")).toBe(2_500_000_000);
+    expect(parseNav("  $250,000 ")).toBe(250_000);
+  });
+
+  it("rejects junk / empty / non-positive (no silent NaN)", () => {
+    expect(parseNav("")).toBeNull();
+    expect(parseNav("abc")).toBeNull();
+    expect(parseNav("1x")).toBeNull();
+    expect(parseNav("0")).toBeNull();
+    expect(parseNav("-5")).toBeNull();
+  });
+});
+
+describe("buildPositionValuations", () => {
+  it("scales weight×NAV when unmarked; stressed = value + delta; deltaPct = delta/value", () => {
+    const rows = buildPositionValuations(fixtureResult(), 1_000_000);
+    const aapl = rows.find((r) => r.ticker === "AAPL");
+    expect(aapl).toBeDefined();
+    expect(aapl?.value).toBeCloseTo(0.6 * 1_000_000); // weight × NAV
+    expect(aapl?.delta).toBeCloseTo(1_000_000 * -0.06); // NAV × by_ticker_total
+    expect(aapl?.stressed).toBeCloseTo((aapl?.value ?? 0) + (aapl?.delta ?? 0));
+    expect(aapl?.deltaPct).toBeCloseTo((aapl?.delta ?? 0) / (aapl?.value ?? 1));
   });
 });
 
