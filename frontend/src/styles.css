@@ -161,13 +161,13 @@ button:disabled {
 }
 .brand-glyph {
   position: absolute;
-  top: -22px;
-  right: -10px;
+  top: 0;
+  right: 6px;
   font-family: var(--font-display);
-  font-size: 6.5rem;
+  font-size: 5.5rem;
   line-height: 1;
   color: var(--accent-2);
-  opacity: 0.09;
+  opacity: 0.1;
   pointer-events: none;
   user-select: none;
 }
