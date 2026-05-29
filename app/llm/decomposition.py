@@ -57,8 +57,15 @@ def decompose_scenario(
     )
 
     cached = cache.get_json(key, ttl_hours=ttl_hours)
-    if cached is not None and "sub_narratives" in cached:
-        sub_narratives = list(cached["sub_narratives"])
+    cached_subs = cached.get("sub_narratives") if isinstance(cached, dict) else None
+    # Trust the cache only if it holds a non-empty list of non-empty strings —
+    # a corrupted/old-format payload should recompute, not crash downstream.
+    if (
+        isinstance(cached_subs, list)
+        and cached_subs
+        and all(isinstance(s, str) and s.strip() for s in cached_subs)
+    ):
+        sub_narratives = [s.strip() for s in cached_subs]
     else:
         out = client.decompose(scenario_text)
         sub_narratives = [s.strip() for s in out.sub_narratives if s.strip()]

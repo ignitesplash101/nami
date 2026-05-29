@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface OverlayOptions {
   /**
@@ -23,14 +23,21 @@ export interface OverlayState {
 export function useOverlay(options?: OverlayOptions): OverlayState {
   const [isOpen, setIsOpen] = useState(false);
 
+  // Keep the latest onClose in a ref so `close` and the keydown effect depend
+  // only on `isOpen`, not on the `options` object identity. Consumers commonly
+  // pass an inline `{ onClose }` that changes every render — without this, the
+  // Esc listener would be torn down and re-registered on every render.
+  const onCloseRef = useRef(options?.onClose);
+  onCloseRef.current = options?.onClose;
+
   const open = useCallback(() => {
     setIsOpen(true);
   }, []);
 
   const close = useCallback(() => {
-    options?.onClose?.();
+    onCloseRef.current?.();
     setIsOpen(false);
-  }, [options]);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -40,7 +47,7 @@ export function useOverlay(options?: OverlayOptions): OverlayState {
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        options?.onClose?.();
+        onCloseRef.current?.();
         setIsOpen(false);
       }
     }
@@ -50,7 +57,7 @@ export function useOverlay(options?: OverlayOptions): OverlayState {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [isOpen, options]);
+  }, [isOpen]);
 
   return { isOpen, open, close };
 }

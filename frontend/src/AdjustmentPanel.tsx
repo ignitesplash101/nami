@@ -141,6 +141,11 @@ export function AdjustmentPanel({
           const canonical = canonicalShocks.get(row.factor) ?? row.value;
           const changedFromCanonical = Math.abs(row.value - canonical) > 1e-9;
           const isRemoved = row.value === 0 && canonical !== 0;
+          // A single continuous slider can't represent the disjoint valid domain
+          // [p10, p90] ∪ {0} when the envelope is entirely one sign. Restrict the
+          // slider to [p10, p90]; the Remove button is the only path to 0. Disable
+          // the slider whenever the current value sits outside [p10, p90].
+          const sliderOutOfRange = row.value < p10 || row.value > p90;
           return (
             <div key={row.factor} className={`adjust-row${changedFromCanonical ? " changed" : ""}`}>
               <div className="adjust-row-head">
@@ -152,19 +157,27 @@ export function AdjustmentPanel({
               <div className="adjust-row-controls">
                 <input
                   type="range"
-                  min={Math.min(0, p10)}
-                  max={Math.max(0, p90)}
+                  min={p10}
+                  max={p90}
                   step={0.001}
                   value={row.value}
                   onChange={(event) => setValue(index, Number(event.target.value))}
-                  disabled={isAdjusting}
+                  disabled={isAdjusting || sliderOutOfRange}
+                  aria-label={`${row.factor} shock (slider)`}
                 />
                 <input
                   type="number"
                   step={0.001}
                   value={row.value}
                   onChange={(event) => setValue(index, Number(event.target.value))}
+                  onBlur={() =>
+                    setValue(
+                      index,
+                      row.value === 0 ? 0 : Math.min(p90, Math.max(p10, row.value))
+                    )
+                  }
                   disabled={isAdjusting}
+                  aria-label={`${row.factor} shock value`}
                 />
                 <button
                   className="ghost-button"
@@ -212,7 +225,11 @@ export function AdjustmentPanel({
         </button>
       </div>
 
-      {error ? <div className="inline-error">{error}</div> : null}
+      {error ? (
+        <div className="inline-error" role="alert">
+          {error}
+        </div>
+      ) : null}
       {rerunSuggestion ? (
         <div className="rerun-suggestion">
           <p>{rerunSuggestion}</p>

@@ -22,6 +22,14 @@ from app.data.market_cache import (
     market_cache_key,
 )
 
+# Per-request network timeout (seconds) for the yfinance HTTP fetch. Bounds the
+# request so a stalled yfinance call cannot hang `run_scenario` /
+# `adjust_scenario_shocks` / `compute_envelope` indefinitely — those wrap this
+# helper in a ThreadPoolExecutor whose `with`-block shutdown(wait=True) would
+# otherwise re-block on the hung worker. yfinance forwards `timeout=` to its
+# requests session.
+_YF_DOWNLOAD_TIMEOUT_SECONDS = 30
+
 
 def _fetch_prices(
     tickers: Iterable[str],
@@ -78,6 +86,7 @@ def _fetch_prices(
         auto_adjust=True,
         progress=False,
         threads=True,
+        timeout=_YF_DOWNLOAD_TIMEOUT_SECONDS,
     )
 
     if raw is None or raw.empty:

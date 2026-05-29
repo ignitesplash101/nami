@@ -278,6 +278,33 @@ def test_run_scenario_skip_cache_forces_fresh_call(monkeypatch):
     assert gemini.shock_calls == 2
 
 
+def test_run_scenario_rejects_unknown_analog_id(monkeypatch):
+    """A hallucinated analog id from the selector must raise ValueError (the API
+    maps it to 422), not bubble up as a raw KeyError from compute_envelope (500)."""
+    _patch_market_layer(monkeypatch)
+
+    class _BogusAnalogClient(_MockGeminiClient):
+        def select_analogs(self, scenario_text, event_summaries) -> AnalogSelectionOutput:
+            self.analog_calls += 1
+            return AnalogSelectionOutput(
+                selected_events=[
+                    AnalogSelection(event_id="not-a-real-event", why_relevant="hallucinated"),
+                    AnalogSelection(event_id="covid-crash-2020", why_relevant="real"),
+                ],
+                reasoning="one bogus id",
+            )
+
+    with pytest.raises(ValueError, match="not in the"):
+        run_scenario(
+            scenario_text="x",
+            portfolio_key="us_tech_growth",
+            config=_config(),
+            gemini=_BogusAnalogClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+        )
+
+
 def test_get_portfolio_smoke():
     # Sanity check the imports work; placeholder for future portfolio-tests file.
     assert get_portfolio("us_tech_growth") is not None

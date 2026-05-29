@@ -86,17 +86,44 @@ export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunRes
   });
 }
 
+// Abort the stream if no progress event arrives for this long. The whole
+// pipeline is ~10-20s and the slowest single stage (grounded narrative) is well
+// under this, so an idle gap this large means the server stopped responding.
+const SSE_IDLE_TIMEOUT_MS = 60_000;
+
 export async function runScenarioStream(
   payload: RunScenarioPayload,
   onProgress: (event: SseProgressEvent) => void
 ): Promise<ScenarioRunResponse> {
-  const response = await fetch("/api/scenarios/run-stream", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  const controller = new AbortController();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const clearIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+  };
+  const armIdle = () => {
+    clearIdle();
+    idleTimer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, SSE_IDLE_TIMEOUT_MS);
+  };
+
+  let response: Response;
+  try {
+    response = await fetch("/api/scenarios/run-stream", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+  } catch (exc) {
+    clearIdle();
+    throw exc;
+  }
   if (!response.ok || !response.body) {
+    clearIdle();
     throw new Error(`${response.status} ${response.statusText}`);
   }
 
@@ -105,28 +132,44 @@ export async function runScenarioStream(
   let buffer = "";
   let finalResult: ScenarioRunResponse | null = null;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let separatorIdx;
-    while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, separatorIdx);
-      buffer = buffer.slice(separatorIdx + 2);
-      const dataLine = frame
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (!dataLine) continue;
-      const event: SseProgressEvent = JSON.parse(dataLine.slice("data: ".length));
-      onProgress(event);
-      if (event.stage === "error") {
-        throw new Error(event.message ?? "Scenario stream failed.");
+  armIdle();
+  try {
+    while (true) {
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (exc) {
+        if (timedOut) {
+          throw new Error(
+            "Scenario timed out — the server stopped responding. Please try again."
+          );
+        }
+        throw exc;
       }
-      if (event.stage === "done" && event.result) {
-        finalResult = event.result;
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      let separatorIdx;
+      while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, separatorIdx);
+        buffer = buffer.slice(separatorIdx + 2);
+        const dataLine = frame
+          .split("\n")
+          .find((line) => line.startsWith("data: "));
+        if (!dataLine) continue;
+        const event: SseProgressEvent = JSON.parse(dataLine.slice("data: ".length));
+        armIdle(); // progress arrived — reset the idle clock
+        onProgress(event);
+        if (event.stage === "error") {
+          throw new Error(event.message ?? "Scenario stream failed.");
+        }
+        if (event.stage === "done" && event.result) {
+          finalResult = event.result;
+        }
       }
     }
+  } finally {
+    clearIdle();
   }
 
   if (!finalResult) {

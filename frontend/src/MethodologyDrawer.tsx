@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { X } from "lucide-react";
+import { useFocusTrap } from "./useFocusTrap";
+
+function scrollBehavior(): ScrollBehavior {
+  return typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : "smooth";
+}
 
 interface MethodologySection {
   title: string;
@@ -47,6 +55,9 @@ export function MethodologyDrawer({
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<Element | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useFocusTrap(panelRef, isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,7 +94,7 @@ export function MethodologyDrawer({
     requestAnimationFrame(() => {
       const el = sectionRefs.current.get(match.slug);
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
       }
     });
   }, [isOpen, initialSection, sections]);
@@ -118,7 +129,7 @@ export function MethodologyDrawer({
       requestAnimationFrame(() => {
         const el = sectionRefs.current.get(slug);
         if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          el.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
         }
       });
     },
@@ -130,6 +141,7 @@ export function MethodologyDrawer({
   return (
     <div className="drawer-backdrop" onClick={onClose} role="presentation">
       <aside
+        ref={panelRef}
         className="drawer-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"

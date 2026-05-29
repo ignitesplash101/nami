@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
+import { useFocusTrap } from "./useFocusTrap";
 
 interface RailDrawerProps {
   isOpen: boolean;
@@ -11,6 +12,9 @@ interface RailDrawerProps {
 export function RailDrawer({ isOpen, onClose, children }: RailDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<Element | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useFocusTrap(panelRef, isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -30,6 +34,7 @@ export function RailDrawer({ isOpen, onClose, children }: RailDrawerProps) {
   return (
     <div className="drawer-backdrop" onClick={onClose} role="presentation">
       <aside
+        ref={panelRef}
         className="rail-drawer-panel"
         onClick={(event) => event.stopPropagation()}
         role="dialog"

@@ -104,6 +104,7 @@ export function PortfolioHistoryPanel({
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           placeholder="New portfolio name (e.g. 'Active book')"
+          aria-label="New portfolio name"
           maxLength={200}
         />
         <button className="ghost-button" onClick={handleCreate} disabled={!newName.trim()}>

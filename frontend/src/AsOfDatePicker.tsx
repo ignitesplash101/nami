@@ -51,7 +51,9 @@ export function BackdatedModeBanner({
   const resolved = effectiveDate !== requestedDate;
   return (
     <div className="backdated-banner">
-      <strong>🕰 Backdated mode</strong>
+      <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Clock size={14} /> Backdated mode
+      </strong>
       <p>
         Data, factor history, and analog registry are filtered to{" "}
         <code>{effectiveDate}</code>

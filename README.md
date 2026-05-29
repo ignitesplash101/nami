@@ -57,6 +57,7 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 | **SSE progress streaming** | Real-time stepper through the 7-step pipeline (cache_check → market → analogs → envelope → narrative → betas → attribution) while a scenario runs (~10-20s on cache miss). |
 | **Methodology drawer** | Slide-in `docs/methodology.md` viewer with auto-parsed sections, deep-links from factor names + the attribution toggle, full academic citations. |
 | **Mobile-friendly** | Off-canvas rail drawer, responsive grids, 44px touch targets, vertical SSE stepper on phones. Tested at 375 / 414 / 768 / 1024 / 1080 / 1920 widths. |
+| **Design & accessibility** | A distinctive *Hokusai Deep* identity — Prussian-indigo ground, Fraunces display type, a wave-propagation SSE stepper and a 波 / seigaiha brand mark — over an accessible baseline: visible `:focus-visible` rings, focus-trapped modals, a keyboard-navigable radiogroup attribution control, labelled inputs, `aria-describedby` errors, and `prefers-reduced-motion` support. |
 
 ## Tech stack
 

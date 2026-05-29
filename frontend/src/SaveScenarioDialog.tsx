@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { saveScenario } from "./api";
+import { useFocusTrap } from "./useFocusTrap";
 import type {
   AnalogEvent,
   SavedScenarioRecord,
@@ -37,6 +38,9 @@ export function SaveScenarioDialog({
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const openerRef = useRef<Element | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useFocusTrap(panelRef, isOpen);
 
   // Dialog-specific focus management ONLY: body scroll lock + Escape are
   // owned by the parent's useOverlay() (App.tsx::saveDialog). Capture the
@@ -94,6 +98,7 @@ export function SaveScenarioDialog({
   return (
     <div className="drawer-backdrop" onClick={onClose} role="presentation">
       <aside
+        ref={panelRef}
         className="save-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -115,6 +120,8 @@ export function SaveScenarioDialog({
               onChange={(e) => setName(e.target.value)}
               maxLength={200}
               placeholder="e.g. Q2 backdated trade-war replay"
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "save-dialog-error" : undefined}
             />
           </label>
           <label>
@@ -154,7 +161,11 @@ export function SaveScenarioDialog({
             </span>
             <span>Total P&amp;L: {(result.portfolio_pnl.total_pnl * 100).toFixed(2)}%</span>
           </div>
-          {error ? <div className="inline-error">{error}</div> : null}
+          {error ? (
+            <div className="inline-error" id="save-dialog-error" role="alert">
+              {error}
+            </div>
+          ) : null}
           <div className="button-row">
             <button className="primary-button" onClick={handleSave} disabled={saving}>
               {saving ? "Saving..." : "Save"}

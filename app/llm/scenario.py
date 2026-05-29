@@ -234,6 +234,18 @@ def run_scenario(
         progress("analogs", "start")
         analog_out = gemini.select_analogs(scenario_text, analog_summaries)
         selected_ids = [a.event_id for a in analog_out.selected_events]
+        # Guard against the selector hallucinating an event id outside the
+        # (possibly backdate-filtered) registry. compute_envelope would otherwise
+        # raise a bare KeyError, which the /run endpoint does not map (it catches
+        # ValueError -> 422). Raising ValueError here keeps both the blocking and
+        # SSE paths graceful instead of surfacing a 500.
+        unknown_ids = sorted({eid for eid in selected_ids if eid not in events})
+        if unknown_ids:
+            raise ValueError(
+                f"Analog selector returned event ids not in the "
+                f"{'backdated ' if is_backdated else ''}registry: {unknown_ids}. "
+                "Please re-run the scenario."
+            )
         progress("analogs", "done")
 
         progress("envelope", "start")

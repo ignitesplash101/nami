@@ -34,6 +34,7 @@ import {
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
 import { AttributionGuide } from "./AttributionGuide";
+import { nextEnabledMethod } from "./attributionNav";
 import { getSavedScenario } from "./api";
 import { MethodologyDrawer } from "./MethodologyDrawer";
 import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
@@ -280,9 +281,11 @@ export default function App() {
   const railContent = (
     <>
       <div className="brand-block">
+        <span className="brand-glyph" aria-hidden="true">波</span>
         <div className="brand-kicker">nami</div>
         <h1>Scenario Explorer</h1>
         <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
+        <div className="brand-crest" aria-hidden="true" />
       </div>
       <AccessPanel access={access} onAccessChange={setAccess} />
       <PortfolioPanel
@@ -508,6 +511,9 @@ function AccessPanel({
             onChange={(event) => setPasscode(event.target.value)}
             type="password"
             placeholder="Admin passcode"
+            aria-label="Admin passcode"
+            aria-invalid={Boolean(message)}
+            aria-describedby={message ? "unlock-message" : undefined}
             disabled={!access?.admin_available || busy}
           />
           <button onClick={handleUnlock} disabled={!passcode || busy || !access?.admin_available}>
@@ -515,7 +521,11 @@ function AccessPanel({
           </button>
         </div>
       )}
-      {message ? <div className="inline-error">{message}</div> : null}
+      {message ? (
+        <div className="inline-error" id="unlock-message" role="alert">
+          {message}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -605,9 +615,18 @@ function PortfolioPanel({
           </label>
           <div className="upload-control">
             <Upload size={15} />
-            <input type="file" accept=".csv,text/csv" onChange={(e) => handleCsv(e.target.files?.[0] ?? null)} />
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              aria-label="Upload holdings CSV"
+              onChange={(e) => handleCsv(e.target.files?.[0] ?? null)}
+            />
           </div>
           <div className="holding-editor">
+            <div className="holding-row holding-row-head" aria-hidden="true">
+              <span>Ticker</span>
+              <span>Weight</span>
+            </div>
             {customRows.map((row, index) => (
               <div className="holding-row" key={row.id}>
                 <input
@@ -618,6 +637,7 @@ function PortfolioPanel({
                     setCustomRows(next);
                   }}
                   placeholder="Ticker"
+                  aria-label={`Ticker for holding ${index + 1}`}
                 />
                 <input
                   value={row.weight}
@@ -628,6 +648,7 @@ function PortfolioPanel({
                   }}
                   placeholder="0.25"
                   inputMode="decimal"
+                  aria-label={`Weight for holding ${index + 1}`}
                 />
               </div>
             ))}
@@ -649,7 +670,7 @@ function PortfolioPanel({
             </button>
           </div>
           {validation.length ? (
-            <div className="inline-error">{validation.join(" ")}</div>
+            <div className="inline-error" role="alert">{validation.join(" ")}</div>
           ) : (
             <p className="muted">Weights may be decimals near 1.0 or percentages near 100.</p>
           )}
@@ -769,6 +790,46 @@ function ResultsPanel({
   );
   const isPhone = useMediaQuery("(max-width: 640px)");
 
+  const attributionOptions: {
+    method: AttributionMethod;
+    label: string;
+    title: string;
+    disabled: boolean;
+  }[] = [
+    {
+      method: "naive",
+      label: "Naive",
+      title: "(Σᵢ wᵢ·βᵢ,f) · shock[f] — credit only to factors the LLM shocked",
+      disabled: false
+    },
+    {
+      method: "conditional",
+      label: "Conditional (full)",
+      title:
+        "Full F-dim Shapley under the historical conditional distribution. Can cross-credit correlated factors the LLM did not name.",
+      disabled: !hasConditional
+    },
+    {
+      method: "conditional_explicit",
+      label: "Explicit-only",
+      title:
+        "Shapley restricted to factors the LLM explicitly shocked. Unshocked factors stay at zero. Sum ≤ factor-driven P&L.",
+      disabled: !hasConditionalExplicit
+    },
+    {
+      method: "conditional_grouped",
+      label: "Grouped",
+      title:
+        "Shapley over factor groups (market / sector / style / macro), redistributed within-group by naive weight. Collapses within-group leakage.",
+      disabled: !hasConditionalGrouped
+    }
+  ];
+
+  // Roving-radiogroup arrow nav: move to the next/prev ENABLED option and select it.
+  function moveAttribution(direction: 1 | -1) {
+    setAttributionMethod(nextEnabledMethod(attributionOptions, attributionMethod, direction));
+  }
+
   return (
     <section className="results-stack">
       <div className="results-toolbar">
@@ -802,38 +863,34 @@ function ResultsPanel({
             <p className="eyebrow">Attribution</p>
             <h3>Factor contribution waterfall</h3>
           </div>
-          <div className="segmented">
-            <button
-              className={attributionMethod === "naive" ? "active" : ""}
-              onClick={() => setAttributionMethod("naive")}
-              title="(Σᵢ wᵢ·βᵢ,f) · shock[f] — credit only to factors the LLM shocked"
-            >
-              Naive
-            </button>
-            <button
-              className={attributionMethod === "conditional" ? "active" : ""}
-              onClick={() => setAttributionMethod("conditional")}
-              disabled={!hasConditional}
-              title="Full F-dim Shapley under the historical conditional distribution. Can cross-credit correlated factors the LLM did not name."
-            >
-              Conditional (full)
-            </button>
-            <button
-              className={attributionMethod === "conditional_explicit" ? "active" : ""}
-              onClick={() => setAttributionMethod("conditional_explicit")}
-              disabled={!hasConditionalExplicit}
-              title="Shapley restricted to factors the LLM explicitly shocked. Unshocked factors stay at zero. Sum ≤ factor-driven P&L."
-            >
-              Explicit-only
-            </button>
-            <button
-              className={attributionMethod === "conditional_grouped" ? "active" : ""}
-              onClick={() => setAttributionMethod("conditional_grouped")}
-              disabled={!hasConditionalGrouped}
-              title="Shapley over factor groups (market / sector / style / macro), redistributed within-group by naive weight. Collapses within-group leakage."
-            >
-              Grouped
-            </button>
+          <div
+            className="segmented"
+            role="radiogroup"
+            aria-label="Attribution method"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                event.preventDefault();
+                moveAttribution(1);
+              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                event.preventDefault();
+                moveAttribution(-1);
+              }
+            }}
+          >
+            {attributionOptions.map((option) => (
+              <button
+                key={option.method}
+                role="radio"
+                aria-checked={attributionMethod === option.method}
+                tabIndex={attributionMethod === option.method ? 0 : -1}
+                className={attributionMethod === option.method ? "active" : ""}
+                onClick={() => setAttributionMethod(option.method)}
+                disabled={option.disabled}
+                title={option.title}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
         <AttributionGuide onOpenMethodology={onOpenMethodology} />
@@ -847,10 +904,10 @@ function ResultsPanel({
               measure: waterfall.measure,
               text: waterfall.text,
               textposition: "outside",
-              connector: { line: { color: "rgba(210,219,230,0.25)" } },
-              increasing: { marker: { color: "#23c483" } },
-              decreasing: { marker: { color: "#ff4d57" } },
-              totals: { marker: { color: "#8bd3ff" } }
+              connector: { line: { color: "rgba(233,216,166,0.3)" } },
+              increasing: { marker: { color: "#4cc38a" } },
+              decreasing: { marker: { color: "#e8615a" } },
+              totals: { marker: { color: "#7fb5d6" } }
             } as WaterfallTrace
           ]}
           layout={{
@@ -858,9 +915,9 @@ function ResultsPanel({
             height: isPhone ? 320 : 420,
             paper_bgcolor: "rgba(0,0,0,0)",
             plot_bgcolor: "rgba(0,0,0,0)",
-            font: { color: "#dce7f3" },
+            font: { color: "#eef2ec", family: "IBM Plex Mono, monospace" },
             margin: { l: 42, r: 18, t: 20, b: isPhone ? 110 : 70 },
-            yaxis: { tickformat: ".1%", gridcolor: "rgba(220,231,243,0.08)" },
+            yaxis: { tickformat: ".1%", gridcolor: "rgba(238,242,236,0.08)" },
             xaxis: {
               tickangle: isPhone ? -90 : -35,
               tickfont: isPhone ? { size: 9 } : undefined,
