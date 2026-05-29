@@ -415,6 +415,7 @@ export default function App() {
           onRun={handleRun}
           asOfDate={asOfDate}
           setAsOfDate={setAsOfDate}
+          latestClose={access?.latest_market_date ?? ""}
         />
 
         {resultEnvelope?.result.narrative_mode === "analog_only" ? (
