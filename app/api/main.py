@@ -33,6 +33,7 @@ from app.api.schemas import (
     ScenarioReproducibility,
     ScenarioRunRequest,
     ScenarioRunResponse,
+    TickerMetadataResponse,
     UnlockRequest,
 )
 from app.api.security import (
@@ -54,7 +55,7 @@ from app.data.firestore_store import (
     utcnow,
 )
 from app.data.marking import MarkingError
-from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio
+from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio, ticker_metadata
 from app.factors.analogs import HistoricalEvent, events_version, load_events
 from app.factors.universe import factor_universe_version
 from app.llm.gemini_client import GeminiClient
@@ -233,9 +234,27 @@ def sample_portfolios() -> list[SamplePortfolioResponse]:
             name=portfolio.name,
             description=portfolio.description,
             holdings=dict(portfolio.holdings),
+            benchmark=portfolio.benchmark,
         )
         for key, portfolio in SAMPLE_PORTFOLIOS.items()
     ]
+
+
+@api.get("/api/portfolios/ticker-metadata", response_model=TickerMetadataResponse)
+def portfolio_ticker_metadata(tickers: str | None = None) -> TickerMetadataResponse:
+    """Sector/country tags for exposure breakdowns.
+
+    Baked from the sample-weight snapshot. With no `tickers` query param, returns
+    the full baked map; otherwise returns one entry per requested (comma-separated)
+    ticker, defaulting unknown ones to {"Unknown", "Unknown"} so custom books get
+    a complete map.
+    """
+    baked = ticker_metadata()
+    if not tickers:
+        return TickerMetadataResponse(ticker_meta=baked)
+    requested = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    meta = {t: baked.get(t, {"sector": "Unknown", "country": "Unknown"}) for t in requested}
+    return TickerMetadataResponse(ticker_meta=meta)
 
 
 @api.post("/api/portfolio/validate", response_model=PortfolioValidationResponse)
@@ -333,6 +352,7 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
             position_quantities=quantities,
             portfolio_nav=nav,
             reporting_currency=currency,
+            benchmark=body.benchmark,
         )
     except MarkingError as exc:
         # Requested valuation could not be marked (missing/stale price or FX):
@@ -389,6 +409,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
                 position_quantities=quantities,
                 portfolio_nav=nav,
                 reporting_currency=currency,
+                benchmark=body.benchmark,
             )
             cache_key = compute_scenario_cache_key(
                 scenario_text,
@@ -445,6 +466,7 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
             body.cache_key,
             overrides=body.overrides,
             adjustment_text=body.adjustment_text,
+            benchmark=body.benchmark,
         )
     except LookupError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc

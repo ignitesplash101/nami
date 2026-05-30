@@ -26,6 +26,7 @@ from datetime import date, timedelta
 
 from app.data.market import fetch_daily_prices
 from app.data.market_cache import MarketCacheProtocol
+from app.data.sample_portfolios import CASH_TICKER
 
 logger = logging.getLogger(__name__)
 
@@ -240,8 +241,14 @@ def mark_book(
     """End-to-end: fetch raw marks + as-of FX, then value the book in USD.
 
     Raises (fail-closed) on any missing/stale price or FX rate.
+
+    A CASH sleeve is a USD amount, NOT a share count: it is never sent to yfinance,
+    marks at 1.0, and values to its own quantity (so `value == quantity`).
     """
-    marks = fetch_marks(list(quantities), as_of=as_of, cache=cache)
-    majors = {_major_currency(currency_for_ticker(t)) for t in quantities}
+    market = [t for t in quantities if t != CASH_TICKER]
+    marks = fetch_marks(market, as_of=as_of, cache=cache)
+    if CASH_TICKER in quantities:
+        marks[CASH_TICKER] = (1.0, as_of)
+    majors = {_major_currency(currency_for_ticker(t)) for t in market}
     fx = fetch_fx_to_usd(majors, as_of=as_of, cache=cache)
     return mark_positions(quantities, marks, fx, reporting_currency=reporting_currency)

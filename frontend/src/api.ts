@@ -11,7 +11,8 @@ import type {
   ScenarioReproducibility,
   ScenarioResult,
   ScenarioRunResponse,
-  SseProgressEvent
+  SseProgressEvent,
+  TickerMetadata
 } from "./types";
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -66,6 +67,14 @@ export function getSampleScenarios(): Promise<SampleScenario[]> {
   return requestJson<SampleScenario[]>("/api/scenarios/samples");
 }
 
+export async function getTickerMetadata(tickers?: string[]): Promise<TickerMetadata> {
+  const query = tickers && tickers.length ? `?tickers=${encodeURIComponent(tickers.join(","))}` : "";
+  const body = await requestJson<{ ticker_meta: TickerMetadata }>(
+    `/api/portfolios/ticker-metadata${query}`
+  );
+  return body.ticker_meta;
+}
+
 export function validatePortfolio(
   holdings: Record<string, number>
 ): Promise<PortfolioValidationResponse> {
@@ -89,6 +98,9 @@ export interface RunScenarioPayload {
   position_quantities?: Record<string, number>;
   portfolio_nav?: number;
   reporting_currency?: string;
+  // Benchmark ticker for relative (active) return. Custom books must pass one;
+  // sample books fall back to their own assigned benchmark server-side.
+  benchmark?: string;
 }
 
 export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunResponse> {

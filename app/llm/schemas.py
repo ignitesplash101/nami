@@ -199,3 +199,11 @@ class ScenarioResult(BaseModel):
     price_date_by_ticker: dict[str, str] | None = None
     fx_rates: dict[str, float] | None = None  # major currency -> USD per unit
     fx_date_by_currency: dict[str, str] | None = None
+    # Benchmark / active-return overlay (added with the holdings-quality work).
+    # Computed by running the benchmark ticker as a one-holding portfolio through
+    # the SAME factor shocks. Like the MTM block, these are attached AFTER cache
+    # retrieval and NEVER persisted — defaults keep older cached payloads valid.
+    # `active_return = portfolio_pnl.total_pnl − benchmark_pnl.total_pnl`.
+    benchmark_ticker: str | None = None
+    benchmark_pnl: PortfolioPnL | None = None
+    active_return: float | None = None

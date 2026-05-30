@@ -1,4 +1,4 @@
-import type { AttributionMethod, ScenarioResult } from "./types";
+import type { AttributionMethod, ScenarioResult, TickerMetadata } from "./types";
 
 export interface WaterfallData {
   x: string[];
@@ -185,6 +185,36 @@ export function buildPositionValuations(result: ScenarioResult, nav: number): Po
       deltaPct: value !== 0 ? delta / value : 0
     };
   });
+}
+
+export interface TagExposureRow {
+  tag: string; // sector or country bucket
+  weight: number; // summed portfolio weight in the bucket
+  pnl: number; // summed scenario return contribution (by_ticker_total)
+}
+
+/**
+ * Group holdings into sector/country buckets for an exposure breakdown. Weight
+ * is the summed portfolio weight; `pnl` is the summed `by_ticker_total` (the
+ * name-level scenario return contribution). Unknown tickers fall into "Unknown".
+ * Rows are sorted by descending weight.
+ */
+export function groupByTag(
+  result: ScenarioResult,
+  meta: TickerMetadata,
+  dimension: "sector" | "country"
+): TagExposureRow[] {
+  const buckets = new Map<string, { weight: number; pnl: number }>();
+  for (const ticker of Object.keys(result.portfolio_holdings)) {
+    const tag = meta[ticker]?.[dimension] ?? "Unknown";
+    const prior = buckets.get(tag) ?? { weight: 0, pnl: 0 };
+    prior.weight += result.portfolio_holdings[ticker] ?? 0;
+    prior.pnl += result.portfolio_pnl.by_ticker_total[ticker] ?? 0;
+    buckets.set(tag, prior);
+  }
+  return [...buckets.entries()]
+    .map(([tag, v]) => ({ tag, weight: v.weight, pnl: v.pnl }))
+    .sort((a, b) => b.weight - a.weight);
 }
 
 /** A dollar waterfall = the return-space waterfall scaled by NAV. */

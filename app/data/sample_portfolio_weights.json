@@ -1,0 +1,431 @@
+{
+  "as_of": "2026-05-30",
+  "method": "cap_weighted",
+  "sources": {
+    "defensive_mix": "yfinance_marketcap",
+    "japan_equity": "yfinance_marketcap",
+    "msci_world": "yfinance_marketcap",
+    "us_tech_growth": "yfinance_marketcap"
+  },
+  "ticker_meta": {
+    "4063.T": {
+      "country": "Japan",
+      "sector": "Basic Materials"
+    },
+    "6098.T": {
+      "country": "Japan",
+      "sector": "Communication Services"
+    },
+    "6501.T": {
+      "country": "Japan",
+      "sector": "Industrials"
+    },
+    "6758.T": {
+      "country": "Japan",
+      "sector": "Technology"
+    },
+    "6861.T": {
+      "country": "Japan",
+      "sector": "Technology"
+    },
+    "6902.T": {
+      "country": "Japan",
+      "sector": "Consumer Cyclical"
+    },
+    "7203.T": {
+      "country": "Japan",
+      "sector": "Consumer Cyclical"
+    },
+    "7267.T": {
+      "country": "Japan",
+      "sector": "Consumer Cyclical"
+    },
+    "8001.T": {
+      "country": "Japan",
+      "sector": "Industrials"
+    },
+    "8035.T": {
+      "country": "Japan",
+      "sector": "Technology"
+    },
+    "8058.T": {
+      "country": "Japan",
+      "sector": "Industrials"
+    },
+    "8306.T": {
+      "country": "Japan",
+      "sector": "Financial Services"
+    },
+    "8316.T": {
+      "country": "Japan",
+      "sector": "Financial Services"
+    },
+    "9432.T": {
+      "country": "Japan",
+      "sector": "Communication Services"
+    },
+    "9433.T": {
+      "country": "Japan",
+      "sector": "Communication Services"
+    },
+    "9984.T": {
+      "country": "Japan",
+      "sector": "Communication Services"
+    },
+    "AAPL": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "ABBV": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "ABT": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "ACN": {
+      "country": "Ireland",
+      "sector": "Technology"
+    },
+    "ADBE": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "AEP": {
+      "country": "United States",
+      "sector": "Utilities"
+    },
+    "AMAT": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "AMD": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "AMZN": {
+      "country": "United States",
+      "sector": "Consumer Cyclical"
+    },
+    "ASML": {
+      "country": "Netherlands",
+      "sector": "Technology"
+    },
+    "AVGO": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "AZN": {
+      "country": "United Kingdom",
+      "sector": "Healthcare"
+    },
+    "BAC": {
+      "country": "United States",
+      "sector": "Financial Services"
+    },
+    "BHP": {
+      "country": "Australia",
+      "sector": "Basic Materials"
+    },
+    "BRK-B": {
+      "country": "United States",
+      "sector": "Financial Services"
+    },
+    "CL": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "COST": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "CRM": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "CSCO": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "DUK": {
+      "country": "United States",
+      "sector": "Utilities"
+    },
+    "GOOGL": {
+      "country": "United States",
+      "sector": "Communication Services"
+    },
+    "HD": {
+      "country": "United States",
+      "sector": "Consumer Cyclical"
+    },
+    "HSBC": {
+      "country": "United Kingdom",
+      "sector": "Financial Services"
+    },
+    "INTC": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "JNJ": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "JPM": {
+      "country": "United States",
+      "sector": "Financial Services"
+    },
+    "KO": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "LLY": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "MA": {
+      "country": "United States",
+      "sector": "Financial Services"
+    },
+    "MCD": {
+      "country": "United States",
+      "sector": "Consumer Cyclical"
+    },
+    "MDLZ": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "META": {
+      "country": "United States",
+      "sector": "Communication Services"
+    },
+    "MRK": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "MSFT": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "MUFG": {
+      "country": "Japan",
+      "sector": "Financial Services"
+    },
+    "NEE": {
+      "country": "United States",
+      "sector": "Utilities"
+    },
+    "NFLX": {
+      "country": "United States",
+      "sector": "Communication Services"
+    },
+    "NVDA": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "NVO": {
+      "country": "Denmark",
+      "sector": "Healthcare"
+    },
+    "NVS": {
+      "country": "Switzerland",
+      "sector": "Healthcare"
+    },
+    "ORCL": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "PEP": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "PFE": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "PG": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "QCOM": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "RY": {
+      "country": "Canada",
+      "sector": "Financial Services"
+    },
+    "SAP": {
+      "country": "Germany",
+      "sector": "Technology"
+    },
+    "SHEL": {
+      "country": "United Kingdom",
+      "sector": "Energy"
+    },
+    "SO": {
+      "country": "United States",
+      "sector": "Utilities"
+    },
+    "SONY": {
+      "country": "Japan",
+      "sector": "Technology"
+    },
+    "TM": {
+      "country": "Japan",
+      "sector": "Consumer Cyclical"
+    },
+    "TMO": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "TSLA": {
+      "country": "United States",
+      "sector": "Consumer Cyclical"
+    },
+    "TTE": {
+      "country": "France",
+      "sector": "Energy"
+    },
+    "TXN": {
+      "country": "United States",
+      "sector": "Technology"
+    },
+    "UL": {
+      "country": "United Kingdom",
+      "sector": "Consumer Defensive"
+    },
+    "UNH": {
+      "country": "United States",
+      "sector": "Healthcare"
+    },
+    "V": {
+      "country": "United States",
+      "sector": "Financial Services"
+    },
+    "WFC": {
+      "country": "United States",
+      "sector": "Financial Services"
+    },
+    "WMT": {
+      "country": "United States",
+      "sector": "Consumer Defensive"
+    },
+    "XOM": {
+      "country": "United States",
+      "sector": "Energy"
+    }
+  },
+  "weights": {
+    "defensive_mix": {
+      "ABT": 0.028220886605809976,
+      "AEP": 0.013045233717431267,
+      "CL": 0.01365077862524284,
+      "COST": 0.0802797282059494,
+      "DUK": 0.018109890222347456,
+      "JNJ": 0.1026666925608223,
+      "KO": 0.0643422878657157,
+      "LLY": 0.18650759592263183,
+      "MDLZ": 0.014862105674746846,
+      "MRK": 0.05549902127456849,
+      "NEE": 0.03434762058875324,
+      "PEP": 0.03730613175543342,
+      "PFE": 0.028242132217806908,
+      "PG": 0.06327373684878282,
+      "SO": 0.019640796118140458,
+      "UNH": 0.06537143014855763,
+      "WMT": 0.17463393164725943
+    },
+    "japan_equity": {
+      "4063.T": 0.0450202187587949,
+      "6098.T": 0.045974203308079435,
+      "6501.T": 0.07270961169935151,
+      "6758.T": 0.06359162266057025,
+      "6861.T": 0.060720489813724736,
+      "6902.T": 0.016052228285538494,
+      "7203.T": 0.12391050859065945,
+      "7267.T": 0.017670364421720958,
+      "8001.T": 0.042282113839360834,
+      "8035.T": 0.07483955945658441,
+      "8058.T": 0.05796022832007273,
+      "8306.T": 0.10579620323718561,
+      "8316.T": 0.06942443504049726,
+      "9432.T": 0.0380437555243863,
+      "9433.T": 0.032583393813445674,
+      "9984.T": 0.13342106323002745
+    },
+    "msci_world": {
+      "AAPL": 0.10942304978640037,
+      "ABBV": 0.009183559877061358,
+      "ABT": 0.0035596099857707043,
+      "ACN": 0.0027486127986930233,
+      "ADBE": 0.0025013540168845397,
+      "AMD": 0.020091322104402794,
+      "AMZN": 0.06950478768351405,
+      "ASML": 0.014839814731402633,
+      "AVGO": 0.05050107838833784,
+      "AZN": 0.006874452640920745,
+      "BAC": 0.008742317006957224,
+      "BHP": 0.005392255296386791,
+      "BRK-B": 0.024432377838124988,
+      "COST": 0.010125993777885907,
+      "CRM": 0.003736557977149995,
+      "CSCO": 0.01133130775581094,
+      "GOOGL": 0.1100115822283196,
+      "HD": 0.0075496028603630775,
+      "HSBC": 0.007675394644709359,
+      "JNJ": 0.012949748501888533,
+      "JPM": 0.01914714053046306,
+      "KO": 0.008115742555975636,
+      "LLY": 0.023524927127257882,
+      "MA": 0.0104203969025139,
+      "MCD": 0.004735983701660524,
+      "META": 0.03833174103382119,
+      "MRK": 0.007000307009801142,
+      "MSFT": 0.07984881580827301,
+      "MUFG": 0.00504199860428705,
+      "NFLX": 0.008647508478531704,
+      "NVDA": 0.12209270042354645,
+      "NVO": 0.004821478086796244,
+      "NVS": 0.00684084239918047,
+      "ORCL": 0.015502738279798745,
+      "PEP": 0.004705567226926851,
+      "PG": 0.007980962067916956,
+      "RY": 0.006288200231810024,
+      "SAP": 0.005116652956960556,
+      "SHEL": 0.005581855924797629,
+      "SONY": 0.003042441514643835,
+      "TM": 0.0059104912249736755,
+      "TMO": 0.0043696130566392875,
+      "TSLA": 0.03907491360108744,
+      "TTE": 0.004634011982152098,
+      "UL": 0.002918348118092124,
+      "UNH": 0.008245552267412158,
+      "V": 0.01481753620187072,
+      "WFC": 0.005665017080270841,
+      "WMT": 0.02202725575666377,
+      "XOM": 0.014374479944890578
+    },
+    "us_tech_growth": {
+      "AAPL": 0.15285768797609509,
+      "ADBE": 0.0034942472593942403,
+      "AMAT": 0.011917201652187489,
+      "AMD": 0.028066417918866278,
+      "AMZN": 0.09709417868822527,
+      "AVGO": 0.07054709311986548,
+      "CRM": 0.005219755933422811,
+      "CSCO": 0.015829183235890085,
+      "GOOGL": 0.1536798338452361,
+      "INTC": 0.019222758869994104,
+      "META": 0.05354723088020293,
+      "MSFT": 0.11154418923533461,
+      "NFLX": 0.012080070472924438,
+      "NVDA": 0.17055645900870167,
+      "ORCL": 0.021656431029607997,
+      "QCOM": 0.008823777059945779,
+      "TSLA": 0.05458540008332174,
+      "TXN": 0.009278083730783914
+    }
+  }
+}

@@ -8,6 +8,7 @@ analogs / periphery but recomputed factor shocks and P&L.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
@@ -16,7 +17,7 @@ from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
 from app.data.market import compute_weekly_returns, fetch_weekly_prices
 from app.data.marking import MarkResult, mark_book
-from app.data.sample_portfolios import Portfolio, get_portfolio
+from app.data.sample_portfolios import CASH_TICKER, Portfolio, get_portfolio, sample_benchmark
 from app.factors.analogs import (
     compute_envelope,
     event_summaries,
@@ -44,6 +45,8 @@ from app.llm.schemas import (
 )
 from app.utils.calendar import latest_market_date, resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
+
+logger = logging.getLogger(__name__)
 
 # Minimum number of historical analog events required for envelope computation.
 # Surfaces as a 422 error from the API layer rather than a raw Gemini failure.
@@ -160,6 +163,131 @@ def _apply_mtm(
     return result
 
 
+def _market_tickers(portfolio: Portfolio) -> list[str]:
+    """Portfolio tickers excluding the non-market CASH sentinel (never fetched)."""
+    return [t for t in portfolio.tickers if t != CASH_TICKER]
+
+
+def _estimate_betas_cash_aware(
+    portfolio: Portfolio,
+    *,
+    config: Config,
+    factor_returns,
+    ticker_returns,
+):
+    """Betas for the book, injecting a zero-beta row for a CASH sleeve.
+
+    CASH is never sent to yfinance. The beta estimator runs on a cash-free
+    (re-normalized — betas are weight-independent) portfolio so its sum-to-1 +
+    ticker-membership invariants hold; the CASH row is then injected as all-zeros
+    so `portfolio_pnl` carries CASH at exactly 0 factor contribution while its
+    weight still dilutes the rest. Non-cash books take the unchanged path (and the
+    same `estimate_betas_for_portfolio` call the test mocks patch).
+    """
+    if CASH_TICKER not in portfolio.holdings:
+        return estimate_betas_for_portfolio(
+            portfolio,
+            lookback_weeks=config.beta_lookback_weeks,
+            alpha=config.ridge_alpha,
+            factor_returns=factor_returns,
+            ticker_returns=ticker_returns,
+        )
+    market = {t: w for t, w in portfolio.holdings.items() if t != CASH_TICKER}
+    total = sum(market.values()) or 1.0
+    beta_portfolio = Portfolio(
+        name=portfolio.name,
+        description=portfolio.description,
+        holdings={t: w / total for t, w in market.items()},
+    )
+    betas = estimate_betas_for_portfolio(
+        beta_portfolio,
+        lookback_weeks=config.beta_lookback_weeks,
+        alpha=config.ridge_alpha,
+        factor_returns=factor_returns,
+        ticker_returns=ticker_returns,
+    )
+    betas.loc[CASH_TICKER] = 0.0
+    return betas
+
+
+def _resolve_benchmark(
+    portfolio: Portfolio, resolved_key: str, benchmark: str | None
+) -> str | None:
+    """Benchmark ticker: explicit request wins, else the sample's own benchmark."""
+    if benchmark:
+        return benchmark.strip().upper() or None
+    if portfolio.benchmark:
+        return portfolio.benchmark
+    return sample_benchmark(resolved_key)
+
+
+def _benchmark_overlay(
+    result: ScenarioResult,
+    benchmark_ticker: str | None,
+    *,
+    config: Config,
+    factor_returns=None,
+    factor_history=None,
+    benchmark_returns=None,
+) -> ScenarioResult:
+    """Attach benchmark + active-return as a NON-cached overlay (mirrors `_apply_mtm`).
+
+    The benchmark is run as a one-holding portfolio through the SAME factor history
+    and the result's own `factor_shocks` (empty periphery). This is a display
+    adornment, so it is best-effort: any failure logs and leaves the benchmark
+    fields None rather than failing the run. Pre-fetched returns/history are reused
+    on the cache-miss path; the cache-hit path fetches its own (vintage-correct).
+    """
+    if not benchmark_ticker:
+        return result
+    try:
+        is_backdated = result.market_date < latest_market_date()
+        yf_end = (result.market_date + timedelta(days=1)) if is_backdated else None
+        if factor_returns is None:
+            if is_backdated:
+                factor_returns, factor_history = fetch_factor_returns_with_history(
+                    lookback_weeks=config.beta_lookback_weeks, end=yf_end
+                )
+            else:
+                factor_returns, factor_history = get_factor_returns_with_history(
+                    lookback_weeks=config.beta_lookback_weeks
+                )
+        if benchmark_returns is None:
+            bench_prices = fetch_weekly_prices(
+                [benchmark_ticker], lookback_weeks=config.beta_lookback_weeks, end=yf_end
+            )
+            benchmark_returns = compute_weekly_returns(bench_prices)
+        bench_portfolio = Portfolio(
+            name=benchmark_ticker,
+            description="Benchmark",
+            holdings={benchmark_ticker: 1.0},
+        )
+        bench_betas = estimate_betas_for_portfolio(
+            bench_portfolio,
+            lookback_weeks=config.beta_lookback_weeks,
+            alpha=config.ridge_alpha,
+            factor_returns=factor_returns,
+            ticker_returns=benchmark_returns,
+        )
+        bench_pnl = portfolio_pnl(
+            bench_portfolio,
+            bench_betas,
+            shocks={fs.factor: fs.shock for fs in result.factor_shocks},
+            periphery_shocks={},
+            factor_returns_history=factor_history,
+        )
+        return result.model_copy(
+            update={
+                "benchmark_ticker": benchmark_ticker,
+                "benchmark_pnl": PortfolioPnL(**bench_pnl),
+                "active_return": result.portfolio_pnl.total_pnl - bench_pnl["total_pnl"],
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 — benchmark is a display adornment, degrade gracefully
+        logger.warning("Benchmark overlay unavailable for %s: %s", benchmark_ticker, exc)
+        return result
+
+
 def run_scenario(
     scenario_text: str,
     portfolio: str | Portfolio | None = None,
@@ -175,6 +303,7 @@ def run_scenario(
     portfolio_nav: float | None = None,
     reporting_currency: str | None = None,
     pinned_event_ids: list[str] | None = None,
+    benchmark: str | None = None,
 ) -> ScenarioResult:
     """End-to-end pipeline.
 
@@ -227,6 +356,10 @@ def run_scenario(
     use_analog_only = is_backdated or pinned_event_ids is not None
     progress = progress or _noop
 
+    # Benchmark for relative (active) return — explicit request wins, else the
+    # sample portfolio's own benchmark. Attached as a non-cached overlay below.
+    benchmark_ticker = _resolve_benchmark(portfolio_obj, resolved_key, benchmark)
+
     # Cache key uses effective_as_of — that's what determines the actual data
     # used. A user picking a weekend resolves to the prior Friday, and both
     # requests should share a cache entry.
@@ -254,12 +387,16 @@ def run_scenario(
             # Cache holds the return-space canonical (+ quantity inputs); the NAV /
             # marks are recomputed here so a cache hit never serves stale dollars.
             cached_result = ScenarioResult.model_validate(cached)
-            return _apply_mtm(
+            marked = _apply_mtm(
                 cached_result,
                 position_quantities=position_quantities or cached_result.position_quantities,
                 portfolio_nav=portfolio_nav,
                 reporting_currency=reporting_currency or cached_result.reporting_currency,
             )
+            # Benchmark attaches on the hit path too (it fetches its own
+            # vintage-correct factor + benchmark returns) so a cache hit never
+            # silently drops the benchmark.
+            return _benchmark_overlay(marked, benchmark_ticker, config=config)
     progress("cache_check", "done")
 
     # Quantity (MTM) mode: mark the book BEFORE the Gemini chain so the LLM prompt
@@ -306,13 +443,25 @@ def run_scenario(
     # Hoist yfinance to overlap with the Gemini chain. Backdated runs MUST
     # bypass the warm cache (it keys only on lookback_weeks and always returns
     # current data) — call the underlying fetch directly with end=.
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=3) as pool:
         progress("market", "start")
         portfolio_future = pool.submit(
             fetch_weekly_prices,
-            portfolio_obj.tickers,
+            _market_tickers(portfolio_obj),
             lookback_weeks=config.beta_lookback_weeks,
             end=yf_end,
+        )
+        # Fetch the benchmark's prices in the same batch (overlaps the Gemini
+        # chain) so the post-cache benchmark overlay on the miss path is free.
+        benchmark_future = (
+            pool.submit(
+                fetch_weekly_prices,
+                [benchmark_ticker],
+                lookback_weeks=config.beta_lookback_weeks,
+                end=yf_end,
+            )
+            if benchmark_ticker
+            else None
         )
         if is_backdated:
             factors_future = pool.submit(
@@ -401,10 +550,9 @@ def run_scenario(
     ticker_returns = compute_weekly_returns(ticker_prices)
 
     progress("betas", "start")
-    betas = estimate_betas_for_portfolio(
+    betas = _estimate_betas_cash_aware(
         portfolio_obj,
-        lookback_weeks=config.beta_lookback_weeks,
-        alpha=config.ridge_alpha,
+        config=config,
         factor_returns=factor_returns,
         ticker_returns=ticker_returns,
     )
@@ -415,7 +563,9 @@ def run_scenario(
         portfolio_obj,
         betas,
         shocks={fs.factor: fs.shock for fs in shock_out.factor_shocks},
-        periphery_shocks={ps.ticker: ps.shock for ps in shock_out.periphery_shocks},
+        periphery_shocks={
+            ps.ticker: ps.shock for ps in shock_out.periphery_shocks if ps.ticker != CASH_TICKER
+        },
         factor_returns_history=factor_history,
     )
     progress("attribution", "done")
@@ -453,15 +603,28 @@ def run_scenario(
         reporting_currency=(reporting_currency or "USD") if position_quantities else None,
     )
 
-    # Persist the return-space canonical only (no NAV / dollars / marks).
+    # Persist the return-space canonical only (no NAV / dollars / marks / benchmark).
     cache.put_json(key, result.model_dump(mode="json"))
 
-    return _apply_mtm(
+    marked = _apply_mtm(
         result,
         position_quantities=position_quantities,
         portfolio_nav=portfolio_nav,
         reporting_currency=reporting_currency,
         precomputed=mark_result,
+    )
+    # Benchmark overlay (never cached) — reuse the factor history already fetched
+    # and the benchmark prices fetched in the same market batch.
+    benchmark_returns = (
+        compute_weekly_returns(benchmark_future.result()) if benchmark_future else None
+    )
+    return _benchmark_overlay(
+        marked,
+        benchmark_ticker,
+        config=config,
+        factor_returns=factor_returns,
+        factor_history=factor_history,
+        benchmark_returns=benchmark_returns,
     )
 
 
@@ -473,6 +636,7 @@ def adjust_scenario_shocks(
     config: Config | None = None,
     gemini: GeminiClient | None = None,
     cache: CacheProtocol | None = None,
+    benchmark: str | None = None,
 ) -> ScenarioResult:
     """Apply a structured edit to a cached canonical scenario.
 
@@ -506,17 +670,21 @@ def adjust_scenario_shocks(
         raise LookupError(f"Scenario result not found for cache_key={cache_key!r}.")
     canonical = ScenarioResult.model_validate(cached)
 
-    # Reconstruct the portfolio. Sample portfolios round-trip via get_portfolio;
-    # custom portfolios are rebuilt from the canonical's holdings dict (which is
-    # part of the cache-key hash, so we trust it).
-    if canonical.portfolio_key == "custom":
-        portfolio_obj = Portfolio(
-            name=canonical.portfolio_name,
-            description="User-saved custom portfolio",
-            holdings=dict(canonical.portfolio_holdings),
-        )
-    else:
-        portfolio_obj = get_portfolio(canonical.portfolio_key)
+    # Reconstruct the portfolio from the CANONICAL holdings for ALL portfolios
+    # (not just custom). The holdings dict is part of the cache-key hash, so it is
+    # the trusted as-run book. Rebuilding sample portfolios via get_portfolio would
+    # silently recompute against the *current* sample weights, so after a weight
+    # refresh an adjustment of an old cached scenario would drift off its canonical.
+    portfolio_obj = Portfolio(
+        name=canonical.portfolio_name,
+        description="Canonical portfolio (reconstructed for adjustment)",
+        holdings=dict(canonical.portfolio_holdings),
+        benchmark=canonical.benchmark_ticker or sample_benchmark(canonical.portfolio_key),
+    )
+    # Benchmark for the adjusted result's overlay: explicit (client-resent) wins,
+    # else the canonical's own (overlay-only ⇒ not recoverable from cache for
+    # custom books, so the client resends it).
+    benchmark_ticker = _resolve_benchmark(portfolio_obj, canonical.portfolio_key, benchmark)
 
     canonical_shocks = {fs.factor: fs.shock for fs in canonical.factor_shocks}
 
@@ -587,7 +755,7 @@ def adjust_scenario_shocks(
     with ThreadPoolExecutor(max_workers=2) as pool:
         portfolio_future = pool.submit(
             fetch_weekly_prices,
-            portfolio_obj.tickers,
+            _market_tickers(portfolio_obj),
             lookback_weeks=config.beta_lookback_weeks,
             end=yf_end,
         )
@@ -606,10 +774,9 @@ def adjust_scenario_shocks(
         factor_returns, factor_history = factors_future.result()
     ticker_returns = compute_weekly_returns(ticker_prices)
 
-    betas = estimate_betas_for_portfolio(
+    betas = _estimate_betas_cash_aware(
         portfolio_obj,
-        lookback_weeks=config.beta_lookback_weeks,
-        alpha=config.ridge_alpha,
+        config=config,
         factor_returns=factor_returns,
         ticker_returns=ticker_returns,
     )
@@ -618,7 +785,7 @@ def adjust_scenario_shocks(
         portfolio_obj,
         betas,
         shocks=new_shocks,
-        periphery_shocks=periphery_shocks,
+        periphery_shocks={t: s for t, s in periphery_shocks.items() if t != CASH_TICKER},
         factor_returns_history=factor_history,
     )
 
@@ -659,11 +826,14 @@ def adjust_scenario_shocks(
     # quantity inputs, so re-mark at the canonical's (vintage-controlled) as-of date
     # to refresh NAV + marks on the adjusted result. Dollars stay client-side
     # (return_field × NAV); only the shocks/P&L changed.
-    return _apply_mtm(
+    marked = _apply_mtm(
         adjusted,
         position_quantities=adjusted.position_quantities,
         reporting_currency=adjusted.reporting_currency,
     )
+    # Re-attach the benchmark overlay so the adjusted result carries an updated
+    # active return (it fetches its own vintage-correct factor + benchmark returns).
+    return _benchmark_overlay(marked, benchmark_ticker, config=config)
 
 
 def _envelope_df_from_canonical(canonical: ScenarioResult):

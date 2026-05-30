@@ -83,7 +83,11 @@ export function AdjustmentPanel({
       for (const row of rows) {
         overrides[row.factor] = row.value;
       }
-      const response = await adjustScenarioShocks({ cache_key: cacheKey, overrides });
+      const response = await adjustScenarioShocks({
+        cache_key: cacheKey,
+        overrides,
+        benchmark: result.benchmark_ticker
+      });
       onResult(response);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
@@ -100,7 +104,8 @@ export function AdjustmentPanel({
     try {
       const response = await adjustScenarioShocks({
         cache_key: cacheKey,
-        adjustment_text: adjustmentText.trim()
+        adjustment_text: adjustmentText.trim(),
+        benchmark: result.benchmark_ticker
       });
       onResult(response);
       setAdjustmentText("");

@@ -50,6 +50,10 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 
 | | |
 |---|---|
+| **Realistic cap-weighted books** | Sample portfolios are **cap-weighted** from a frozen, dated snapshot (regenerated offline by `scripts/refresh_sample_weights.py`), not naive equal-weight — a real developed-world book is ~10% AAPL, not 2% of everything. The runtime never scrapes, so weights stay reproducible and cache-safe. |
+| **Benchmark & active return** | Each book carries a benchmark (e.g. MSCI World→URTH, Tech→QQQ, Defensive→SPLV, Japan→EWJ; custom books optional). The benchmark is run through the same factor shocks and the result shows **active return** (portfolio − benchmark). |
+| **Sector & country exposure** | Per-position sector/country tags (baked into the snapshot) drive a **weight + P&L breakdown** by sector or country under any result. |
+| **Cash sleeve** | Add a zero-exposure **`CASH`** line to any custom book — it dilutes P&L (cash drag) and, in mark-to-market mode, is a USD amount marked at 1.0. |
 | **Iterative shock adjustment** | Sliders or natural-language prompts ("make rates shock larger", "drop credit") edit the LLM's shocks in seconds without re-running analog selection or narrative grounding. |
 | **Dollar view & mark-to-market** | Apply a **notional portfolio value** to any run (incl. visitors) for an instant dollar view — **original → stressed** position values, NAV→stressed NAV, and `$` P&L, recomputed live as you change the value (no re-run). Admins can instead enter **share quantities** for true **mark-to-market**: each position marked to the as-of raw close, FX-converted to USD (mixed-currency books like JPY/GBp handled; fails closed on a missing/stale mark). |
 | **Backdated reports** | Run scenarios *as of* a historical date with strict no-look-ahead: events filtered by `end_date ≤ as_of`, yfinance fetches use `end=as_of`, analog-only narrative path (no Google Search, no current news). |
@@ -191,7 +195,10 @@ Then push to main and the trigger handles the rest.
 - **Conditional Shapley ≠ causal attribution.** It's data-dependent credit allocation under the historical conditional distribution. Janzing et al. (2020) and Aas et al. (2021) are the load-bearing citations; the methodology doc has a longer treatment.
 - **Backdating is data-vintage-controlled, not model-vintage-controlled.** Events, factor history, and prices are strictly filtered to `≤ as_of`. The LLM's parametric knowledge is NOT — it still "knows" about COVID even when as_of is 2018. The UI banner makes this honest.
 - **`temperature=0` everywhere.** Same scenario + same portfolio + same effective as-of date + same prompt version + same model = same shocks, byte-for-byte cached.
-- **PROMPT_VERSION is the single cache-invalidation lever.** It bumps with any change to prompt semantics OR `ScenarioResult` shape. Currently v6.
+- **PROMPT_VERSION is the single cache-invalidation lever.** It bumps with any change to prompt semantics OR `ScenarioResult` shape. Currently v7. Post-cache overlays (mark-to-market, benchmark/active return) and display-only fields do NOT bump it — they're attached after retrieval and never persisted.
+- **Sample portfolios are cap-weighted from a frozen, dated snapshot.** `app/data/sample_portfolio_weights.json` holds committed cap-weights + sector/country tags, regenerated offline by `scripts/refresh_sample_weights.py`. The runtime never scrapes, so weights can't drift and poison the cache.
+- **Benchmark & active return are a non-cached overlay.** Each book carries a benchmark ticker (sample books built-in; custom books optional); the benchmark is run as a one-holding portfolio through the same factor shocks and `active_return = portfolio − benchmark` is attached post-cache.
+- **`CASH` is a zero-exposure sentinel.** A cash sleeve is never fetched from yfinance, carries a zero-beta/zero-return row (its weight dilutes the rest), and in MTM mode a `CASH` quantity is a USD amount marked at 1.0. An all-cash book is rejected (nothing to shock).
 - **Saved records are self-contained.** Inline holdings, inline analog event details, inline result, inline reproducibility metadata. A saved scenario doesn't depend on the live event registry or the GCS cache TTL.
 
 ## License

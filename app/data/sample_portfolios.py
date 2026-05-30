@@ -1,8 +1,25 @@
-"""Pre-loaded sample portfolios used by the Portfolio tab."""
+"""Pre-loaded sample portfolios used by the Portfolio tab.
+
+Holdings weights are NOT hard-coded here: they are loaded from the frozen, dated
+cap-weight snapshot ``sample_portfolio_weights.json`` (regenerated offline by
+``scripts/refresh_sample_weights.py``). Keeping weights in a committed artifact —
+rather than scraping at runtime — preserves the ``scenario_cache_key`` /
+backdating reproducibility contract. A missing or incomplete snapshot is a hard
+error (raised at import) so a partial/stale artifact can never ship silently.
+"""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+
+_WEIGHTS_PATH = Path(__file__).resolve().parent / "sample_portfolio_weights.json"
+
+# Sentinel ticker for a non-market cash sleeve: zero beta, zero return, no
+# periphery shock, classified as the "Cash" sector. Excluded from yfinance.
+CASH_TICKER = "CASH"
 
 
 @dataclass(frozen=True)
@@ -10,6 +27,7 @@ class Portfolio:
     name: str
     description: str
     holdings: dict[str, float] = field(default_factory=dict)
+    benchmark: str | None = None
 
     def __post_init__(self) -> None:
         total = sum(self.holdings.values())
@@ -21,153 +39,97 @@ class Portfolio:
         return list(self.holdings.keys())
 
 
-def _equal_weight(tickers: list[str]) -> dict[str, float]:
-    return dict.fromkeys(tickers, 1.0 / len(tickers))
-
-
-_MSCI_WORLD_APPROX = [
-    "AAPL",
-    "MSFT",
-    "NVDA",
-    "GOOGL",
-    "AMZN",
-    "META",
-    "TSLA",
-    "AVGO",
-    "BRK-B",
-    "LLY",
-    "JPM",
-    "V",
-    "UNH",
-    "XOM",
-    "MA",
-    "PG",
-    "JNJ",
-    "HD",
-    "COST",
-    "ORCL",
-    "WMT",
-    "ABBV",
-    "BAC",
-    "NFLX",
-    "KO",
-    "PEP",
-    "CRM",
-    "MRK",
-    "TMO",
-    "ADBE",
-    "CSCO",
-    "ABT",
-    "PFE",
-    "MCD",
-    "DIS",
-    "ACN",
-    "WFC",
-    "LIN",
-    "AMD",
-    "INTC",
-    "QCOM",
-    "TXN",
-    "NKE",
-    "PM",
-    "CMCSA",
-    "IBM",
-    "GE",
-    "T",
-    "RTX",
-    "HON",
-]
-
-_US_TECH_GROWTH = [
-    "AAPL",
-    "MSFT",
-    "GOOGL",
-    "AMZN",
-    "META",
-    "NVDA",
-    "TSLA",
-    "NFLX",
-    "AVGO",
-    "AMD",
-    "CRM",
-    "ORCL",
-    "ADBE",
-    "INTC",
-    "QCOM",
-    "CSCO",
-    "TXN",
-    "AMAT",
-]
-
-_DEFENSIVE_MIX = [
-    "PG",
-    "KO",
-    "PEP",
-    "WMT",
-    "COST",
-    "MDLZ",
-    "CL",
-    "NEE",
-    "DUK",
-    "SO",
-    "AEP",
-    "JNJ",
-    "UNH",
-    "LLY",
-    "PFE",
-    "ABT",
-    "MRK",
-]
-
-_JAPAN_TOPIX_CORE = [
-    "7203.T",  # Toyota
-    "9984.T",  # SoftBank Group
-    "6758.T",  # Sony
-    "8306.T",  # Mitsubishi UFJ
-    "6861.T",  # Keyence
-    "8035.T",  # Tokyo Electron
-    "9433.T",  # KDDI
-    "9432.T",  # NTT
-    "6501.T",  # Hitachi
-    "7267.T",  # Honda
-    "8316.T",  # Sumitomo Mitsui Financial
-    "6098.T",  # Recruit Holdings
-    "4063.T",  # Shin-Etsu Chemical
-    "6902.T",  # Denso
-    "8058.T",  # Mitsubishi Corp
-    "8001.T",  # Itochu
-]
-
-
-SAMPLE_PORTFOLIOS: dict[str, Portfolio] = {
-    "msci_world": Portfolio(
-        name="MSCI World Approximation",
-        description="~50 global large caps, equal-weighted (a rough cap-weighted approximation lives in Phase 2).",
-        holdings=_equal_weight(_MSCI_WORLD_APPROX),
+# name, description (sans as-of suffix), benchmark ticker
+_SAMPLE_META: dict[str, tuple[str, str, str]] = {
+    "msci_world": (
+        "MSCI World (developed-world large-cap proxy)",
+        "Developed-market large caps (US + ex-US ADRs), cap-weighted",
+        "URTH",
     ),
-    "us_tech_growth": Portfolio(
-        name="US Tech Growth",
-        description="FAANG+ and semiconductor large caps, equal-weighted.",
-        holdings=_equal_weight(_US_TECH_GROWTH),
+    "us_tech_growth": (
+        "US Tech Growth",
+        "FAANG+ and semiconductor large caps, cap-weighted",
+        "QQQ",
     ),
-    "defensive_mix": Portfolio(
-        name="Defensive Mix",
-        description="Staples, utilities, and healthcare large caps, equal-weighted.",
-        holdings=_equal_weight(_DEFENSIVE_MIX),
+    "defensive_mix": (
+        "Defensive Mix",
+        "Staples, utilities, and healthcare large caps, cap-weighted",
+        "SPLV",
     ),
-    "japan_equity": Portfolio(
-        name="Japan Equity (TOPIX Core 30 subset)",
-        description="Large Japanese names, equal-weighted. Tickers use the .T suffix for Tokyo.",
-        holdings=_equal_weight(_JAPAN_TOPIX_CORE),
+    "japan_equity": (
+        "Japan Equity (large caps)",
+        "Large Japanese names, cap-weighted. Tickers use the .T suffix for Tokyo",
+        "EWJ",
     ),
 }
 
 
+@lru_cache(maxsize=1)
+def _load_snapshot() -> dict[str, object]:
+    if not _WEIGHTS_PATH.exists():
+        raise RuntimeError(
+            f"Sample-portfolio weight snapshot missing at {_WEIGHTS_PATH}. "
+            "Run `uv run python scripts/refresh_sample_weights.py` to generate it."
+        )
+    snapshot = json.loads(_WEIGHTS_PATH.read_text(encoding="utf-8"))
+    weights = snapshot.get("weights", {})
+    missing = [key for key in _SAMPLE_META if not weights.get(key)]
+    if missing:
+        raise RuntimeError(
+            f"Sample-portfolio snapshot is incomplete — no weights for {missing}. "
+            "Regenerate with scripts/refresh_sample_weights.py."
+        )
+    return snapshot
+
+
+def sample_as_of() -> str:
+    """The as-of date stamped on the committed weight snapshot."""
+    return str(_load_snapshot().get("as_of", "unknown"))
+
+
+def ticker_metadata() -> dict[str, dict[str, str]]:
+    """ticker -> {sector, country} from the snapshot (CASH classified as Cash)."""
+    meta = dict(_load_snapshot().get("ticker_meta", {}))  # type: ignore[arg-type]
+    meta[CASH_TICKER] = {"sector": "Cash", "country": "Cash"}
+    return meta
+
+
+@lru_cache(maxsize=1)
+def _build_portfolios() -> dict[str, Portfolio]:
+    snapshot = _load_snapshot()
+    weights: dict[str, dict[str, float]] = snapshot["weights"]  # type: ignore[assignment]
+    as_of = sample_as_of()
+    portfolios: dict[str, Portfolio] = {}
+    for key, (name, description, benchmark) in _SAMPLE_META.items():
+        holdings = {t: float(w) for t, w in weights[key].items()}
+        total = sum(holdings.values())
+        holdings = {t: w / total for t, w in holdings.items()}  # defensive re-normalize
+        portfolios[key] = Portfolio(
+            name=name,
+            description=f"{description} (as of {as_of}).",
+            holdings=holdings,
+            benchmark=benchmark,
+        )
+    return portfolios
+
+
 def get_portfolio(key: str) -> Portfolio:
-    if key not in SAMPLE_PORTFOLIOS:
-        raise KeyError(f"Unknown sample portfolio '{key}'. Available: {list(SAMPLE_PORTFOLIOS)}")
-    return SAMPLE_PORTFOLIOS[key]
+    portfolios = _build_portfolios()
+    if key not in portfolios:
+        raise KeyError(f"Unknown sample portfolio '{key}'. Available: {list(portfolios)}")
+    return portfolios[key]
 
 
 def list_portfolios() -> list[tuple[str, str]]:
-    return [(key, p.name) for key, p in SAMPLE_PORTFOLIOS.items()]
+    return [(key, p.name) for key, p in _build_portfolios().items()]
+
+
+def sample_benchmark(key: str) -> str | None:
+    """Benchmark ticker for a sample portfolio key, or None if unknown."""
+    meta = _SAMPLE_META.get(key)
+    return meta[2] if meta else None
+
+
+# Eager module-level mapping (forces the snapshot to load at import — a missing
+# or incomplete artifact fails fast rather than at first request).
+SAMPLE_PORTFOLIOS: dict[str, Portfolio] = _build_portfolios()

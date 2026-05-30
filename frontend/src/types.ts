@@ -19,7 +19,11 @@ export interface SamplePortfolio {
   name: string;
   description: string;
   holdings: Record<string, number>;
+  benchmark?: string | null;
 }
+
+// ticker -> {sector, country} classification tags for exposure breakdowns.
+export type TickerMetadata = Record<string, { sector: string; country: string }>;
 
 export interface SampleScenario {
   key: string;
@@ -116,6 +120,11 @@ export interface ScenarioResult {
   price_date_by_ticker?: Record<string, string> | null;
   fx_rates?: Record<string, number> | null; // major currency -> USD per unit
   fx_date_by_currency?: Record<string, string> | null;
+  // Benchmark / active-return overlay (never cached; null when no benchmark).
+  // active_return = portfolio_pnl.total_pnl − benchmark_pnl.total_pnl.
+  benchmark_ticker?: string | null;
+  benchmark_pnl?: PortfolioPnL | null;
+  active_return?: number | null;
 }
 
 export interface ScenarioReproducibility {
@@ -216,6 +225,9 @@ export interface ScenarioAdjustRequest {
   cache_key: string;
   overrides?: Record<string, number>;
   adjustment_text?: string;
+  // Resent benchmark so the adjusted result keeps its active-return overlay
+  // (benchmarks are overlay-only and not recoverable from the cached canonical).
+  benchmark?: string | null;
 }
 
 export type SsePipelineStage =

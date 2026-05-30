@@ -306,6 +306,96 @@ def test_run_scenario_rejects_unknown_analog_id(monkeypatch):
         )
 
 
+def test_benchmark_overlay_attached_on_miss_and_hit(monkeypatch):
+    """Sample portfolios carry a benchmark; the overlay attaches benchmark P&L +
+    active return, and a cache hit re-attaches it (it is never cached)."""
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    result = run_scenario(
+        scenario_text="risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    assert result.benchmark_ticker == "QQQ"
+    assert result.benchmark_pnl is not None
+    assert result.active_return is not None
+    expected_active = result.portfolio_pnl.total_pnl - result.benchmark_pnl.total_pnl
+    assert result.active_return == pytest.approx(expected_active)
+
+    # The cached canonical must NOT carry the overlay (return-space only).
+    (cached_blob,) = cache.store.values()
+    assert cached_blob.get("benchmark_ticker") is None
+    assert cached_blob.get("active_return") is None
+
+    # Cache hit re-derives the benchmark.
+    hit = run_scenario(
+        scenario_text="risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    assert hit.benchmark_ticker == "QQQ"
+    assert hit.benchmark_pnl is not None
+    assert hit.active_return is not None
+
+
+def test_explicit_benchmark_overrides_sample(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    result = run_scenario(
+        scenario_text="risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=InMemoryCache(),
+        market_date=date(2026, 5, 25),
+        benchmark="SPY",
+    )
+    assert result.benchmark_ticker == "SPY"
+
+
+def test_cash_sleeve_contributes_zero_and_dilutes(monkeypatch):
+    """A CASH sleeve is zero-beta/zero-return: it appears in by_ticker_total at 0
+    and its weight dilutes the rest (never sent to yfinance)."""
+    _patch_market_layer(monkeypatch)
+    book = Portfolio(
+        name="Cash test",
+        description="60/30/10 with cash",
+        holdings={"AAPL": 0.6, "MSFT": 0.3, "CASH": 0.1},
+    )
+    result = run_scenario(
+        scenario_text="risk-off",
+        portfolio=book,
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=InMemoryCache(),
+        market_date=date(2026, 5, 25),
+    )
+    assert result.portfolio_pnl.by_ticker_total["CASH"] == 0.0
+    # All factor P&L comes from the 0.9 non-cash sleeve; cash drags toward zero.
+    no_cash = Portfolio(
+        name="No cash",
+        description="2/3 1/3",
+        holdings={"AAPL": 2 / 3, "MSFT": 1 / 3},
+    )
+    result_full = run_scenario(
+        scenario_text="risk-off",
+        portfolio=no_cash,
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=InMemoryCache(),
+        market_date=date(2026, 5, 25),
+    )
+    # The cash book's |total| should be ~0.9× the fully-invested book's |total|.
+    assert abs(result.portfolio_pnl.total_pnl) < abs(result_full.portfolio_pnl.total_pnl)
+
+
 def _fake_mark_book(nav: float = 1_000_000.0):
     """Return a stand-in mark_book that derives weights from quantities, no network."""
 

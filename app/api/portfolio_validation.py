@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 
+from app.data.sample_portfolios import CASH_TICKER
+
 
 def normalize_ticker(raw: object) -> str:
     if raw is None:
@@ -51,6 +53,11 @@ def validate_holdings(raw_holdings: dict[str, float]) -> tuple[dict[str, float],
     if not (0.999 <= total <= 1.001):
         errors.append(f"Weights must sum to 1.00 (currently {total:.4f}).")
 
+    # CASH is a zero-exposure sentinel; a book of only cash has nothing to shock.
+    market_weight = sum(w for t, w in normalized.items() if t != CASH_TICKER)
+    if market_weight <= 0:
+        errors.append("Portfolio needs at least one non-cash holding.")
+
     return normalized, errors
 
 
@@ -90,8 +97,10 @@ def validate_quantities(raw_quantities: dict[str, float]) -> tuple[dict[str, flo
         else:
             normalized[normalized_ticker] = qty_value
 
-    if not errors and sum(normalized.values()) <= 0:
-        errors.append("At least one position must have a positive share quantity.")
+    if not errors:
+        market_qty = sum(q for t, q in normalized.items() if t != CASH_TICKER)
+        if market_qty <= 0:
+            errors.append("At least one non-cash position must have a positive share quantity.")
 
     return normalized, errors
 

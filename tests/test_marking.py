@@ -40,6 +40,16 @@ def test_mark_positions_usd_only():
     assert mr.reporting_currency == "USD"
 
 
+def test_mark_positions_cash_is_usd_amount():
+    """A CASH quantity is a USD amount (mark 1.0), so value == quantity."""
+    marks = {"AAPL": (200.0, date(2024, 1, 5)), "CASH": (1.0, date(2024, 1, 5))}
+    fx = {"USD": (1.0, date(2024, 1, 5))}
+    mr = mark_positions({"AAPL": 10, "CASH": 5000}, marks, fx)
+    assert mr.position_values["CASH"] == pytest.approx(5000.0)
+    assert mr.nav == pytest.approx(2000 + 5000)
+    assert mr.weights["CASH"] == pytest.approx(5000 / 7000)
+
+
 def test_mark_positions_jpy_fx_conversion():
     marks = {"7203.T": (3000.0, date(2024, 1, 5))}
     fx = {"JPY": (0.0064, date(2024, 1, 5))}  # USD per JPY

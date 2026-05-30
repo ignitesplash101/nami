@@ -26,6 +26,45 @@ retrieved during grounding. Without citations the pipeline refuses to return.
 
 ---
 
+## Portfolio construction
+
+**Holdings & weights.** A portfolio is a set of equity (or yfinance-supported) tickers with
+weights summing to 1.0. The four sample books are **cap-weighted** — `weightᵢ = marketCapᵢ / Σ
+marketCap` — from a **frozen, dated snapshot** (`app/data/sample_portfolio_weights.json`),
+regenerated offline by `scripts/refresh_sample_weights.py`. Cap-weighting is a deliberate
+approximation of true free-float index weights: it is reproducible, requires no paid feed, and
+is a large step up in realism from equal-weighting (a developed-world book is ~10% Apple, not
+2% of everything). The runtime **never scrapes** — drifting weights would silently change P&L
+and poison the scenario cache — so refreshing the snapshot is an explicit, reviewable step.
+Each book is asserted single-currency before weighting (the developed-world proxy uses US-listed
+ADR lines so it is all-USD; the Japan book is all-JPY), because cap ratios are only meaningful
+within one quote currency.
+
+**Benchmark & active return.** Each book carries a benchmark ticker (sample books built-in —
+MSCI World→URTH, US Tech→QQQ, Defensive→SPLV, Japan→EWJ; custom books optional). The benchmark
+is evaluated as a **one-holding portfolio** run through the *same* factor shocks the scenario
+produced, giving a benchmark return; **active return = portfolio return − benchmark return**.
+This is computed as a post-pipeline overlay (never cached) so it always reflects the book's
+current benchmark, and it shares the engine's linearity caveat — it is a *factor-model* estimate
+of relative performance under the shock, not a realized tracking result.
+
+**Sector & country exposure.** Each ticker carries a sector and country tag (baked into the
+snapshot from yfinance classification). Exposure breakdowns sum portfolio weight and scenario
+P&L contribution within each bucket. These are coarse Yahoo classifications (≈ GICS-lite), not
+licensed GICS, and are display-only — they do not enter the factor model.
+
+**Cash sleeve.** A reserved `CASH` line is a **zero-exposure** position: zero factor beta, zero
+scenario return, no periphery shock. Its weight dilutes the rest of the book (cash drag) but it
+never contributes to P&L and is never fetched from market data. In mark-to-market mode a `CASH`
+quantity is a **USD amount** (marked at 1.0), not a share count. An all-cash book is rejected —
+there is nothing to shock.
+
+**Out of scope (v1).** Cost-basis / tax-lot accounting, multi-currency *reporting*, long/short
+net-gross, blended benchmarks, and non-equity asset classes are intentionally excluded — they
+require paid data or accounting machinery beyond an equity scenario explorer.
+
+---
+
 ## Factor universe (22 factors)
 
 All factors are tickers fetched via yfinance; each weekly "return" is the percent change in

@@ -20,6 +20,7 @@ import {
   getMethodology,
   getSamplePortfolios,
   getSampleScenarios,
+  getTickerMetadata,
   lock,
   runScenarioStream,
   unlock,
@@ -33,6 +34,7 @@ import {
   formatCurrency,
   formatPercent,
   formatSignedCurrency,
+  groupByTag,
   normalizeTicker,
   parseNav,
   topContributor
@@ -59,7 +61,8 @@ import type {
   SampleScenario,
   ScenarioResult,
   ScenarioRunResponse,
-  SsePipelineStage
+  SsePipelineStage,
+  TickerMetadata
 } from "./types";
 
 type WaterfallTrace = {
@@ -141,6 +144,8 @@ export default function App() {
   // MTM: "weights" = today's weight model (+ optional NAV scalar); "shares" = true
   // mark-to-market (server marks the share counts to the as-of close, FX→USD).
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
+  // Optional benchmark ticker for a custom book (sample books carry their own).
+  const [customBenchmark, setCustomBenchmark] = useState("");
   // Default every book to a $100k notional value so the dollar view (P&L,
   // stressed values, position table) is populated out-of-the-box for everyone,
   // incl. visitors. Pure client-side notional scaling — NOT mark-to-market.
@@ -268,6 +273,12 @@ export default function App() {
         // (Notional dollar scaling is a client-side post-run control, not a run input.)
         position_quantities: sharesMode ? holdingsFromRows(customRows) : undefined,
         reporting_currency: sharesMode ? "USD" : undefined,
+        // Custom books pass an explicit benchmark; sample books fall back to their
+        // own assigned benchmark server-side (so leave it undefined there).
+        benchmark:
+          portfolioMode === "custom" && customBenchmark.trim()
+            ? customBenchmark.trim()
+            : undefined,
         // Only thread as_of_date when admin chose a date EARLIER than the latest
         // close. The latest close (the default) means "live" — send undefined so
         // the backend takes the grounded (Google Search) path.
@@ -360,6 +371,8 @@ export default function App() {
         setCustomRows={setCustomRows}
         customUnits={customUnits}
         setCustomUnits={setCustomUnits}
+        customBenchmark={customBenchmark}
+        setCustomBenchmark={setCustomBenchmark}
       />
     </>
   );
@@ -616,7 +629,9 @@ function PortfolioPanel({
   customRows,
   setCustomRows,
   customUnits,
-  setCustomUnits
+  setCustomUnits,
+  customBenchmark,
+  setCustomBenchmark
 }: {
   access: AccessResponse | null;
   portfolios: SamplePortfolio[];
@@ -630,8 +645,11 @@ function PortfolioPanel({
   setCustomRows: (rows: HoldingRow[]) => void;
   customUnits: "weights" | "shares";
   setCustomUnits: (units: "weights" | "shares") => void;
+  customBenchmark: string;
+  setCustomBenchmark: (ticker: string) => void;
 }) {
   const selected = portfolios.find((portfolio) => portfolio.key === portfolioKey);
+  const hasCash = customRows.some((row) => normalizeTicker(row.ticker) === "CASH");
   const [validation, setValidation] = useState<string[]>([]);
   const isShares = customUnits === "shares";
 
@@ -686,6 +704,11 @@ function PortfolioPanel({
             </select>
           </label>
           <p className="muted">{selected?.description}</p>
+          {selected?.benchmark ? (
+            <p className="muted">
+              Benchmark: <code>{selected.benchmark}</code>
+            </p>
+          ) : null}
           <MiniHoldings holdings={selected?.holdings ?? {}} />
         </>
       ) : (
@@ -693,6 +716,15 @@ function PortfolioPanel({
           <label>
             Portfolio name
             <input value={customName} onChange={(event) => setCustomName(event.target.value)} />
+          </label>
+          <label>
+            Benchmark (optional)
+            <input
+              value={customBenchmark}
+              onChange={(event) => setCustomBenchmark(normalizeTicker(event.target.value))}
+              placeholder="e.g. SPY, QQQ, URTH"
+              aria-label="Benchmark ticker"
+            />
           </label>
           <div className="segmented" role="radiogroup" aria-label="Holding units">
             <button
@@ -764,6 +796,23 @@ function PortfolioPanel({
               }
             >
               Add row
+            </button>
+            <button
+              className="ghost-button"
+              disabled={hasCash}
+              title={
+                isShares
+                  ? "Add a cash sleeve (USD amount, not shares)"
+                  : "Add a cash sleeve (zero-exposure weight)"
+              }
+              onClick={() =>
+                setCustomRows([
+                  ...customRows,
+                  { id: `row-${crypto.randomUUID()}`, ticker: "CASH", weight: "0" }
+                ])
+              }
+            >
+              Add cash
             </button>
             {!isShares ? (
               <button className="ghost-button" onClick={() => validateCustom()}>
@@ -856,6 +905,78 @@ function ScenarioPanel({
         {isRunning ? "Running pipeline..." : "Run scenario"} <ArrowRight size={16} />
       </button>
     </section>
+  );
+}
+
+function ExposureBreakdown({ result }: { result: ScenarioResult }) {
+  const [meta, setMeta] = useState<TickerMetadata>({});
+  const [dimension, setDimension] = useState<"sector" | "country">("sector");
+  const tickers = useMemo(() => Object.keys(result.portfolio_holdings), [result]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getTickerMetadata(tickers)
+      .then((m) => {
+        if (!cancelled) setMeta(m);
+      })
+      .catch(() => {
+        if (!cancelled) setMeta({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tickers]);
+
+  const rows = useMemo(() => groupByTag(result, meta, dimension), [result, meta, dimension]);
+  if (!rows.length) return null;
+
+  return (
+    <div className="result-card">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Exposure</p>
+          <h3>{dimension === "sector" ? "Sector" : "Country"} breakdown</h3>
+        </div>
+        <div className="segmented" role="radiogroup" aria-label="Exposure dimension">
+          <button
+            role="radio"
+            aria-checked={dimension === "sector"}
+            className={dimension === "sector" ? "active" : ""}
+            onClick={() => setDimension("sector")}
+          >
+            Sector
+          </button>
+          <button
+            role="radio"
+            aria-checked={dimension === "country"}
+            className={dimension === "country" ? "active" : ""}
+            onClick={() => setDimension("country")}
+          >
+            Country
+          </button>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{dimension === "sector" ? "Sector" : "Country"}</th>
+              <th>Weight</th>
+              <th>Contribution to P&L</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.tag}>
+                <td>{row.tag}</td>
+                <td>{formatPercent(row.weight, 1)}</td>
+                <td>{formatPercent(row.pnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -1086,6 +1207,17 @@ function ResultsPanel({
           }
           sub={showDollars ? formatPercent(result.portfolio_pnl.total_pnl) : undefined}
         />
+        {result.benchmark_ticker && result.active_return != null && result.benchmark_pnl ? (
+          <Metric
+            label={`Active vs ${result.benchmark_ticker}`}
+            value={
+              showDollars
+                ? formatSignedCurrency(result.active_return * (nav ?? 0), currency)
+                : formatPercent(result.active_return)
+            }
+            sub={`${result.benchmark_ticker} ${formatPercent(result.benchmark_pnl.total_pnl)}`}
+          />
+        ) : null}
         <Metric
           label="Top contributor"
           value={top.factor}
@@ -1094,6 +1226,8 @@ function ResultsPanel({
         <Metric label="Analogs" value={String(result.analogs_selected.length)} />
         <Metric label="Citations" value={String(result.citations.length)} />
       </div>
+
+      <ExposureBreakdown result={result} />
 
       <div className="result-card">
         <div className="card-heading">

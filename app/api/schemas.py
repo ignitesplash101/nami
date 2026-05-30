@@ -36,6 +36,14 @@ class SamplePortfolioResponse(BaseModel):
     name: str
     description: str
     holdings: dict[str, float]
+    benchmark: str | None = None
+
+
+class TickerMetadataResponse(BaseModel):
+    """ticker -> {sector, country} classification tags for exposure breakdowns."""
+
+    model_config = ConfigDict(extra="forbid")
+    ticker_meta: dict[str, dict[str, str]]
 
 
 class SampleScenarioResponse(BaseModel):
@@ -76,6 +84,9 @@ class ScenarioRunRequest(BaseModel):
     position_quantities: dict[str, float] | None = None
     portfolio_nav: float | None = None
     reporting_currency: str | None = None
+    # Benchmark ticker for relative (active) return. None falls back to the sample
+    # portfolio's own benchmark; custom books must pass one to get an active return.
+    benchmark: str | None = None
 
 
 class AnalogEventResponse(BaseModel):
@@ -145,6 +156,10 @@ class ScenarioAdjustRequest(BaseModel):
     cache_key: str
     overrides: dict[str, float] | None = None  # manual mode: full factor->value map
     adjustment_text: str | None = None  # prompt mode: natural-language edit
+    # Resent benchmark for the active-return overlay. Benchmarks are overlay-only
+    # (never cached), so a custom book's benchmark can't be recovered from the
+    # canonical — the client echoes it back here.
+    benchmark: str | None = None
 
 
 # --- Saved analytics (Firestore-backed) ---
