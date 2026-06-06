@@ -41,7 +41,7 @@ steps:
       - --concurrency=20
       - --session-affinity
       - --allow-unauthenticated
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},VERTEX_AI_LOCATION=global,GCS_BUCKET=nami-cache-${PROJECT_ID},ENVIRONMENT=prod,LOG_LEVEL=INFO
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},VERTEX_AI_LOCATION=global,GCS_BUCKET=nami-cache-${PROJECT_ID},ENVIRONMENT=prod,LOG_LEVEL=INFO,RATE_LIMIT_LLM=10/minute,RATE_LIMIT_UNLOCK=5/minute,DAILY_LLM_RUN_CAP=500,DAILY_LLM_COST_CAP_USD=25
       - --set-secrets=PASSCODE=nami-passcode:latest
 
 images:

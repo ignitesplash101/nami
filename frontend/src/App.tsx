@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BarChart3,
   BookOpen,
+  Command,
   Lock,
   LogOut,
   Menu,
@@ -28,6 +29,7 @@ import {
 } from "./api";
 import {
   buildPositionValuations,
+  buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
   factorReasoningRows,
@@ -41,6 +43,8 @@ import {
 } from "./charts";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
+import { CommandPalette } from "./CommandPalette";
+import type { CommandAction } from "./CommandPalette";
 import { AttributionGuide } from "./AttributionGuide";
 import { nextEnabledMethod } from "./attributionNav";
 import { getSavedScenario } from "./api";
@@ -177,17 +181,35 @@ export default function App() {
   const [cacheHit, setCacheHit] = useState(false);
   const methodologyDrawer = useMethodologyDrawer();
   const railDrawer = useOverlay();
+  const commandPalette = useOverlay();
   const isMobileOrTablet = useMediaQuery("(max-width: 1079.98px)");
 
   function openMethodology(section?: string) {
     railDrawer.close();
+    commandPalette.close();
     methodologyDrawer.open(section);
   }
 
   function openRailDrawer() {
     methodologyDrawer.close();
+    commandPalette.close();
     railDrawer.open();
   }
+
+  // ⌘K / Ctrl+K opens the command palette (accelerator only — every command it
+  // exposes also has a visible control elsewhere). open/close are stable.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        methodologyDrawer.close();
+        railDrawer.close();
+        commandPalette.open();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [commandPalette.open, methodologyDrawer.close, railDrawer.close]);
 
   useEffect(() => {
     async function boot() {
@@ -348,6 +370,40 @@ export default function App() {
     }
   }
 
+  // Palette actions are a thin accelerator over already-visible controls. Built
+  // fresh each render so the closures read current state (cheap; small list).
+  const commandActions: CommandAction[] = [
+    { id: "run", label: "Run scenario", hint: "Enter", run: () => void handleRun() },
+    { id: "setup", label: "Open portfolio & access setup", run: openRailDrawer },
+    { id: "methodology", label: "Open methodology", run: () => openMethodology() }
+  ];
+  if (resultEnvelope) {
+    commandActions.push({
+      id: "toggle-units",
+      label: "Toggle dollars / percent view",
+      run: () => setDisplayMode(displayMode === "usd" ? "pct" : "usd")
+    });
+  }
+  if (isAdmin && resultEnvelope?.reproducibility) {
+    commandActions.push({ id: "save", label: "Save scenario", run: saveDialog.open });
+  }
+  if (isAdmin && resultEnvelope) {
+    commandActions.push({
+      id: "decompose",
+      label: "Decompose narrative",
+      run: () => void handleDecompose()
+    });
+  }
+  if (isAdmin) {
+    commandActions.push({
+      id: "lock",
+      label: "Lock (return to visitor mode)",
+      run: () => {
+        void lock().then(refreshAccess);
+      }
+    });
+  }
+
   const railContent = (
     <>
       <div className="brand-block">
@@ -398,6 +454,14 @@ export default function App() {
           <div className="status-strip">
             <span>{access?.access_mode ?? "loading"}</span>
             <span className="portfolio-name">{selectedPortfolio?.name ?? "No portfolio"}</span>
+            <button
+              className="methodology-btn"
+              onClick={commandPalette.open}
+              title="Command palette (Ctrl/⌘ + K)"
+              aria-label="Open command palette"
+            >
+              <Command size={16} />
+            </button>
             <button
               className="methodology-btn"
               onClick={() => openMethodology()}
@@ -538,6 +602,12 @@ export default function App() {
         isOpen={methodologyDrawer.isOpen}
         initialSection={methodologyDrawer.initialSection}
         onClose={methodologyDrawer.close}
+      />
+
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+        actions={commandActions}
       />
     </main>
   );
@@ -872,6 +942,21 @@ function ScenarioPanel({
         <p className="eyebrow">Scenario</p>
         <h3>{canFreeText ? "Author or seed a market narrative" : "Select a visitor sample"}</h3>
       </div>
+      {scenarios.length ? (
+        <div className="scenario-chips" role="group" aria-label="Example scenarios">
+          {scenarios.slice(0, 6).map((scenario) => (
+            <button
+              key={scenario.key}
+              type="button"
+              className={`chip${scenario.key === scenarioKey ? " active" : ""}`}
+              onClick={() => setScenarioKey(scenario.key)}
+              title={scenario.text}
+            >
+              {scenario.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="scenario-grid">
         <label>
           Sample scenario
@@ -1129,6 +1214,13 @@ function ResultsPanel({
 
   return (
     <section className="results-stack">
+      <ScenarioReadout
+        result={result}
+        attributionMethod={attributionMethod}
+        showDollars={showDollars}
+        nav={nav}
+        currency={currency}
+      />
       <div className="results-toolbar">
         <div className="results-toolbar-left">
           {canSave ? (
@@ -1518,6 +1610,58 @@ function ResultsPanel({
   );
 }
 
+
+function ScenarioReadout({
+  result,
+  attributionMethod,
+  showDollars,
+  nav,
+  currency
+}: {
+  result: ScenarioResult;
+  attributionMethod: AttributionMethod;
+  showDollars: boolean;
+  nav: number | null;
+  currency: string;
+}) {
+  const readout = buildReadout(result, attributionMethod);
+  const pnlText =
+    showDollars && nav != null
+      ? formatSignedCurrency(nav * readout.totalPnl, currency)
+      : formatPercent(readout.totalPnl);
+  const toneClass =
+    readout.direction === "gain" ? "up" : readout.direction === "loss" ? "down" : "flat";
+  return (
+    <section className={`scenario-readout ${toneClass}`} aria-label="Impact summary">
+      <p className="readout-eyebrow">Impact summary</p>
+      <p className="readout-headline">{readout.headline}</p>
+      <div className="readout-metrics">
+        <div>
+          <span className="readout-metric-label">Portfolio P&amp;L</span>
+          <span className={`readout-metric-value ${toneClass}`}>{pnlText}</span>
+        </div>
+        <div>
+          <span className="readout-metric-label">Top driver</span>
+          <span className="readout-metric-value">
+            {readout.topFactor} ({formatPercent(readout.topContribution)})
+          </span>
+        </div>
+        {readout.activeReturn != null && readout.benchmarkTicker ? (
+          <div>
+            <span className="readout-metric-label">Active vs {readout.benchmarkTicker}</span>
+            <span className="readout-metric-value">{formatPercent(readout.activeReturn)}</span>
+          </div>
+        ) : null}
+        <div>
+          <span className="readout-metric-label">Evidence</span>
+          <span className="readout-metric-value">
+            {readout.analogCount} analogs · {readout.citationCount} citations
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function MiniHoldings({ holdings }: { holdings: Record<string, number> }) {
   return (

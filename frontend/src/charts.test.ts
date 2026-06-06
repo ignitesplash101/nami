@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPositionValuations,
+  buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
   factorReasoningRows,
@@ -86,6 +87,24 @@ describe("chart data helpers", () => {
     const top = topContributor(fixtureResult(), "conditional_grouped");
     expect(top.factor).toBe("SPY");
     expect(top.contribution).toBe(-0.06);
+  });
+
+  it("builds an answer-first readout with direction, headline, and evidence", () => {
+    const readout = buildReadout(fixtureResult(), "naive");
+    expect(readout.direction).toBe("loss");
+    expect(readout.topFactor).toBe("SPY");
+    expect(readout.headline).toContain("loses");
+    expect(readout.headline).toContain("SPY");
+    expect(readout.analogCount).toBe(0);
+    expect(readout.citationCount).toBe(0);
+  });
+
+  it("flags a roughly-flat result as flat", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.total_pnl = 0.0001;
+    const readout = buildReadout(result, "naive");
+    expect(readout.direction).toBe("flat");
+    expect(readout.headline).toContain("flat");
   });
 });
 

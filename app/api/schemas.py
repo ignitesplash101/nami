@@ -30,6 +30,58 @@ class UnlockRequest(BaseModel):
     passcode: str
 
 
+class ReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ready: bool
+    # Coarse per-dependency status: "ok" | "unavailable" (no internal detail leak).
+    checks: dict[str, str]
+
+
+class StatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    service: str
+    nami_engine_version: str
+    prompt_version: str
+    model_id: str
+    environment: str
+    ready: bool
+    disclaimer: str
+    rate_limits: dict[str, str]
+    daily_cost_cap_usd: float
+    daily_run_cap: int
+    runs_today: int
+    # Admin-only; None for visitors so spend is not exposed publicly.
+    est_cost_today_usd: float | None = None
+
+
+class UsageSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    day: str
+    runs: int
+    calls: int
+    tokens_in: int
+    tokens_out: int
+    spent_usd: float
+    reserved_usd: float
+    cost_cap_usd: float
+    run_cap: int
+
+
+class AuditEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str
+    target_type: str
+    target_id: str | None = None
+    request_id: str | None = None
+    ip_hash: str | None = None
+    at: datetime
+
+
+class PurgeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: str
+
+
 class SamplePortfolioResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: str

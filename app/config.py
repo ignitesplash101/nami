@@ -23,6 +23,27 @@ class Config:
     narrative_shapley_max_workers: int = 4
     log_level: str = "INFO"
     environment: str = "dev"
+    # Operational hardening (all optional with safe defaults — local dev / tests
+    # need no new env). Rate-limit strings use slowapi's "<count>/<period>" syntax.
+    sentry_dsn: str | None = None
+    cors_allow_origins: tuple[str, ...] = ()
+    rate_limit_default: str = "120/minute"
+    rate_limit_llm: str = "10/minute"
+    rate_limit_unlock: str = "5/minute"
+    unlock_max_failures: int = 10
+    unlock_window_seconds: int = 900
+    daily_llm_run_cap: int = 500
+    daily_llm_cost_cap_usd: float = 25.0
+    # Rough list prices (USD per 1M tokens) for the daily-budget breaker. These are
+    # for cost ESTIMATION/budgeting only, not billing — keep them conservative.
+    price_input_per_mtok: float = 0.30
+    price_output_per_mtok: float = 2.50
+
+
+def _split_origins(raw: str | None) -> tuple[str, ...]:
+    if not raw:
+        return ()
+    return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
 
 
 def load_config() -> Config:
@@ -48,4 +69,15 @@ def load_config() -> Config:
         narrative_shapley_max_workers=int(os.getenv("NARRATIVE_SHAPLEY_MAX_WORKERS", "4")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         environment=os.getenv("ENVIRONMENT", "dev"),
+        sentry_dsn=os.getenv("SENTRY_DSN") or None,
+        cors_allow_origins=_split_origins(os.getenv("CORS_ALLOW_ORIGINS")),
+        rate_limit_default=os.getenv("RATE_LIMIT_DEFAULT", "120/minute"),
+        rate_limit_llm=os.getenv("RATE_LIMIT_LLM", "10/minute"),
+        rate_limit_unlock=os.getenv("RATE_LIMIT_UNLOCK", "5/minute"),
+        unlock_max_failures=int(os.getenv("UNLOCK_MAX_FAILURES", "10")),
+        unlock_window_seconds=int(os.getenv("UNLOCK_WINDOW_SECONDS", "900")),
+        daily_llm_run_cap=int(os.getenv("DAILY_LLM_RUN_CAP", "500")),
+        daily_llm_cost_cap_usd=float(os.getenv("DAILY_LLM_COST_CAP_USD", "25.0")),
+        price_input_per_mtok=float(os.getenv("PRICE_INPUT_PER_MTOK", "0.30")),
+        price_output_per_mtok=float(os.getenv("PRICE_OUTPUT_PER_MTOK", "2.50")),
     )

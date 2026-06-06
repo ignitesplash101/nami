@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import api
+from app.data.firestore_store import InMemoryFirestoreStore
 from app.data.sample_portfolios import get_portfolio
 from app.llm.schemas import (
     AnalogSelection,
@@ -22,6 +23,7 @@ from app.llm.schemas import (
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("PASSCODE", "test-passcode")
+    monkeypatch.setattr("app.api.main._firestore_store", InMemoryFirestoreStore())
     return TestClient(api)
 
 

@@ -5,6 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limit():
+    """Rate limiting is per-process stateful; disable it by default so unrelated
+    tests that make several requests don't trip limits. The dedicated rate-limit
+    test re-enables it explicitly."""
+    from app.api.ratelimit import limiter
+
+    previously = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = previously
+
 
 @dataclass
 class InMemoryCache:

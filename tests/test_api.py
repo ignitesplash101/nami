@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import api
+from app.data.firestore_store import InMemoryFirestoreStore
 from app.data.sample_portfolios import get_portfolio
 from app.llm.schemas import (
     AnalogSelection,
@@ -19,6 +20,7 @@ from app.llm.schemas import (
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("PASSCODE", "test-passcode")
+    monkeypatch.setattr("app.api.main._firestore_store", InMemoryFirestoreStore())
     return TestClient(api)
 
 
@@ -68,6 +70,15 @@ def test_access_unlock_and_lock(client):
     locked = client.post("/api/auth/lock")
     assert locked.status_code == 200
     assert client.get("/api/access").json()["access_mode"] == "visitor"
+
+
+def test_unlock_brute_force_lockout(client, monkeypatch):
+    monkeypatch.setenv("UNLOCK_MAX_FAILURES", "2")
+    assert client.post("/api/auth/unlock", json={"passcode": "wrong"}).status_code == 401
+    assert client.post("/api/auth/unlock", json={"passcode": "wrong"}).status_code == 401
+    # Locked after MAX failures — even the correct passcode is refused with 429.
+    assert client.post("/api/auth/unlock", json={"passcode": "wrong"}).status_code == 429
+    assert client.post("/api/auth/unlock", json={"passcode": "test-passcode"}).status_code == 429
 
 
 def test_visitor_rejects_custom_inputs(client):

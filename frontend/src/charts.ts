@@ -102,6 +102,45 @@ export function formatPercent(value: number, digits = 2): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
+export interface ScenarioReadout {
+  headline: string;
+  totalPnl: number;
+  direction: "gain" | "loss" | "flat";
+  topFactor: string;
+  topContribution: number;
+  activeReturn: number | null;
+  benchmarkTicker: string | null;
+  analogCount: number;
+  citationCount: number;
+}
+
+/**
+ * Answer-first summary of a scenario result: a plain-language one-liner plus the
+ * headline numbers. Educational framing only — describes the modeled outcome,
+ * never advises. "flat" is anything within ±5bps.
+ */
+export function buildReadout(result: ScenarioResult, method: AttributionMethod): ScenarioReadout {
+  const total = result.portfolio_pnl.total_pnl;
+  const top = topContributor(result, method);
+  const direction = total > 0.0005 ? "gain" : total < -0.0005 ? "loss" : "flat";
+  const magnitude = formatPercent(Math.abs(total));
+  const headline =
+    direction === "flat"
+      ? `In this scenario the portfolio is roughly flat (${formatPercent(total)}), with ${top.factor} the largest modeled driver.`
+      : `In this scenario the portfolio ${direction === "gain" ? "gains" : "loses"} ${magnitude}, driven mostly by ${top.factor}.`;
+  return {
+    headline,
+    totalPnl: total,
+    direction,
+    topFactor: top.factor,
+    topContribution: top.contribution,
+    activeReturn: result.active_return ?? null,
+    benchmarkTicker: result.benchmark_ticker ?? null,
+    analogCount: result.analogs_selected.length,
+    citationCount: result.citations.length
+  };
+}
+
 export function formatCurrency(value: number, currency = "USD", digits = 0): string {
   try {
     return new Intl.NumberFormat("en-US", {

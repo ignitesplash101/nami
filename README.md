@@ -63,6 +63,8 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 | **Methodology drawer** | Slide-in `docs/methodology.md` viewer with auto-parsed sections, deep-links from factor names + the attribution toggle, full academic citations. |
 | **Mobile-friendly** | Off-canvas rail drawer, responsive grids, 44px touch targets, vertical SSE stepper on phones. Tested at 375 / 414 / 768 / 1024 / 1080 / 1920 widths. |
 | **Design & accessibility** | A distinctive *Hokusai Deep* identity — Prussian-indigo ground, Fraunces display type, a wave-propagation SSE stepper and a 波 / seigaiha brand mark — over an accessible baseline: visible `:focus-visible` rings, focus-trapped modals, a keyboard-navigable radiogroup attribution control, labelled inputs, `aria-describedby` errors, and `prefers-reduced-motion` support. |
+| **Answer-first UX** | Every result leads with a plain-language **Impact summary** (portfolio P&L, top driver, active return, evidence count). Suggestion **chips** seed a scenario in one click, and a ⌘K **command palette** accelerates every common action — an accelerator only, never the sole path to a control. |
+| **Operational guardrails** | Per-IP **rate limiting** on paid endpoints, a transactional **daily cost breaker + run cap** and token metering on the LLM, durable **brute-force lockout** on the passcode, structured **JSON logs + request IDs**, a real `/api/ready` dependency probe, an **audit trail**, and admin **data export / purge** — production hygiene for an educational, single-tenant service (no accounts or billing). |
 
 ## Tech stack
 
@@ -71,7 +73,8 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 - **Vertex AI / Gemini 3.5 Flash** for the LLM calls (3 sub-calls per scenario)
 - **yfinance** for historical price data, cached in **Google Cloud Storage** (parquet) with 24-hour TTL
 - **GCS** also holds the scenario response cache (JSON, 7-day TTL — the de-dup layer)
-- **Firestore** (added Phase 11) for saved scenarios, named portfolios, and dated snapshots
+- **Firestore** (added Phase 11) for saved scenarios, named portfolios, dated snapshots, plus daily usage/budget counters, the auth-throttle, and the audit log
+- **slowapi** for per-IP rate limiting; optional **Sentry** for error tracking (no-op unless `SENTRY_DSN` is set)
 - **Cloud Run** for the deployed app, with **Secret Manager** for the admin passcode and **Cloud Build** (`nami-main-push` trigger) for CI/CD
 
 Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.5 Flash) in `global` (this model isn't available regionally).

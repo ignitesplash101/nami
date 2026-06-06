@@ -1190,6 +1190,161 @@ a {
 }
 
 /* ============================================================================
+ * Scenario suggestion chips (prompt-led onboarding)
+ * ========================================================================== */
+.scenario-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 2px;
+}
+.chip {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.chip:hover {
+  border-color: var(--accent-2);
+}
+.chip.active {
+  border-color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 18%, transparent);
+  color: var(--text);
+}
+
+/* ============================================================================
+ * Answer-first impact summary (Scenario readout)
+ * ========================================================================== */
+.scenario-readout {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+.scenario-readout.up {
+  border-left-color: var(--up);
+}
+.scenario-readout.down {
+  border-left-color: var(--down);
+}
+.readout-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.readout-headline {
+  font-family: var(--font-display, inherit);
+  font-size: 1.18rem;
+  line-height: 1.4;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+.readout-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+}
+.readout-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.readout-metric-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.readout-metric-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1rem;
+}
+.readout-metric-value.up {
+  color: var(--up);
+}
+.readout-metric-value.down {
+  color: var(--down);
+}
+
+/* ============================================================================
+ * Command palette (⌘K accelerator)
+ * ========================================================================== */
+.command-backdrop {
+  align-items: flex-start;
+  justify-content: center;
+}
+.command-palette {
+  margin-top: 12vh;
+  width: min(560px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-strong);
+  overflow: hidden;
+}
+.command-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.command-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+  outline: none;
+}
+.command-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.command-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+.command-item.active,
+.command-item:hover {
+  background: color-mix(in srgb, var(--accent-2) 16%, transparent);
+}
+.command-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.command-empty {
+  color: var(--muted);
+  padding: 14px 12px;
+  font-size: 0.9rem;
+}
+
+/* ============================================================================
  * Mobile + tablet responsive overrides.
  *
  * Breakpoints:

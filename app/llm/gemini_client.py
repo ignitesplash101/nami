@@ -57,6 +57,18 @@ class GeminiClient:
         self._model = config.vertex_model_id
         self._temperature = config.llm_temperature
 
+    def _generate_content(self, *, contents: object, config: object) -> object:
+        """Single chokepoint for every paid Gemini call.
+
+        All 6 `generate_content` call sites route through here so a metered subclass
+        (see `app/observability/metering.py`) can reserve budget, count tokens, and
+        reconcile actual usage in ONE place — catching internal fan-out (retries,
+        decomposition subset reruns) that an outer method wrapper would miss.
+        """
+        return self._client.models.generate_content(
+            model=self._model, contents=contents, config=config
+        )
+
     def decompose(self, scenario_text: str) -> DecompositionOutput:
         """Split a scenario into 2-4 self-contained sub-narratives. No grounding.
 
@@ -64,8 +76,7 @@ class GeminiClient:
         per-sub-narrative Shapley attribution.
         """
         user_msg = format_decomposition_user_message(scenario_text)
-        response = self._client.models.generate_content(
-            model=self._model,
+        response = self._generate_content(
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=DECOMPOSITION_PROMPT,
@@ -80,8 +91,7 @@ class GeminiClient:
         self, scenario_text: str, event_summaries: list[dict]
     ) -> AnalogSelectionOutput:
         user_msg = format_analog_selection_user_message(scenario_text, event_summaries)
-        response = self._client.models.generate_content(
-            model=self._model,
+        response = self._generate_content(
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=ANALOG_SELECTION_PROMPT,
@@ -178,8 +188,7 @@ class GeminiClient:
             factor_universe_descriptions=factor_universe_descriptions,
             portfolio_holdings=portfolio.holdings,
         )
-        response = self._client.models.generate_content(
-            model=self._model,
+        response = self._generate_content(
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=ANALOG_GROUNDED_NARRATIVE_PROMPT,
@@ -204,8 +213,7 @@ class GeminiClient:
             factor_universe_descriptions=factor_universe_descriptions,
             portfolio_holdings=portfolio.holdings,
         )
-        response = self._client.models.generate_content(
-            model=self._model,
+        response = self._generate_content(
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=GROUNDED_NARRATIVE_PROMPT,
@@ -234,8 +242,7 @@ class GeminiClient:
             envelope=envelope,
             factor_universe_descriptions=factor_universe_descriptions,
         )
-        response = self._client.models.generate_content(
-            model=self._model,
+        response = self._generate_content(
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=SHOCK_EDIT_PROMPT,
@@ -263,8 +270,7 @@ class GeminiClient:
             portfolio_holdings=portfolio.holdings,
             prior_errors=prior_errors,
         )
-        response = self._client.models.generate_content(
-            model=self._model,
+        response = self._generate_content(
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=SHOCK_EXTRACTION_PROMPT,

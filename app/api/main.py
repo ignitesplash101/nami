@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import queue
 import threading
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from datetime import date as date_type
 from pathlib import Path
 
@@ -11,17 +15,22 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.middleware import request_context_middleware
 from app.api.portfolio_validation import validate_holdings, validate_nav, validate_quantities
+from app.api.ratelimit import limiter, llm_limit, setup_rate_limiting, unlock_limit
 from app.api.samples import SAMPLE_SCENARIOS
 from app.api.schemas import (
     AccessResponse,
     AnalogEventResponse,
+    AuditEntry,
     NarrativeDecompositionRequest,
     Permissions,
     PortfolioSnapshotRecord,
     PortfolioSnapshotRequest,
     PortfolioValidationRequest,
     PortfolioValidationResponse,
+    PurgeRequest,
+    ReadinessResponse,
     SamplePortfolioResponse,
     SampleScenarioResponse,
     SavedPortfolioRecord,
@@ -33,8 +42,10 @@ from app.api.schemas import (
     ScenarioReproducibility,
     ScenarioRunRequest,
     ScenarioRunResponse,
+    StatusResponse,
     TickerMetadataResponse,
     UnlockRequest,
+    UsageSummary,
 )
 from app.api.security import (
     AccessMode,
@@ -56,15 +67,24 @@ from app.data.firestore_store import (
 )
 from app.data.marking import MarkingError
 from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio, ticker_metadata
+from app.factors import warm_cache
 from app.factors.analogs import HistoricalEvent, events_version, load_events
 from app.factors.universe import factor_universe_version
-from app.llm.gemini_client import GeminiClient
 from app.llm.narrative_shapley import compute_narrative_shapley
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import (
     adjust_scenario_shocks,
     compute_scenario_cache_key,
     run_scenario,
+)
+from app.observability.context import current_ip_hash, current_request_id
+from app.observability.logging import configure_logging
+from app.observability.metering import (
+    BudgetExceededError,
+    MeteredGeminiClient,
+    RunTelemetry,
+    enforce_run_cap,
+    today_key,
 )
 from app.utils.calendar import latest_market_date
 from app.utils.disclaimers import DISCLAIMER_SHORT
@@ -73,7 +93,46 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 METHODOLOGY_PATH = ROOT / "docs" / "methodology.md"
 
-api = FastAPI(title="nami API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Startup: configure structured logging, optional Sentry, warm the cache."""
+    with contextlib.suppress(Exception):
+        config = load_config()
+        configure_logging(config.log_level)
+        if config.sentry_dsn:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=config.sentry_dsn,
+                environment=config.environment,
+                traces_sample_rate=0.0,
+            )
+    with contextlib.suppress(Exception):
+        warm_cache.warm()
+    yield
+
+
+api = FastAPI(title="nami API", version="0.1.0", lifespan=lifespan)
+api.middleware("http")(request_context_middleware)
+setup_rate_limiting(api)
+
+# CORS is opt-in: the SPA is served from this same origin, so by default no
+# cross-origin access is granted. Set CORS_ALLOW_ORIGINS to enable an external
+# client (comma-separated origins).
+with contextlib.suppress(Exception):
+    _cors_origins = load_config().cors_allow_origins
+    if _cors_origins:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        api.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(_cors_origins),
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["X-Request-ID"],
+        )
 
 # nami engine version used in reproducibility metadata. Bumps with any
 # release-significant change to the engine; not in lockstep with PROMPT_VERSION.
@@ -91,6 +150,36 @@ def get_firestore_store() -> SavedScenarioStore:
         config = load_config()
         _firestore_store = FirestoreStore(project_id=config.google_cloud_project)
     return _firestore_store
+
+
+def _metered_gemini() -> tuple[MeteredGeminiClient, RunTelemetry, str]:
+    """Build a budget-metered Gemini client for a paid request.
+
+    Enforces the daily run cap (raises `BudgetExceededError` → 429) and returns the
+    client + request-scoped telemetry. The client reserves/reconciles the daily
+    cost budget on every underlying model call.
+    """
+    config = load_config()
+    store = get_firestore_store()
+    day = today_key()
+    enforce_run_cap(store, config, day)
+    telemetry = RunTelemetry()
+    gemini = MeteredGeminiClient(config, store=store, telemetry=telemetry, day=day)
+    return gemini, telemetry, day
+
+
+def _audit(
+    store: SavedScenarioStore, action: str, target_type: str, target_id: str | None = None
+) -> None:
+    """Best-effort append to the audit trail (never fails the request)."""
+    with contextlib.suppress(Exception):
+        store.record_audit(
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            request_id=current_request_id(),
+            ip_hash=current_ip_hash(),
+        )
 
 
 def _build_reproducibility(
@@ -196,17 +285,82 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _check_firestore() -> None:
+    get_firestore_store().list_portfolios()
+
+
+def _check_gcs(config) -> None:
+    # ADC / bucket reachability only — no object I/O.
+    from google.cloud import storage
+
+    storage.Client(project=config.google_cloud_project).bucket(config.gcs_bucket).exists()
+
+
+def _check_gemini(config) -> None:
+    # Config + client construction (ADC resolution) only — NO paid generation:
+    # a real model call would cost money and slow the probe.
+    from app.llm.gemini_client import GeminiClient
+
+    GeminiClient(config)
+
+
+@api.get("/api/ready", response_model=ReadinessResponse)
+def ready(response: Response) -> ReadinessResponse:
+    """Readiness probe: verifies dependencies are reachable (bounded). Distinct from
+    /api/health, which stays a fast, dependency-free liveness check."""
+    config = load_config()
+    checks = {
+        "firestore": _check_firestore,
+        "gcs": lambda: _check_gcs(config),
+        "gemini": lambda: _check_gemini(config),
+    }
+    results: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=len(checks)) as pool:
+        futures = {name: pool.submit(fn) for name, fn in checks.items()}
+        for name, future in futures.items():
+            try:
+                future.result(timeout=5.0)
+                results[name] = "ok"
+            except Exception:  # noqa: BLE001 — coarse status only, no detail leak
+                results[name] = "unavailable"
+    ready_flag = all(status == "ok" for status in results.values())
+    if not ready_flag:
+        response.status_code = 503
+    return ReadinessResponse(ready=ready_flag, checks=results)
+
+
 @api.get("/api/access", response_model=AccessResponse)
 def access(request: Request) -> AccessResponse:
     return _access_response(request)
 
 
 @api.post("/api/auth/unlock", response_model=AccessResponse)
+@limiter.limit(unlock_limit)
 def unlock(body: UnlockRequest, request: Request, response: Response) -> AccessResponse:
+    config = load_config()
+    store = get_firestore_store()
+    key = current_ip_hash() or "unknown"
+
+    # Durable, IP-hash-keyed brute-force lockout (global across instances). Read is
+    # fail-open on infra error; a real lockout fails closed with 429.
+    locked = False
+    with contextlib.suppress(Exception):
+        locked = (
+            store.unlock_failure_count(key, window_seconds=config.unlock_window_seconds)
+            >= config.unlock_max_failures
+        )
+    if locked:
+        raise HTTPException(status_code=429, detail="Too many unlock attempts; try again later.")
+
     if not verify_passcode(body.passcode):
+        with contextlib.suppress(Exception):
+            store.record_failed_unlock(key, window_seconds=config.unlock_window_seconds)
         raise HTTPException(status_code=401, detail="Incorrect passcode.")
+    with contextlib.suppress(Exception):
+        store.clear_unlock_failures(key)
     if not set_admin_cookie(response, request):
         raise HTTPException(status_code=503, detail="Admin passcode is not configured.")
+    _audit(store, "auth.unlock", "auth")
     return AccessResponse(
         access_mode="admin",
         admin_available=True,
@@ -339,21 +493,26 @@ def _resolve_mtm(
 
 
 @api.post("/api/scenarios/run", response_model=ScenarioRunResponse)
+@limiter.limit(llm_limit)
 def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> ScenarioRunResponse:
     mode = access_mode_for_request(request)
     scenario_text = _resolve_scenario_text(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
     try:
+        gemini, _telemetry, _day = _metered_gemini()
         result = run_scenario(
             scenario_text,
             portfolio,
+            gemini=gemini,
             market_date=requested_as_of,
             position_quantities=quantities,
             portfolio_nav=nav,
             reporting_currency=currency,
             benchmark=body.benchmark,
         )
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except MarkingError as exc:
         # Requested valuation could not be marked (missing/stale price or FX):
         # fail closed with 503 rather than return a percentage-only result.
@@ -380,6 +539,7 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
 
 
 @api.post("/api/scenarios/run-stream")
+@limiter.limit(llm_limit)
 def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> StreamingResponse:
     """Same as /run but emits SSE progress events while the pipeline executes.
 
@@ -392,6 +552,10 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
     scenario_text = _resolve_scenario_text(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
+    try:
+        gemini, _telemetry, _day = _metered_gemini()
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
 
     events_q: queue.Queue[dict] = queue.Queue()
     SENTINEL = object()
@@ -404,6 +568,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
             result = run_scenario(
                 scenario_text,
                 portfolio,
+                gemini=gemini,
                 market_date=requested_as_of,
                 progress=progress,
                 position_quantities=quantities,
@@ -436,8 +601,12 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
         finally:
             events_q.put(SENTINEL)
 
+    # Worker threads don't inherit contextvars — copy the request context (request
+    # id, ip hash) so the worker's logs correlate with the originating request.
+    ctx = contextvars.copy_context()
+
     def generator() -> Generator[str, None, None]:
-        thread = threading.Thread(target=worker, daemon=True)
+        thread = threading.Thread(target=lambda: ctx.run(worker), daemon=True)
         thread.start()
         while True:
             event = events_q.get()
@@ -450,6 +619,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
 
 
 @api.post("/api/scenarios/adjust-shocks", response_model=ScenarioRunResponse)
+@limiter.limit(llm_limit)
 def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> ScenarioRunResponse:
     mode = access_mode_for_request(request)
     if not can_use_free_text_scenario(mode):
@@ -462,12 +632,16 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
         )
 
     try:
+        gemini, _telemetry, _day = _metered_gemini()
         result = adjust_scenario_shocks(
             body.cache_key,
+            gemini=gemini,
             overrides=body.overrides,
             adjustment_text=body.adjustment_text,
             benchmark=body.benchmark,
         )
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
     except MarkingError as exc:
@@ -489,6 +663,7 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
 
 
 @api.post("/api/scenarios/decompose", response_model=ScenarioRunResponse)
+@limiter.limit(llm_limit)
 def decompose_endpoint(
     body: NarrativeDecompositionRequest,
     request: Request,
@@ -498,7 +673,10 @@ def decompose_endpoint(
         raise HTTPException(status_code=403, detail="Narrative decomposition requires admin mode.")
 
     config = load_config()
-    gemini = GeminiClient(config)
+    try:
+        gemini, _telemetry, _day = _metered_gemini()
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
     decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
     result = compute_narrative_shapley(
@@ -513,6 +691,7 @@ def decompose_endpoint(
 
 
 @api.post("/api/scenarios/decompose-stream")
+@limiter.limit(llm_limit)
 def decompose_stream_endpoint(
     body: NarrativeDecompositionRequest, request: Request
 ) -> StreamingResponse:
@@ -529,7 +708,10 @@ def decompose_stream_endpoint(
         raise HTTPException(status_code=403, detail="Narrative decomposition requires admin mode.")
 
     config = load_config()
-    gemini = GeminiClient(config)
+    try:
+        gemini, _telemetry, _day = _metered_gemini()
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
     decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
 
@@ -559,8 +741,10 @@ def decompose_stream_endpoint(
         finally:
             events_q.put(SENTINEL)
 
+    ctx = contextvars.copy_context()
+
     def generator() -> Generator[str, None, None]:
-        thread = threading.Thread(target=worker, daemon=True)
+        thread = threading.Thread(target=lambda: ctx.run(worker), daemon=True)
         thread.start()
         while True:
             event = events_q.get()
@@ -607,6 +791,7 @@ def save_scenario_endpoint(body: SaveScenarioRequest, request: Request) -> Saved
         record_id = store.save_scenario(full)
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    _audit(store, "scenario.save", "scenario", record_id)
     return full.model_copy(update={"id": record_id})
 
 
@@ -657,6 +842,7 @@ def delete_saved_scenario_endpoint(scenario_id: str, request: Request) -> Respon
     _require_admin(request, "Deleting saved scenarios")
     store = get_firestore_store()
     store.delete_scenario(scenario_id)
+    _audit(store, "scenario.delete", "scenario", scenario_id)
     return Response(status_code=204)
 
 
@@ -672,6 +858,7 @@ def create_portfolio_endpoint(body: SavePortfolioRequest, request: Request) -> S
         owner_label=body.owner_label,
     )
     pid = store.save_portfolio(rec)
+    _audit(store, "portfolio.create", "portfolio", pid)
     return rec.model_copy(update={"id": pid})
 
 
@@ -714,6 +901,7 @@ def create_portfolio_snapshot_endpoint(
         owner_label=body.owner_label,
     )
     sid = store.save_snapshot(portfolio_id, snap)
+    _audit(store, "snapshot.create", "snapshot", sid)
     return snap.model_copy(update={"id": sid})
 
 
@@ -747,6 +935,101 @@ def get_portfolio_snapshot_endpoint(
             detail=f"Snapshot {snapshot_id} not found under portfolio {portfolio_id}.",
         )
     return snap
+
+
+# ============================================================================
+# Trust surfaces — audit, data export/delete, status, usage
+# ============================================================================
+
+
+@api.get("/api/audit", response_model=list[AuditEntry])
+def audit_log_endpoint(request: Request, limit: int = 100) -> list[AuditEntry]:
+    _require_admin(request, "Reading the audit log")
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be in [1, 500].")
+    store = get_firestore_store()
+    return [AuditEntry.model_validate(entry) for entry in store.list_audit(limit=limit)]
+
+
+@api.get("/api/export")
+def export_all_endpoint(request: Request) -> Response:
+    """Admin-only full export of saved analytics (scenarios + portfolios +
+    snapshot subcollections) as one downloadable JSON attachment."""
+    _require_admin(request, "Exporting data")
+    store = get_firestore_store()
+    payload = store.export_all()
+    body = json.dumps(payload, indent=2, default=str)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="nami-export.json"'},
+    )
+
+
+@api.post("/api/admin/purge")
+def purge_all_endpoint(body: PurgeRequest, request: Request) -> dict[str, int]:
+    """Admin-only destructive purge of all saved scenarios + portfolios (+ their
+    snapshot subcollections). Requires an explicit confirmation token. The audit
+    log is preserved and a final purge event is written after deletion."""
+    _require_admin(request, "Purging data")
+    if body.confirm != "DELETE":
+        raise HTTPException(
+            status_code=400, detail='Confirmation required: send {"confirm":"DELETE"}.'
+        )
+    store = get_firestore_store()
+    counts = store.purge_all()
+    _audit(store, "admin.purge", "all")
+    return counts
+
+
+@api.get("/api/status", response_model=StatusResponse)
+def status_endpoint(request: Request) -> StatusResponse:
+    """Public status + guardrails. Spend (`est_cost_today_usd`) is admin-only."""
+    config = load_config()
+    is_admin = access_mode_for_request(request) == "admin"
+    store = get_firestore_store()
+    usage: dict = {}
+    with contextlib.suppress(Exception):
+        usage = store.usage_daily(today_key())
+    ready_flag = True
+    with contextlib.suppress(Exception):
+        get_firestore_store().list_portfolios()
+    return StatusResponse(
+        service="nami",
+        nami_engine_version=NAMI_ENGINE_VERSION,
+        prompt_version=PROMPT_VERSION,
+        model_id=config.vertex_model_id,
+        environment=config.environment,
+        ready=ready_flag,
+        disclaimer=DISCLAIMER_SHORT,
+        rate_limits={"llm": config.rate_limit_llm, "unlock": config.rate_limit_unlock},
+        daily_cost_cap_usd=config.daily_llm_cost_cap_usd,
+        daily_run_cap=config.daily_llm_run_cap,
+        runs_today=int(usage.get("runs", 0)),
+        est_cost_today_usd=float(usage.get("spent", 0.0)) if is_admin else None,
+    )
+
+
+@api.get("/api/usage", response_model=UsageSummary)
+def usage_endpoint(request: Request) -> UsageSummary:
+    _require_admin(request, "Reading usage")
+    config = load_config()
+    store = get_firestore_store()
+    day = today_key()
+    usage: dict = {}
+    with contextlib.suppress(Exception):
+        usage = store.usage_daily(day)
+    return UsageSummary(
+        day=day,
+        runs=int(usage.get("runs", 0)),
+        calls=int(usage.get("calls", 0)),
+        tokens_in=int(usage.get("tokens_in", 0)),
+        tokens_out=int(usage.get("tokens_out", 0)),
+        spent_usd=float(usage.get("spent", 0.0)),
+        reserved_usd=float(usage.get("reserved", 0.0)),
+        cost_cap_usd=config.daily_llm_cost_cap_usd,
+        run_cap=config.daily_llm_run_cap,
+    )
 
 
 @api.get("/api/docs/methodology")
