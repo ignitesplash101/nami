@@ -24,30 +24,31 @@ export function AttributionGuide({
         <div className="guide-body">
           <div className="guide-methods">
             <div className="guide-method">
-              <strong>Naive</strong>
-              <span className="guide-formula">(&#x2211; w&#x1d62;&#x3b2;&#x1d62;,f) &middot; shock[f]</span>
-              <p>Best for: Quick intuition, independent factors</p>
+              <strong>Scenario shocks</strong>
+              <span className="guide-formula">Production risk view</span>
+              <p>Best for: PM/risk-manager readout</p>
+              <p className="guide-note">Only factors explicitly shocked by the scenario</p>
             </div>
 
             <div className="guide-method">
-              <strong>Conditional (full)</strong>
-              <span className="guide-formula">Full Shapley, all F factors</span>
-              <p>Best for: Axiom-compliant, correlated equities</p>
-              <p className="guide-note">Can credit factors LLM didn't shock</p>
+              <strong>Grouped shocks</strong>
+              <span className="guide-formula">Market / sector / style / macro</span>
+              <p>Best for: Risk committee summaries</p>
+              <p className="guide-note">Collapses correlated peer leakage</p>
             </div>
 
             <div className="guide-method">
-              <strong>Explicit-only</strong>
-              <span className="guide-formula">Shapley, LLM-shocked factors only</span>
-              <p>Best for: "What did the model actually name?"</p>
-              <p className="guide-note">Sum may be less than factor-driven P&L</p>
+              <strong>Naive algebra</strong>
+              <span className="guide-formula">Audit/debug</span>
+              <p>Best for: Direct formula checks</p>
+              <p className="guide-note">Assumes factor independence</p>
             </div>
 
             <div className="guide-method">
-              <strong>Grouped</strong>
-              <span className="guide-formula">Shapley over 4 groups, redistributed</span>
-              <p>Best for: Collapsing within-group leakage</p>
-              <p className="guide-note">Market / Sector / Style / Macro grouping</p>
+              <strong>Full conditional diagnostic</strong>
+              <span className="guide-formula">Correlation credit, non-causal</span>
+              <p>Best for: Quant diagnostics</p>
+              <p className="guide-note">Can credit unshocked factors</p>
             </div>
           </div>
 

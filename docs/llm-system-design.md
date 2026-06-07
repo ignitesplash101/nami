@@ -13,7 +13,7 @@ A scenario run executes three distinct Gemini calls in sequence, with different 
 | call | tools | response_schema | purpose |
 |---|---|---|---|
 | `select_analogs` | none | `AnalogSelectionOutput` | Pick 2–5 events from the curated registry whose mechanism matches the scenario |
-| `_grounded_narrative` (Call 2a) | `google_search` | **none** (free-form text) | Write a 3–5 sentence forward-looking narrative citing current news |
+| `_grounded_narrative` (Call 2a) | `google_search` | **none** (free-form text) | Write a 3-5 sentence hypothetical stress narrative citing current news |
 | `_extract_structured_shocks` (Call 2b) | none | `ShockProposalOutput` | Translate that narrative into a `FactorShock` list + `PeripheryShock` list |
 
 Why split Call 2 in two? See section 2.
@@ -38,7 +38,7 @@ This is documented in code, not just docs. Reviewers can grep for the assertion.
 
 ## 3. `PROMPT_VERSION` as the cache-invalidation lever
 
-Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v6"`. The version is mixed into the scenario cache key:
+Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v8"`. The version is mixed into the scenario cache key:
 
 ```python
 # app/utils/hashing.py::scenario_cache_key
@@ -55,6 +55,8 @@ The full version history is in the file header. Highlights:
 - v3 → v4: `PortfolioPnL` renamed `by_factor → by_factor_naive`, added `by_factor_conditional_shapley`, `ScenarioResult` gained `narrative_shapley`
 - v4 → v5: added `by_factor_conditional_shapley_explicit` and `_grouped` Shapley variants
 - v5 → v6: backdating + analog-only narrative path; analog filter switched to `end_date <= as_of` (was implicitly unbounded). Same `(scenario_text, portfolio, market_date)` could have returned a different result under v5 if an event was still in progress on `market_date` — so the cache must be invalidated.
+- v6 → v7: later prompt semantics update; see [`app/llm/prompts.py`](../app/llm/prompts.py) for the canonical changelog.
+- v7 → v8: shock extraction is explicitly framed as hypothetical stress construction, overlapping factor divergence must be explained, and `ScenarioResult` gained warning-only `risk_diagnostics`.
 
 ML-systems framing: this is *experiment versioning*. Same prompt + same model + same data + same code → byte-for-byte same output (modulo Gemini's own non-determinism, which `temperature=0` reduces but doesn't eliminate). Bump the version when any input to that contract changes.
 
@@ -132,6 +134,6 @@ What this buys: a scenario saved today can be re-rendered a year later from the 
 
 ## Footnotes for ML reviewers
 
-- **Attribution as ML interpretability.** The 4 attribution variants in [`app/factors/attribution.py`](../app/factors/attribution.py) treat the linear factor model `R_p = Σ β_i · w_i · F` as a multivariate function and apply Shapley credit allocation. The "Conditional Shapley" name follows Aas et al. (2021) and Janzing et al. (2020) — credit is allocated under the *historical conditional distribution* of factor returns, computed via `shap.LinearExplainer((coefs, intercept), masker=shap.maskers.Impute(background))`. This is not a causal decomposition; it's data-dependent credit allocation. The "Conditional" prefix matters — marginal Shapley with an independent baseline would attribute zero to factors the LLM didn't shock, which is the explicit-only variant. The full variant uses the conditional masker and *can* attribute via correlation. The grouped variant runs full Shapley then sums within correlated peer groups (SPY ↔ ACWI etc.) to collapse leakage.
+- **Attribution as ML interpretability.** The 4 attribution maps in [`app/factors/attribution.py`](../app/factors/attribution.py) treat the linear factor model `R_p = Σ β_i · w_i · F` as a multivariate function and apply Shapley credit allocation. The product split is deliberate: **Scenario shocks** is the production risk view, **Grouped shocks** is the risk-committee view, and `Naive algebra` plus `Full conditional diagnostic` stay in advanced diagnostics. The "Conditional Shapley" name follows Aas et al. (2021) and Janzing et al. (2020) — credit is allocated under the *historical conditional distribution* of factor returns, computed via `shap.LinearExplainer((coefs, intercept), masker=shap.maskers.Impute(background))`. This is not a causal decomposition. The full diagnostic can credit unshocked factors through correlation; it never drives the headline readout.
 
 - **Narrative-level Shapley** ([`app/llm/narrative_shapley.py`](../app/llm/narrative_shapley.py)) is *counterfactual pipeline attribution*: a scenario is decomposed into N=2..4 sub-narratives, then re-run on 2^N − 1 subsets in parallel (4-worker `ThreadPoolExecutor`), then Shapley-aggregated. Each subset re-runs analog selection + grounded narrative + shock extraction, so the result reflects pipeline behavior on the subset, not a "true" contribution. Framed honestly in the UI as "Experimental:".

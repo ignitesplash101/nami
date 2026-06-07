@@ -52,7 +52,7 @@ error embedded; if it still fails after the retry, the pipeline raises.
 Generated via `uv run python scripts/snapshot_live_evals.py`. Source data:
 [`scripts/live_evals_snapshot.json`](../scripts/live_evals_snapshot.json).
 
-| scenario | portfolio | total P&L | top factor (shock → naive contrib) | analogs picked | citations |
+| scenario | portfolio | modeled P&L | top factor (shock → naive contrib) | analogs picked | citations |
 |---|---|---|---|---|---|
 | pandemic resurgence | msci_world | **−10.28%** | VIX (+220% → −3.91% of P&L) | covid-crash-2020, lehman-gfc-2008 | 2 |
 | banking failures | msci_world | **−0.94%** | VIX (+50% → −0.89% of P&L) | svb-banking-2023, lehman-gfc-2008, covid-liquidity-2020 | 6 |
@@ -84,7 +84,7 @@ the kind of run-to-run drift the test's `pytest.skip` guard exists for.)
 - **Wall-clock**: 2.3s, 2.6s, 3.6s per scenario — these are mostly cache hits from the
   `pytest tests/test_live_evals.py` run that ran ~3 minutes prior. A genuine cache miss
   is closer to 10–20s (3 Gemini calls + 2 yfinance fetches in parallel + 3 Shapley fits).
-- **Magnitudes are illustrative, not benchmarked.** A −21% predicted P&L on the Taiwan
+- **Magnitudes are illustrative, not benchmarked.** A −21% modeled P&L on the Taiwan
   scenario reflects the analog envelope (2018 trade war + 2022 inflation + 2015 deval
   windows) intersected with the US tech portfolio's high beta to those factors — it is
   not a forecast.
@@ -97,7 +97,7 @@ the kind of run-to-run drift the test's `pytest.skip` guard exists for.)
   (e.g., picks a 2018 trade-war analog for a banking crisis), the envelope it works against
   is mis-targeted. The Phase 6 tests verify *some* analog matching is correct via tag membership.
 - **Magnitudes are LLM-proposed within the analog band**, not derived from a structural model.
-  Sensible-looking outputs are not proofs of predictive power.
+  Sensible-looking outputs are not proofs of forecasting power.
 - **Periphery shocks are LLM heuristics** about idiosyncratic exposure. They are not derived
   from named-entity supply-chain data.
 - **News-grounded narratives reflect search results at run time**, which can vary by hours.

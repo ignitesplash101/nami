@@ -47,7 +47,7 @@ describe("chart data helpers", () => {
   it("builds a waterfall with periphery and total bars", () => {
     const data = buildWaterfallData(fixtureResult(), "naive");
 
-    expect(data.x).toContain("SPY");
+    expect(data.x).toContain("US large-cap (SPY)");
     expect(data.x).toContain("Periphery");
     expect(data.x[data.x.length - 1]).toBe("Total");
     expect(data.measure[data.measure.length - 1]).toBe("total");
@@ -68,7 +68,8 @@ describe("chart data helpers", () => {
     const acwi = rows.find((row) => row.factor === "ACWI");
 
     expect(acwi?.shockApplied).toBe(0);
-    expect(acwi?.reasoning).toContain("No explicit LLM shock");
+    expect(acwi?.reasoning).toContain("Correlation credit; no explicit shock");
+    expect(acwi?.factorLabel).toBe("Global equities (ACWI)");
   });
 
   it("explicit-only mode picks the explicit-only attribution and suppresses correlation-only label", () => {
@@ -92,7 +93,7 @@ describe("chart data helpers", () => {
   it("builds an answer-first readout with direction, headline, and evidence", () => {
     const readout = buildReadout(fixtureResult(), "naive");
     expect(readout.direction).toBe("loss");
-    expect(readout.topFactor).toBe("SPY");
+    expect(readout.topFactor).toBe("US large-cap equities (SPY)");
     expect(readout.headline).toContain("loses");
     expect(readout.headline).toContain("SPY");
     expect(readout.analogCount).toBe(0);
@@ -162,4 +163,3 @@ describe("buildPositionValuations", () => {
     expect(aapl?.deltaPct).toBeCloseTo((aapl?.delta ?? 0) / (aapl?.value ?? 1));
   });
 });
-

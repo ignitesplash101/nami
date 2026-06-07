@@ -98,6 +98,16 @@ class TickerMetadataResponse(BaseModel):
     ticker_meta: dict[str, dict[str, str]]
 
 
+class FactorMetadataResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str
+    ticker: str
+    group: str
+    short_label: str
+    display_name: str
+    description: str
+
+
 class SampleScenarioResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: str

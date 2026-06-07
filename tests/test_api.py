@@ -81,16 +81,26 @@ def test_unlock_brute_force_lockout(client, monkeypatch):
     assert client.post("/api/auth/unlock", json={"passcode": "test-passcode"}).status_code == 429
 
 
-def test_visitor_rejects_custom_inputs(client):
-    custom_text = client.post(
+def test_visitor_can_run_custom_text_on_sample_portfolio(client, monkeypatch):
+    def _fake_run_scenario(scenario_text, portfolio, **kwargs):
+        assert scenario_text == "Custom visitor stress"
+        assert portfolio == "us_tech_growth"
+        return _fake_result(scenario_text)
+
+    monkeypatch.setattr("app.api.main.run_scenario", _fake_run_scenario)
+
+    response = client.post(
         "/api/scenarios/run",
         json={
-            "scenario_text": "Custom scenario",
+            "scenario_text": "Custom visitor stress",
             "portfolio_key": "us_tech_growth",
         },
     )
-    assert custom_text.status_code == 403
+    assert response.status_code == 200
+    assert response.json()["result"]["scenario_text"] == "Custom visitor stress"
 
+
+def test_visitor_rejects_admin_only_run_inputs(client):
     custom_portfolio = client.post(
         "/api/scenarios/run",
         json={
@@ -99,6 +109,36 @@ def test_visitor_rejects_custom_inputs(client):
         },
     )
     assert custom_portfolio.status_code == 403
+
+    benchmark_override = client.post(
+        "/api/scenarios/run",
+        json={
+            "scenario_text": "Custom visitor stress",
+            "portfolio_key": "us_tech_growth",
+            "benchmark": "SPY",
+        },
+    )
+    assert benchmark_override.status_code == 403
+
+    backdated = client.post(
+        "/api/scenarios/run",
+        json={
+            "scenario_text": "Custom visitor stress",
+            "portfolio_key": "us_tech_growth",
+            "as_of_date": "2026-01-02",
+        },
+    )
+    assert backdated.status_code == 403
+
+    mtm = client.post(
+        "/api/scenarios/run",
+        json={
+            "scenario_text": "Custom visitor stress",
+            "portfolio_key": "us_tech_growth",
+            "portfolio_nav": 100000,
+        },
+    )
+    assert mtm.status_code == 403
 
 
 def test_visitor_can_run_sample_scenario(client, monkeypatch):
@@ -121,6 +161,15 @@ def test_visitor_can_run_sample_scenario(client, monkeypatch):
     body = response.json()
     assert body["result"]["portfolio_key"] == "us_tech_growth"
     assert "q4-trade-war-2018" in body["analog_events"]
+
+
+def test_factor_metadata_endpoint_is_public_and_complete(client):
+    response = client.get("/api/factors")
+    assert response.status_code == 200
+    factors = {item["key"]: item for item in response.json()}
+    assert factors["SPY"]["display_name"] == "US large-cap equities"
+    assert factors["ACWI"]["short_label"] == "Global equities"
+    assert factors["TNX"]["ticker"] == "^TNX"
 
 
 def test_admin_can_run_custom_scenario_and_portfolio(client, monkeypatch):

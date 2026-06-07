@@ -83,6 +83,7 @@ function renderResults(envelope: ScenarioRunResponse | null) {
       envelope={envelope}
       attributionMethod="naive"
       setAttributionMethod={() => {}}
+      factorMeta={{}}
       displayMode="pct"
       setDisplayMode={() => {}}
       navInput="100000"
@@ -110,10 +111,16 @@ describe("first-screen UI cleanup", () => {
           { key: "tariffs", name: "China tariff escalation", text: "Tariff shock text" }
         ]}
         scenarioKey="covid"
-        setScenarioKey={() => {}}
-        scenarioText=""
+        scenarioDraftMode="sample"
+        onSelectScenario={() => {}}
+        onSetCustomMode={() => {}}
+        scenarioText="Pandemic shock text"
         setScenarioText={() => {}}
-        selectedScenario={{ key: "covid", name: "COVID-like pandemic shock", text: "Pandemic shock text" }}
+        selectedScenario={{
+          key: "covid",
+          name: "COVID-like pandemic shock",
+          text: "Pandemic shock text"
+        }}
         isRunning={false}
         onRun={() => {}}
         asOfDate="2026-05-28"
@@ -124,8 +131,8 @@ describe("first-screen UI cleanup", () => {
 
     expect(screen.getByRole("group", { name: "Example scenarios" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Sample scenario")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Scenario text")).toBeDisabled();
-    expect(screen.getByLabelText("Scenario text")).toHaveClass("compact");
+    expect(screen.getByLabelText(/Scenario text/)).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
   });
 
   it("renders first-run results as a compact placeholder", () => {

@@ -61,8 +61,8 @@ class PortfolioPnL(BaseModel):
     #                                              factors the LLM never shocked.
     #   - by_factor_conditional_shapley_explicit: game restricted to LLM-shocked
     #                                              factors; unshocked factors stay 0.
-    #                                              Sum ≤ factor-driven P&L (gap is
-    #                                              unattributed cross-correlation).
+    #                                              Sum = factor-driven P&L under
+    #                                              the demeaned-background contract.
     #   - by_factor_conditional_shapley_grouped:  G-dim game over factor groups
     #                                              (market/sector/style/macro);
     #                                              within-group credit redistributed
@@ -157,6 +157,26 @@ class ShockAdjustment(BaseModel):
     changed_factors: dict[str, list[float]]  # factor -> [before, after]
 
 
+class RiskDiagnostic(BaseModel):
+    """Warning-only methodology diagnostics for scenario review.
+
+    These records explain why a shock vector or diagnostic attribution view may
+    need human review. They never rewrite shocks and are safe to omit on older
+    cached/saved results.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal[
+        "correlation_conflict",
+        "envelope_direction_conflict",
+        "conditional_cross_credit",
+    ]
+    severity: Literal["info", "warning"] = "warning"
+    message: str
+    factors: list[str] = Field(default_factory=list)
+    evidence: dict[str, float | int | str] = Field(default_factory=dict)
+
+
 class ScenarioResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_text: str
@@ -173,6 +193,7 @@ class ScenarioResult(BaseModel):
     portfolio_pnl: PortfolioPnL
     narrative_shapley: NarrativeShapleyResult | None = None  # opt-in only
     adjustment_history: list[ShockAdjustment] = Field(default_factory=list)
+    risk_diagnostics: list[RiskDiagnostic] = Field(default_factory=list)
     # Backdating metadata (added Phase 11). All default-defaulted so cached v5
     # entries deserialize cleanly under v6 lazy re-derivation.
     # `market_date` is the *effective* as-of date (last NYSE trading day on or

@@ -23,6 +23,7 @@ from app.api.schemas import (
     AccessResponse,
     AnalogEventResponse,
     AuditEntry,
+    FactorMetadataResponse,
     NarrativeDecompositionRequest,
     Permissions,
     PortfolioSnapshotRecord,
@@ -69,7 +70,7 @@ from app.data.marking import MarkingError
 from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio, ticker_metadata
 from app.factors import warm_cache
 from app.factors.analogs import HistoricalEvent, events_version, load_events
-from app.factors.universe import factor_universe_version
+from app.factors.universe import factor_metadata, factor_universe_version
 from app.llm.narrative_shapley import compute_narrative_shapley
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import (
@@ -137,6 +138,8 @@ with contextlib.suppress(Exception):
 # nami engine version used in reproducibility metadata. Bumps with any
 # release-significant change to the engine; not in lockstep with PROMPT_VERSION.
 NAMI_ENGINE_VERSION = "0.1.0"
+MIN_SCENARIO_TEXT_CHARS = 10
+MAX_SCENARIO_TEXT_CHARS = 2000
 
 
 _firestore_store: SavedScenarioStore | None = None
@@ -245,17 +248,60 @@ def _analog_events(events: dict[str, HistoricalEvent]) -> dict[str, AnalogEventR
     }
 
 
-def _resolve_scenario_text(body: ScenarioRunRequest, mode: AccessMode) -> str:
-    if mode == "visitor":
-        if body.sample_scenario_key not in SAMPLE_SCENARIOS:
-            raise HTTPException(status_code=403, detail="Visitor mode requires a sample scenario.")
-        return SAMPLE_SCENARIOS[body.sample_scenario_key]["text"]
+def _validate_scenario_text(text: str) -> str:
+    stripped = text.strip()
+    if len(stripped) < MIN_SCENARIO_TEXT_CHARS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Scenario text must be at least {MIN_SCENARIO_TEXT_CHARS} characters.",
+        )
+    if len(stripped) > MAX_SCENARIO_TEXT_CHARS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Scenario text must be {MAX_SCENARIO_TEXT_CHARS} characters or fewer.",
+        )
+    return stripped
 
+
+def _reject_visitor_admin_fields(body: ScenarioRunRequest, mode: AccessMode) -> None:
+    if mode != "visitor":
+        return
+    forbidden: list[str] = []
+    if body.portfolio_holdings is not None:
+        forbidden.append("portfolio_holdings")
+    if body.portfolio_name is not None:
+        forbidden.append("portfolio_name")
+    if body.position_quantities is not None:
+        forbidden.append("position_quantities")
+    if body.portfolio_nav is not None:
+        forbidden.append("portfolio_nav")
+    if body.reporting_currency is not None:
+        forbidden.append("reporting_currency")
+    if body.benchmark is not None:
+        forbidden.append("benchmark")
+    if forbidden:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Visitor mode does not support: {', '.join(forbidden)}.",
+        )
+
+
+def _resolve_scenario_text(body: ScenarioRunRequest, mode: AccessMode) -> str:
     text = (body.scenario_text or "").strip()
+    if mode == "visitor":
+        if text:
+            return _validate_scenario_text(text)
+        if body.sample_scenario_key not in SAMPLE_SCENARIOS:
+            raise HTTPException(
+                status_code=403,
+                detail="Visitor mode requires a sample scenario or custom scenario text.",
+            )
+        return _validate_scenario_text(SAMPLE_SCENARIOS[body.sample_scenario_key]["text"])
+
     if text:
-        return text
+        return _validate_scenario_text(text)
     if body.sample_scenario_key in SAMPLE_SCENARIOS:
-        return SAMPLE_SCENARIOS[body.sample_scenario_key]["text"]
+        return _validate_scenario_text(SAMPLE_SCENARIOS[body.sample_scenario_key]["text"])
     raise HTTPException(status_code=400, detail="Scenario text is required.")
 
 
@@ -411,6 +457,11 @@ def portfolio_ticker_metadata(tickers: str | None = None) -> TickerMetadataRespo
     return TickerMetadataResponse(ticker_meta=meta)
 
 
+@api.get("/api/factors", response_model=list[FactorMetadataResponse])
+def factors() -> list[FactorMetadataResponse]:
+    return [FactorMetadataResponse(**item) for item in factor_metadata()]
+
+
 @api.post("/api/portfolio/validate", response_model=PortfolioValidationResponse)
 def validate_portfolio(body: PortfolioValidationRequest) -> PortfolioValidationResponse:
     holdings, errors = validate_holdings(body.holdings)
@@ -496,6 +547,7 @@ def _resolve_mtm(
 @limiter.limit(llm_limit)
 def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> ScenarioRunResponse:
     mode = access_mode_for_request(request)
+    _reject_visitor_admin_fields(body, mode)
     scenario_text = _resolve_scenario_text(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
@@ -549,6 +601,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
         {"stage": "error", "message": "..."}                  # on failure
     """
     mode = access_mode_for_request(request)
+    _reject_visitor_admin_fields(body, mode)
     scenario_text = _resolve_scenario_text(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)

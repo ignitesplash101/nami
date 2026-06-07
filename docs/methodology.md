@@ -1,27 +1,27 @@
 # Methodology
 
-> ⚠️ **Educational/research tool only.** Outputs are illustrative and probabilistic, not
-> investment advice and not regulatory stress testing. Do not use for actual trading or
-> capital allocation decisions.
+> ⚠️ **Educational/research tool only.** Outputs are hypothetical modeled stress
+> outcomes, not forecasts, investment advice, or regulatory stress testing. Do not
+> use for actual trading or capital allocation decisions.
 
 ---
 
 ## What nami does
 
-A user describes a forward-looking market scenario in natural language ("60% US tariffs on
+A user describes a hypothetical market stress in natural language ("60% US tariffs on
 China imports, prolonged trade war"). nami:
 
 1. Asks Gemini to pick 2–5 **historical analog events** from a curated registry whose
    *mechanism* matches the scenario.
 2. Pulls the **realized factor returns** over each analog's window from yfinance and
    computes an **empirical envelope** (mean / p10 / p90 / count) per factor.
-3. Asks Gemini to write a **grounded narrative** about the scenario (Google Search active
+3. Asks Gemini to write a **grounded hypothetical stress narrative** about the scenario (Google Search active
    → real news citations) and then, in a separate sub-call, **extract structured factor
    shocks + periphery shocks** that stay inside the empirical envelope.
 4. Estimates the portfolio's **factor betas** via mean-centered ridge OLS on 3 years of
    weekly returns, applies the shocks, and returns a portfolio P&L with attribution.
 
-Every forward-looking claim in the narrative is **cited** to a real source the LLM
+Every market-context claim in the narrative is **cited** to a real source the LLM
 retrieved during grounding. Without citations the pipeline refuses to return.
 
 ---
@@ -77,12 +77,13 @@ construction at the ETF level).
 
 | group | factors |
 |---|---|
-| **Market** (2) | SPY (`SPY`), ACWI (`ACWI`) |
-| **Sectors** (11 GICS) | XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU, XLB, XLRE, XLC |
-| **Styles** (5 MSCI) | MTUM, QUAL, VLUE, SIZE, USMV |
-| **Macro** (4) | TNX (`^TNX`), DXY (`DX-Y.NYB`), VIX (`^VIX`), OIL (`CL=F`) |
+| **Market** (2) | US large-cap equities (`SPY`), Global equities (`ACWI`) |
+| **Sectors** (11 GICS) | US technology (`XLK`), US financials (`XLF`), US energy (`XLE`), US health care (`XLV`), US industrials (`XLI`), US consumer discretionary (`XLY`), US consumer staples (`XLP`), US utilities (`XLU`), US materials (`XLB`), US real estate (`XLRE`), US communication services (`XLC`) |
+| **Styles** (5 MSCI) | Momentum stocks (`MTUM`), Quality stocks (`QUAL`), Value stocks (`VLUE`), Small-cap tilt (`SIZE`), Low-volatility stocks (`USMV`) |
+| **Macro** (4) | US 10Y yield (`TNX`, yfinance `^TNX`), US dollar (`DXY`, yfinance `DX-Y.NYB`), Equity volatility (`VIX`, yfinance `^VIX`), Oil price (`OIL`, yfinance `CL=F`) |
 
-Unit convention: percent change of the weekly close. For macro indices that means percent
+The app renders factors as `Human label (TICKER)` wherever space allows, while the
+internal keys and model math stay ticker-based. Unit convention: percent change of the weekly close. For macro indices that means percent
 change in the *level* (so a VIX shock of `+0.50` = the VIX index spiking by 50%, e.g.
 15 → 22.5). The full description per factor is in [`app/factors/universe.py`](../app/factors/universe.py).
 
@@ -214,8 +215,7 @@ total_pnl              = Σᵢ by_ticker_total[i] = Σ_f by_factor[f] + Σᵢ by
 ```
 
 The two channels are **orthogonal** under this attribution — factor and periphery sum
-independently to the total. Phase 8 (now shipped) added Conditional Shapley with the
-three variants documented below; Shapley redistributes credit *within* the factor
+independently to the total. Phase 8 added Conditional Shapley variants; Shapley redistributes credit *within* the factor
 channel only, never across the factor/periphery boundary.
 
 **Constraint**: periphery shocks may only reference tickers present in the portfolio.
@@ -228,291 +228,105 @@ exposure to that name.
 
 ---
 
-## Factor attribution: Naive vs Conditional Shapley
+## Factor attribution: production view and diagnostics
 
-The engine returns **two** per-factor attribution dictionaries on every scenario:
-`by_factor_naive` (always) and `by_factor_conditional_shapley` (when the historical
-factor-return background is available). The Results-tab toggle picks which one to
-render.
+The app computes four attribution maps internally, but it no longer presents them as
+equal choices. The main workbench uses the practical hedge-fund split:
 
-### Why naive attribution misleads under correlation
+| Surface | Backing field | Purpose |
+|---|---|---|
+| **Scenario shocks** | `by_factor_conditional_shapley_explicit` | Production risk view. Only factors explicitly shocked by the scenario receive factor attribution. |
+| **Grouped shocks** | `by_factor_conditional_shapley_grouped` | Risk-committee view. Market / sector / style / macro groups collapse correlated-peer leakage. |
+| **Naive algebra** | `by_factor_naive` | Advanced audit/debug view. Direct formula, assumes factor independence. |
+| **Full conditional diagnostic** | `by_factor_conditional_shapley` | Advanced quant diagnostic. Correlation credit under the full historical joint distribution; non-causal. |
 
-Naive attribution is the direct algebra:
+The impact summary and top-driver readout default to **Scenario shocks** whenever that
+map is available. Full conditional diagnostic never drives the headline.
 
-```
-by_factor_naive[f] = (Σᵢ wᵢ · βᵢ,f) · shock[f]
-```
+### Production risk view
 
-This sums exactly to the factor-driven P&L and is dead simple to interpret — but it
-**assumes factor independence**. In practice SPY and ACWI move together (ρ ≈ 0.95),
-XLK is essentially SPY plus a tech-tilt, and sector ETFs co-move during stress. If
-the LLM shocks SPY while leaving ACWI unshocked, naive attribution gives ACWI exactly
-zero credit even though ACWI is what the SPY shock *implies* about global equities.
-Conversely, two near-identical factors that are both shocked can have their credit
-arbitrarily split based on which factor the LLM happened to name first.
-[Aas, Jullum, Løland (2021)](https://doi.org/10.1016/j.artint.2021.103502) motivates
-dependent-feature approximations to SHAP — measuring co-variation in the historical
-joint distribution rather than treating each feature in isolation — as the appropriate
-fix for this kind of correlation-driven attribution distortion.
+Scenario shocks answer the operational question: "Given the factors explicitly shocked
+by the stress narrative, what drove modeled P&L?" This matches how a PM or risk manager
+usually reads a scenario. If the scenario did not explicitly shock `Global equities
+(ACWI)`, then `Global equities (ACWI)` does not appear as a production driver.
 
-### Conditional Shapley axioms
+The direct algebra underneath the model is still:
 
-Shapley values are the unique axiom-compliant credit allocation among ([Shapley, 1953](https://www.degruyter.com/document/doi/10.1515/9781400881970-018/html)):
-- **Efficiency** — `Σ_f shapley[f] == factor-driven P&L`
-- **Symmetry** — factors with identical marginal effect get equal credit
-- **Linearity** — composing two games linearly composes the Shapley values
-- **Null player** — a factor with zero coefficient gets zero credit
-
-For the linear-model implementation we use [SHAP's `LinearExplainer`](https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html)
-with a `maskers.Impute` background ([Lundberg & Lee, 2017](https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html)).
-
-### What Conditional Shapley is NOT
-
-**It is not a causal "true" attribution.** Conditional Shapley is *data-dependent
-credit allocation under the historical conditional joint distribution* of factor
-returns. A factor with zero explicit LLM shock can receive nonzero Conditional
-Shapley credit because it is correlated with one that *was* shocked — the model's
-prediction at the conditional expectation differs from the prediction at the
-marginal expectation.
-
-[Janzing, Minorics, Blöbaum (2020)](https://proceedings.mlr.press/v108/janzing20a.html)
-frame this as a *modeling choice*: observational (conditional) and interventional
-Shapley answer different questions about feature attribution, and neither is universally
-"correct" — the choice depends on whether you want attribution under the empirical
-joint distribution or under feature-wise toggles. [Chen, Janizek, Lundberg, Lee (2020)](https://arxiv.org/abs/2006.16234)
-develop the same observation in depth ("True to the Model or True to the Data?").
-This is the price of axiomatic credit allocation, not a bug, but it does mean
-Conditional Shapley should be read as "how much of the move is *explained by* factor
-f under the historical co-movement structure" rather than "how much would change if
-we toggled f in isolation."
-
-The UI surfaces this honestly: rows labelled "No explicit LLM shock; attributed via
-correlation" show up only under Conditional Shapley, for factors the LLM didn't name
-but which received Shapley credit through correlation.
-
-### Implementation
-
-`app/factors/attribution.py::conditional_shapley_attribution` uses the
-non-deprecated `shap` API:
-
-```python
-masker    = shap.maskers.Impute(background)
-explainer = shap.LinearExplainer((aggregated_coefs, 0.0), masker)
-shap_values = explainer.shap_values(shock_vec)
+```text
+by_factor_naive[f] = (sum_i weight_i * beta_i,f) * shock[f]
 ```
 
-where `aggregated_coefs = (weights @ betas)` collapses the N × F beta matrix into the
-portfolio-level F-vector of factor exposures. The background is the demeaned,
-dropna'd historical weekly factor-return matrix supplied by
-`fetch_factor_returns_history` (≥52 complete rows required — `RuntimeError` otherwise).
-The 52-row floor is one year of weekly observations — the minimum for the 22-factor
-covariance matrix to be well-conditioned. With fewer rows, the sample covariance is
-rank-deficient or noise-dominated, and the `Impute` masker's conditional expectations
-become numerically unreliable. In practice the strict `dropna(how='any')` across all
-22 factors yields 300+ surviving rows (post-XLC 2018+), well above the floor.
+The production Shapley view restricts the player set to the explicitly shocked factors,
+so unshocked factors stay exactly zero while the result still sums to the factor-driven
+P&L under nami's demeaned-background contract.
 
-**Critical:** the background must NOT be `fillna(0)`'d. Zero-filling a missing ETF's
-returns manufactures false zero-correlation that contaminates the Shapley values.
-Strict dropna across all 22 factors effectively restricts the background to the
-post-XLC-launch window (mid-2018+); this is correct — older windows can't carry the
-modern factor universe's correlation structure.
+### Grouped risk view
+
+Grouped shocks are the secondary presentation view. The engine first computes the full
+conditional game, sums credit within the four factor groups, then redistributes each
+group's value to members by their within-group naive share. This preserves efficiency
+while avoiding noisy peer leakage such as `US large-cap equities (SPY)` to `Global
+equities (ACWI)` or `Momentum stocks (MTUM)` to `Quality stocks (QUAL)`.
+
+### Advanced diagnostics
+
+Naive algebra and full conditional diagnostic are useful for model validation, not for
+the main risk story. Full conditional diagnostic uses SHAP's `LinearExplainer` with a
+`maskers.Impute` background ([Lundberg & Lee, 2017](https://proceedings.neurips.cc/paper/2017/hash/8a20a8621978632d76c43dfd28b67767-Abstract.html)).
+It is data-dependent credit allocation under the historical conditional distribution
+of factor returns, not a causal decomposition. A factor with no explicit shock can
+receive positive or negative credit because it is correlated with shocked factors.
+
+That behavior follows the observational-feature framing discussed by
+[Aas, Jullum, Loland (2021)](https://doi.org/10.1016/j.artint.2021.103502),
+[Janzing, Minorics, Blobaum (2020)](https://proceedings.mlr.press/v108/janzing20a.html),
+and [Chen, Janizek, Lundberg, Lee (2020)](https://arxiv.org/abs/2006.16234). It is
+valid as a diagnostic, but it is basis-sensitive and should not be narrated as "the
+scenario shocked this factor."
+
+### ACWI example
+
+In an AI-bubble crash, `Global equities (ACWI)` would usually be expected to move
+negative as a direct broad-equity shock. If the **Full conditional diagnostic** shows
+positive `Global equities (ACWI)` contribution, that is not a claim that global
+equities rallied in the scenario. It means ACWI received correlation credit because
+other overlapping factors such as `US large-cap equities (SPY)`, `US technology (XLK)`,
+`Momentum stocks (MTUM)`, or `Quality stocks (QUAL)` were shocked. The production
+view remains **Scenario shocks**.
 
 ### Worked example
 
-Two factors, ρ = 0.9, only F0 explicitly shocked:
+Two factors, correlation = 0.9, only F0 explicitly shocked:
 
-| | F0 (shocked −5%) | F1 (no shock) |
+| View | F0 shocked -5% | F1 no explicit shock |
 |---|---|---|
-| Naive | −5% × β = full credit | exactly 0 |
-| Conditional Shapley | ~−2.5% credit | ~−2.5% credit (via correlation) |
+| Naive algebra | Full direct credit | 0 |
+| Scenario shocks | Shapley credit within shocked set | 0 |
+| Full conditional diagnostic | Partial credit | Partial correlation credit |
 
-Both attributions sum to the same factor-driven P&L. Conditional Shapley distributes
-the credit across the correlated peer.
+All maps can sum to the same factor-driven P&L, but they answer different questions.
+For user-facing scenario interpretation, start with **Scenario shocks**, then use
+**Grouped shocks** for committee-style reporting. Use the advanced diagnostics only to
+audit the math or investigate correlation leakage.
 
-### When to use which
+---
 
-- **Naive** for quick intuition when factors are roughly independent or when the
-  reader needs to see exactly which factors the LLM named.
-- **Conditional Shapley** for axiom-compliant attribution when factors are known to
-  be correlated — i.e. most of the time in equities. Default when available.
+## Risk diagnostics
 
-### Variants: full, explicit-only, grouped
+`ScenarioResult.risk_diagnostics` is an optional warning list. It is deterministic
+post-processing, not an LLM judgment and not a shock rewrite. Old cached or saved
+results deserialize with an empty list.
 
-Conditional Shapley ships in three flavors. All three are computed best-effort
-whenever a sufficient factor-return background is available; the API/UI surfaces
-all three under `PortfolioPnL.by_factor_conditional_shapley*` fields and the
-frontend picks which to render. The taxonomy of Shapley operationalizations is
-discussed in [Sundararajan & Najmi (2020)](https://proceedings.mlr.press/v119/sundararajan20b.html);
-group-aware approaches related to (but distinct from) nami's grouped variant include
-[Frye, Rowat, Feige (2020)](https://proceedings.neurips.cc/paper/2020/hash/0d770c496aa3da6d2c3f2bd19e7b9d6b-Abstract.html)
-on asymmetric Shapley values and [Owen (1977)](https://link.springer.com/chapter/10.1007/978-3-642-45494-3_7)
-on coalition-structure values.
+V1 diagnostics flag review points when:
 
-| Variant | Players in the Shapley game | Sums to | When to read |
-|---|---|---|---|
-| **Full** (`by_factor_conditional_shapley`) | All F factors in the universe | Factor-driven P&L (efficiency axiom) | "How would credit flow under the full historical joint distribution?" |
-| **Explicit-only** (`by_factor_conditional_shapley_explicit`) | Only the factors the LLM explicitly shocked; unshocked factors stay at exactly 0.0 | Factor-driven P&L (sub-game over shocked factors, under the demeaned-background contract) | "Restrict attribution to factors the model actually named." Matches the user's mental model when reading "what did the LLM shock?" |
-| **Grouped** (`by_factor_conditional_shapley_grouped`) | G=4 factor groups (market / sector / style / macro); within-group credit redistributed to members by naive weight | Factor-driven P&L (efficiency preserved) | "Collapse within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL) and only Shapley-allocate cross-group correlation." |
+- Highly positively correlated factors receive opposite-signed material explicit shocks.
+- Highly negatively correlated factors receive same-signed material explicit shocks.
+- An explicit shock materially conflicts with the selected analog envelope mean.
+- The full conditional diagnostic assigns material correlation credit to an unshocked factor.
 
-**Within-group aggregation**: `conditional_shapley_attribution_grouped` aggregates
-member returns and shocks within each group by **SUM**, not average. Sum preserves
-`Σ aggregated_shock = Σ raw_shock` and so preserves the efficiency property at the
-factor level. Average would distort correlation structure for groups with many
-members and would break efficiency unless rescaled.
-
-**Redistribution within a group**: each group's Shapley value is split among its
-members proportionally to `(wᵀβ)_f · shock[f]` — the naive within-group share. The
-practical effect: a group's credit lands on the factor the LLM actually shocked, not
-on its correlated peers. If all member shocks are 0, the group's value (also
-typically ~0) is split uniformly across members for transparency.
-
-**This redistribution rule is a design choice unique to nami, not derived from a
-Shapley-style axiom system.** It preserves efficiency by construction (by-naive-share
-within each group), and it has the UX property that shocked factors absorb the group's
-credit instead of correlated peers leaking credit to them. Alternative redistribution
-rules — uniform within-group, or [Owen (1977)](https://link.springer.com/chapter/10.1007/978-3-642-45494-3_7)-style
-coalition values that recursively apply Shapley within each group — would yield
-different per-factor attributions but the same group-level sums.
-
-**Zero-group detail**: when no member of a group was explicitly shocked, `total_naive`
-for that group is exactly 0.0 and the naive-share denominator would divide by zero. The
-code falls back to `phi_f = phi_group / |group|` (uniform split). In practice `phi_group`
-is near-zero for an all-unshocked group — the full Shapley game attributes most credit to
-groups whose members were shocked — but it can be nonzero when cross-group correlation is
-high. The uniform fallback is a transparency choice, not a mathematical necessity.
-
-**Why explicit-only exists.** The full variant is mathematically clean but reads
-strangely to users: a SPY-only shock can produce a noticeable ACWI/QUAL contribution
-because `shap.maskers.Impute` measures the marginal effect of an *omitted* factor
-against the conditional expectation given the shocked ones. With SPY/XLK/MTUM
-heavily negative, the conditional expectation of ACWI/QUAL is also negative, so a
-zero shock is "better than expected" and earns positive offsetting attribution.
-That's correct under the axiomatic credit-allocation framing — but a user reading
-"the model attributed P&L to a factor I didn't shock" sees a bug. Explicit-only is
-the variant that matches the user's mental model.
-
-**Why grouped exists.** The 21-factor view spreads correlated-peer leakage across
-many factors (SPY/ACWI/XLK/MTUM/QUAL all moving together swamps the cross-group
-signal). The grouped view collapses within-group leakage into naive and
-Shapley-allocates only cross-group correlation, which is the more interesting
-signal for a portfolio P&L story.
-
-### Worked example: end-to-end with all four variants
-
-A concrete walkthrough using 3 factors (SPY, XLK, VIX) and a 2-ticker portfolio
-(AAPL 60%, MSFT 40%). All numbers below were generated by running the actual
-`estimate_betas`, `apply_shocks`, and attribution functions on synthetic 60-week data
-with known correlation structure (SPY/XLK ρ ≈ 0.84, SPY/VIX ρ ≈ −0.47).
-
-**Step 1 — Beta estimation** (mean-centered ridge OLS, α = 0.1):
-
-```
-              SPY      XLK       VIX
-  AAPL     0.2232   0.2910   -0.1550
-  MSFT     0.1701   0.2252   -0.1498
-```
-
-Betas are ridge-shrunk from true generating values (SPY/XLK multicollinearity
-shares load across the two) — this is expected behavior, not a defect.
-
-**Step 2 — LLM shocks**: SPY = −5%, XLK = −8%, VIX = +40%
-
-**Step 3 — Per-ticker expected return** (`β @ shock_vec`):
-
-```
-  AAPL: 0.2232 × (−0.05) + 0.2910 × (−0.08) + (−0.1550) × (+0.40) = −9.64%
-  MSFT: 0.1701 × (−0.05) + 0.2252 × (−0.08) + (−0.1498) × (+0.40) = −8.64%
-```
-
-**Step 4 — Periphery**: AAPL gets −3% idiosyncratic (earnings miss); MSFT gets 0%.
-
-**Step 5 — Portfolio P&L**:
-
-```
-  Ticker  Weight   Factor  Periphery    Total  Weighted
-  AAPL     60%    −9.64%    −3.00%    −12.64%   −7.59%
-  MSFT     40%    −8.64%     0.00%     −8.64%   −3.46%
-  ──────────────────────────────────────────────────────
-  Factor-driven P&L:  −9.24%
-  Periphery P&L:      −1.80%
-  Total portfolio:   −11.04%
-```
-
-**Step 6 — Naive attribution** (`(Σᵢ wᵢ · βᵢ,f) · shock[f]`):
-
-```
-  SPY:  (0.6 × 0.2232 + 0.4 × 0.1701) × (−0.05) = 0.2020 × (−0.05) = −1.010%
-  XLK:  (0.6 × 0.2910 + 0.4 × 0.2252) × (−0.08) = 0.2647 × (−0.08) = −2.117%
-  VIX:  (0.6 × −0.1550 + 0.4 × −0.1498) × (+0.40) = −0.1529 × (+0.40) = −6.115%
-  Sum = −9.243% ✓ (matches factor-driven P&L)
-```
-
-VIX dominates because its shock is large (+40%) and the portfolio has meaningful
-negative VIX betas (VIX up → equity down).
-
-> **Note**: the specific Conditional Shapley values in the tables below are
-> illustrative — they may drift ±0.005 across `shap` library versions. The math
-> invariants (efficiency, sum-equality across variants, zero-on-unshocked for
-> explicit-only) are regression-tested in
-> [`tests/test_methodology_worked_example.py`](../tests/test_methodology_worked_example.py);
-> exact Shapley magnitudes are not pinned to specific library versions.
-
-**Step 7 — All four attribution variants compared**:
-
-| Factor | Naive | Full Conditional | Explicit-only | Grouped |
-|---|---|---|---|---|
-| SPY | −1.010% | −0.441% | −0.553% | −0.426% |
-| XLK | −2.117% | −1.653% | −1.578% | −1.573% |
-| VIX | −6.115% | −7.148% | −7.111% | −7.244% |
-| **Sum** | **−9.243%** | **−9.243%** | **−9.243%** | **−9.243%** |
-
-Observations:
-- **Efficiency**: all four variants sum to the same −9.243% factor-driven P&L.
-  (Explicit-only always sums to factor-driven P&L: the sub-game's grand-coalition
-  value is `Σ_{f∈shocked} (wᵀβ)_f · shock[f]`, which equals factor-driven P&L
-  because unshocked factors contribute zero to factor-driven P&L anyway. The
-  distinguishing property is that unshocked factors stay at exactly zero — no
-  correlation-driven credit. Step 8 below shows this concretely.)
-- **SPY vs XLK redistribution**: under Naive, SPY gets −1.01% and XLK gets −2.12%.
-  Under Conditional Shapley, SPY drops to −0.44% because its effect is partially
-  captured by its correlated peer XLK. The credit isn't lost — it's redistributed.
-- **VIX absorbs more**: Conditional Shapley pushes VIX from −6.12% to −7.15%. VIX is
-  inversely correlated with SPY/XLK, so its Shapley value exceeds its naive share.
-
-**Step 8 — What happens when VIX is unshocked** (same SPY/XLK shocks):
-
-| Factor | Naive | Full Conditional | Explicit-only |
-|---|---|---|---|
-| SPY | −1.010% | −1.445% | −1.118% |
-| XLK | −2.117% | −2.173% | −2.010% |
-| VIX | 0.000% | **+0.491%** | **0.000%** |
-| **Sum** | **−3.127%** | **−3.127%** | **−3.127%** |
-
-This is where the variants diverge meaningfully:
-- **Naive** gives VIX exactly 0 — it was not shocked.
-- **Full Conditional** gives VIX **+0.49%** (positive!) — because SPY/XLK are down,
-  the conditional expectation of VIX is *up*; a zero VIX shock is "better than the
-  model expected," so VIX earns positive offsetting credit.
-- **Explicit-only** keeps VIX at exactly 0 — it restricts the Shapley game to
-  {SPY, XLK} only. This matches the user's mental model: "I didn't shock VIX, so
-  VIX shouldn't appear in my attribution."
-
-### Choosing the right attribution method
-
-| Question | Naive | Full Conditional | Explicit-only | Grouped |
-|---|---|---|---|---|
-| **What does it show?** | Credit proportional to `(wᵀβ)_f · shock[f]` | Axiom-compliant credit under historical co-movement | Shapley restricted to LLM-shocked factors; unshocked = 0 | Cross-group Shapley + within-group naive redistribution |
-| **Sums to factor P&L?** | Yes (exact) | Yes (efficiency axiom) | Yes (sub-game on shocked factors only) | Yes (efficiency preserved) |
-| **Unshocked factor credit?** | Always zero | Can be nonzero via correlation | Always zero | Zero within-group; possible via cross-group correlation |
-| **Best when...** | Quick sanity check; factors roughly independent | Axiom-compliant full allocation; correlated equities | User wants attribution only on factors the LLM named | Suppress within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL) |
-| **Confusing when...** | Correlated factors split credit arbitrarily | Credit appears on factors nobody shocked | Gap between sub-game total and factor P&L is large | Group definitions feel arbitrary |
-
-**Rule of thumb**: start with **Grouped** for presentation-quality factor stories — it
-collapses the noisy within-group leakage that makes full Conditional hard to narrate.
-Use **Naive** for a fast sanity check or when the audience needs to see exactly which
-factors the LLM proposed. Use **Full Conditional** when you need every cent accounted
-for under the historical joint distribution. Use **Explicit-only** when the audience
-objects to seeing credit on factors the model didn't name.
+Each warning includes factor labels plus tickers, the relevant correlation or envelope
+statistic, and a short review message. The correct response is human review or a rerun
+with clearer stress text, not an automatic sign hack or post-hoc clamp.
 
 ---
 

@@ -2,11 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Sliders, X } from "lucide-react";
 import { adjustScenarioShocks } from "./api";
 import { formatPercent } from "./charts";
-import type { ScenarioResult, ScenarioRunResponse, ShockAdjustment } from "./types";
+import { factorDisplayName } from "./factors";
+import type {
+  FactorMetadataMap,
+  ScenarioResult,
+  ScenarioRunResponse,
+  ShockAdjustment
+} from "./types";
 
 interface AdjustmentPanelProps {
   envelope: ScenarioRunResponse;
   canonicalSnapshot: ScenarioResult;
+  factorMeta: FactorMetadataMap;
   onResult: (response: ScenarioRunResponse) => void;
   prefillRerun: (text: string) => void;
 }
@@ -30,6 +37,7 @@ function formatBefore(value: number, digits = 2): string {
 export function AdjustmentPanel({
   envelope,
   canonicalSnapshot,
+  factorMeta,
   onResult,
   prefillRerun
 }: AdjustmentPanelProps) {
@@ -154,7 +162,7 @@ export function AdjustmentPanel({
           return (
             <div key={row.factor} className={`adjust-row${changedFromCanonical ? " changed" : ""}`}>
               <div className="adjust-row-head">
-                <strong>{row.factor}</strong>
+                <strong>{factorDisplayName(factorMeta, row.factor)}</strong>
                 <span className="muted">
                   envelope {formatBefore(p10, 2)} to {formatBefore(p90, 2)}
                 </span>
@@ -168,7 +176,7 @@ export function AdjustmentPanel({
                   value={row.value}
                   onChange={(event) => setValue(index, Number(event.target.value))}
                   disabled={isAdjusting || sliderOutOfRange}
-                  aria-label={`${row.factor} shock (slider)`}
+                  aria-label={`${factorDisplayName(factorMeta, row.factor)} shock (slider)`}
                 />
                 <input
                   type="number"
@@ -182,7 +190,7 @@ export function AdjustmentPanel({
                     )
                   }
                   disabled={isAdjusting}
-                  aria-label={`${row.factor} shock value`}
+                  aria-label={`${factorDisplayName(factorMeta, row.factor)} shock value`}
                 />
                 <button
                   className="ghost-button"
@@ -250,13 +258,19 @@ export function AdjustmentPanel({
       ) : null}
 
       {result.adjustment_history.length > 0 ? (
-        <AdjustmentHistory history={result.adjustment_history} />
+        <AdjustmentHistory history={result.adjustment_history} factorMeta={factorMeta} />
       ) : null}
     </section>
   );
 }
 
-function AdjustmentHistory({ history }: { history: ShockAdjustment[] }) {
+function AdjustmentHistory({
+  history,
+  factorMeta
+}: {
+  history: ShockAdjustment[];
+  factorMeta: FactorMetadataMap;
+}) {
   return (
     <div className="adjustment-history">
       <h4>Adjustment history</h4>
@@ -270,7 +284,10 @@ function AdjustmentHistory({ history }: { history: ShockAdjustment[] }) {
               {Object.entries(entry.changed_factors)
                 .map(
                   ([factor, [before, after]]) =>
-                    `${factor}: ${formatPercent(before, 2)} -> ${formatPercent(after, 2)}`
+                    `${factorDisplayName(factorMeta, factor)}: ${formatPercent(
+                      before,
+                      2
+                    )} -> ${formatPercent(after, 2)}`
                 )
                 .join(" | ")}
             </span>

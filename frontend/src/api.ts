@@ -1,5 +1,6 @@
 import type {
   AccessResponse,
+  FactorMetadata,
   PortfolioSnapshotRecord,
   PortfolioValidationResponse,
   SamplePortfolio,
@@ -65,6 +66,10 @@ export function getSamplePortfolios(): Promise<SamplePortfolio[]> {
 
 export function getSampleScenarios(): Promise<SampleScenario[]> {
   return requestJson<SampleScenario[]>("/api/scenarios/samples");
+}
+
+export function getFactors(): Promise<FactorMetadata[]> {
+  return requestJson<FactorMetadata[]>("/api/factors");
 }
 
 export async function getTickerMetadata(tickers?: string[]): Promise<TickerMetadata> {
@@ -361,4 +366,3 @@ export async function getMethodology(): Promise<string> {
   }
   return response.text();
 }
-

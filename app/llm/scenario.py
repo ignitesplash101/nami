@@ -36,6 +36,7 @@ from app.factors.warm_cache import get_factor_returns_with_history
 from app.llm.adjust_validation import validate_factor_overrides
 from app.llm.gemini_client import GeminiClient
 from app.llm.prompts import PROMPT_VERSION
+from app.llm.risk_diagnostics import generate_risk_diagnostics
 from app.llm.schemas import (
     AnalogSelection,
     FactorShock,
@@ -433,7 +434,15 @@ def run_scenario(
         analog_summaries = event_summaries()
 
     factor_universe_desc = [
-        {"name": f.name, "group": f.group, "description": f.description} for f in FACTORS.values()
+        {
+            "name": f.name,
+            "ticker": f.ticker,
+            "group": f.group,
+            "short_label": f.short_label,
+            "display_name": f.display_name,
+            "description": f.description,
+        }
+        for f in FACTORS.values()
     ]
 
     # yfinance end= is exclusive; +1 day yields a bar inclusive of effective_as_of.
@@ -580,6 +589,14 @@ def run_scenario(
         for name, row in envelope.iterrows()
     }
 
+    portfolio_pnl_model = PortfolioPnL(**pnl)
+    risk_diagnostics = generate_risk_diagnostics(
+        factor_shocks=shock_out.factor_shocks,
+        envelope=envelope,
+        factor_returns_history=factor_history,
+        portfolio_pnl=portfolio_pnl_model,
+    )
+
     result = ScenarioResult(
         scenario_text=scenario_text,
         market_date=effective_as_of,
@@ -592,7 +609,8 @@ def run_scenario(
         narrative=shock_out.narrative,
         citations=citations,
         factor_envelope=factor_envelope,
-        portfolio_pnl=PortfolioPnL(**pnl),
+        portfolio_pnl=portfolio_pnl_model,
+        risk_diagnostics=risk_diagnostics,
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,
@@ -710,7 +728,14 @@ def adjust_scenario_shocks(
         gemini = gemini or GeminiClient(config)
         envelope_df = _envelope_df_from_canonical(canonical)
         factor_universe_desc = [
-            {"name": f.name, "group": f.group, "description": f.description}
+            {
+                "name": f.name,
+                "ticker": f.ticker,
+                "group": f.group,
+                "short_label": f.short_label,
+                "display_name": f.display_name,
+                "description": f.description,
+            }
             for f in FACTORS.values()
         ]
         patch = gemini.propose_shock_edit(
@@ -814,10 +839,19 @@ def adjust_scenario_shocks(
         changed_factors=changed,
     )
 
+    portfolio_pnl_model = PortfolioPnL(**pnl)
+    risk_diagnostics = generate_risk_diagnostics(
+        factor_shocks=new_factor_shocks,
+        envelope=_envelope_df_from_canonical(canonical),
+        factor_returns_history=factor_history,
+        portfolio_pnl=portfolio_pnl_model,
+    )
+
     adjusted = canonical.model_copy(
         update={
             "factor_shocks": new_factor_shocks,
-            "portfolio_pnl": PortfolioPnL(**pnl),
+            "portfolio_pnl": portfolio_pnl_model,
+            "risk_diagnostics": risk_diagnostics,
             "adjustment_history": [*canonical.adjustment_history, new_entry],
         }
     )

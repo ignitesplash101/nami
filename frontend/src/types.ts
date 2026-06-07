@@ -25,6 +25,17 @@ export interface SamplePortfolio {
 // ticker -> {sector, country} classification tags for exposure breakdowns.
 export type TickerMetadata = Record<string, { sector: string; country: string }>;
 
+export interface FactorMetadata {
+  key: string;
+  ticker: string;
+  group: "market" | "sector" | "style" | "macro" | string;
+  short_label: string;
+  display_name: string;
+  description: string;
+}
+
+export type FactorMetadataMap = Record<string, FactorMetadata>;
+
 export interface SampleScenario {
   key: string;
   name: string;
@@ -89,6 +100,14 @@ export interface ShockAdjustment {
 
 export type NarrativeMode = "grounded" | "analog_only";
 
+export interface RiskDiagnostic {
+  kind: "correlation_conflict" | "envelope_direction_conflict" | "conditional_cross_credit";
+  severity: "info" | "warning";
+  message: string;
+  factors: string[];
+  evidence: Record<string, number | string>;
+}
+
 export interface ScenarioResult {
   scenario_text: string;
   market_date: string;  // effective NYSE trading-day as-of date (YYYY-MM-DD)
@@ -104,6 +123,7 @@ export interface ScenarioResult {
   portfolio_pnl: PortfolioPnL;
   narrative_shapley: NarrativeShapleyResult | null;
   adjustment_history: ShockAdjustment[];
+  risk_diagnostics?: RiskDiagnostic[];
   // Backdating metadata (added Phase 11). Defaults match live runs so older
   // cached payloads deserialize cleanly.
   requested_as_of_date: string | null;
@@ -261,4 +281,3 @@ export type AttributionMethod =
   | "conditional"
   | "conditional_explicit"
   | "conditional_grouped";
-

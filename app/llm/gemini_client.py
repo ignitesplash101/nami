@@ -142,7 +142,7 @@ class GeminiClient:
             if not citations:
                 raise RuntimeError(
                     "Grounded narrative call returned no citations. Gemini did not invoke "
-                    "Google Search, so forward-looking claims cannot be returned."
+                    "Google Search, so current-market stress context cannot be returned."
                 )
 
         prior_errors: list[str] = []

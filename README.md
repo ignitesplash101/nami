@@ -9,14 +9,14 @@
 
 **[🚀 Live demo →](https://nami-wy4mdlp7hq-an.a.run.app)** · Visitor mode runs sample scenarios against sample portfolios with no signup. Free-text scenarios, custom portfolios, backdating, and saved analytics require an admin passcode.
 
-Describe a forward-looking market scenario in natural language; nami grounds it against current news, matches it to historical analogs, derives factor + idiosyncratic shocks, and computes the portfolio P&L impact with cited reasoning, four attribution variants, and full reproducibility metadata.
+Describe a hypothetical market stress in natural language; nami grounds it against current news, matches it to historical analogs, derives factor + idiosyncratic shocks, and computes the modeled portfolio P&L impact with cited reasoning, production attribution, advanced diagnostics, and full reproducibility metadata.
 
 The name *nami* (波) is Japanese for "wave" — markets move in waves, factor shocks propagate in waves, and the engine decomposes portfolio impact into its constituent wave components.
 
 <!-- Replace with actual screenshots/GIF once captured. See docs/img/README.md for capture guidance. -->
 <!-- ![nami scenario run](docs/img/demo.gif) -->
 
-📘 **[Methodology](docs/methodology.md)** — factor universe, beta estimation, conditional Shapley attribution, backdating semantics, references
+📘 **[Methodology](docs/methodology.md)** — factor universe, beta estimation, production attribution, diagnostic views, backdating semantics, references
 🧠 **[LLM systems design](docs/llm-system-design.md)** — three-call pipeline, grounding/schema split, `PROMPT_VERSION` discipline, semantic evals
 📊 **[Live-LLM eval snapshot](docs/backtest_results.md)** — dated snapshot + semantic invariants
 🕰️ **[Backdated retrospective case studies](docs/backdated-case-studies.md)** — three known regimes replayed under no-look-ahead, with explicit leakage controls
@@ -26,23 +26,22 @@ The name *nami* (波) is Japanese for "wave" — markets move in waves, factor s
 
 ## ⚠️ Disclaimer
 
-This is an **educational and research tool**. It is **not investment advice**, **not regulatory stress testing**, and **not a substitute for institutional risk management**. Scenario outputs are illustrative and probabilistic, not predictive. Do not use outputs for actual trading, risk capital, or compliance decisions.
+This is an **educational and research tool**. It is **not investment advice**, **not regulatory stress testing**, and **not a substitute for institutional risk management**. Scenario outputs are hypothetical modeled stress outcomes, not forecasts or predictions. Do not use outputs for actual trading, risk capital, or compliance decisions.
 
 ---
 
 ## What it does
 
-Given a portfolio (sample or custom) and a natural-language scenario ("60% tariffs on China imports, prolonged trade war"), nami:
+Given a portfolio (sample or custom) and a natural-language hypothetical stress ("60% tariffs on China imports, prolonged trade war"), nami:
 
 1. **Picks historical analogs.** Gemini selects 2–5 events from a curated registry of ~17 market-stress events whose mechanism matches the scenario.
 2. **Computes an empirical envelope.** For each analog, nami pulls the realized factor returns over the event window from yfinance. Across the analogs it returns per-factor mean / p10 / p90 / count — the band the LLM's proposed shocks must stay inside.
-3. **Grounds a narrative.** A second Gemini call runs with Google Search active and produces a 3–5 sentence forward-looking narrative, citing real recent news. Without citations, the pipeline refuses to return.
+3. **Grounds a narrative.** A second Gemini call runs with Google Search active and produces a 3-5 sentence hypothetical stress narrative, citing real recent news. Without citations, the pipeline refuses to return.
 4. **Extracts structured shocks.** A schema-bound third call translates the narrative into a `FactorShock` list (for the 22-factor universe) and a `PeripheryShock` list (idiosyncratic, ticker-level).
-5. **Computes portfolio P&L + attribution.** Mean-centered ridge OLS estimates the portfolio's factor betas on 3 years of weekly returns. The engine returns four attribution variants:
-   - **Naive**: `(Σᵢ wᵢ·βᵢ,f) · shock[f]` — direct algebra, assumes factor independence.
-   - **Conditional Shapley (full)**: axiom-compliant credit allocation under the historical conditional distribution; can attribute to factors the LLM didn't shock (via correlation).
-   - **Explicit-only Shapley**: same axioms, restricted to the LLM-shocked factor set; unshocked factors stay at exactly zero.
-   - **Grouped Shapley**: full Shapley then within-group sum + redistribution by naive share; collapses within-group leakage (SPY ↔ ACWI, MTUM ↔ QUAL).
+5. **Computes portfolio P&L + attribution.** Mean-centered ridge OLS estimates the portfolio's factor betas on 3 years of weekly returns. The main workbench exposes the practical production views:
+   - **Scenario shocks**: production risk view restricted to factors explicitly shocked by the scenario; unshocked factors stay at zero.
+   - **Grouped shocks**: risk-committee view that collapses correlated peers into market / sector / style / macro groups before redistribution.
+   - **Advanced diagnostics**: `Naive algebra` and `Full conditional diagnostic` stay available for audit/debug. Full conditional is correlation credit, non-causal, and never drives the headline.
 
 Every saved result carries full reproducibility metadata (model id, prompt version, factor-universe version, events version, ridge α, lookback weeks, selected event ids, exact holdings, both requested and effective as-of dates) so any record can be re-rendered later without consulting live state.
 
@@ -81,9 +80,9 @@ Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast
 
 ## Visitor vs admin
 
-The deployed app is publicly viewable. Visitor mode allows running the curated sample scenarios against the four sample portfolios — enough to demo the engine without exposing extra Gemini spend or custom inputs to the open internet.
+The deployed app is publicly viewable. Visitor mode allows running curated sample scenarios or custom stress text against sample portfolios only — enough to demo the engine without exposing custom holdings, backdating, MTM, saved analytics, or other admin-only workflows to the open internet.
 
-Admin mode is unlocked by a passcode stored in Secret Manager (`nami-passcode:latest`). Admin enables: free-text scenarios, custom portfolio uploads, slider/prompt shock adjustments, narrative decomposition (experimental 2^N subset Shapley), backdated as-of dates, saved-scenario library, and dated-portfolio snapshots.
+Admin mode is unlocked by a passcode stored in Secret Manager (`nami-passcode:latest`). Admin enables: custom portfolio uploads, benchmark overrides, slider/prompt shock adjustments, narrative decomposition (experimental 2^N subset Shapley), backdated as-of dates, saved-scenario library, and dated-portfolio snapshots.
 
 ## Architecture overview
 
@@ -197,10 +196,10 @@ Then push to main and the trigger handles the rest.
 
 ## Design choices worth knowing
 
-- **Conditional Shapley ≠ causal attribution.** It's data-dependent credit allocation under the historical conditional distribution. Janzing et al. (2020) and Aas et al. (2021) are the load-bearing citations; the methodology doc has a longer treatment.
+- **Attribution has product tiers.** The headline uses **Scenario shocks** when available; **Grouped shocks** is the secondary risk-committee view. `Naive algebra` and `Full conditional diagnostic` are advanced diagnostics only. Full conditional is data-dependent correlation credit under the historical conditional distribution, not causal attribution.
 - **Backdating is data-vintage-controlled, not model-vintage-controlled.** Events, factor history, and prices are strictly filtered to `≤ as_of`. The LLM's parametric knowledge is NOT — it still "knows" about COVID even when as_of is 2018. The UI banner makes this honest.
 - **`temperature=0` everywhere.** Same scenario + same portfolio + same effective as-of date + same prompt version + same model = same shocks, byte-for-byte cached.
-- **PROMPT_VERSION is the single cache-invalidation lever.** It bumps with any change to prompt semantics OR `ScenarioResult` shape. Currently v7. Post-cache overlays (mark-to-market, benchmark/active return) and display-only fields do NOT bump it — they're attached after retrieval and never persisted.
+- **PROMPT_VERSION is the single cache-invalidation lever.** It bumps with any change to prompt semantics OR `ScenarioResult` shape. Currently v8. Post-cache overlays (mark-to-market, benchmark/active return) and display-only fields do NOT bump it — they're attached after retrieval and never persisted.
 - **Sample portfolios are cap-weighted from a frozen, dated snapshot.** `app/data/sample_portfolio_weights.json` holds committed cap-weights + sector/country tags, regenerated offline by `scripts/refresh_sample_weights.py`. The runtime never scrapes, so weights can't drift and poison the cache.
 - **Benchmark & active return are a non-cached overlay.** Each book carries a benchmark ticker (sample books built-in; custom books optional); the benchmark is run as a one-holding portfolio through the same factor shocks and `active_return = portfolio − benchmark` is attached post-cache.
 - **`CASH` is a zero-exposure sentinel.** A cash sleeve is never fetched from yfinance, carries a zero-beta/zero-return row (its weight dilutes the rest), and in MTM mode a `CASH` quantity is a USD amount marked at 1.0. An all-cash book is rejected (nothing to shock).

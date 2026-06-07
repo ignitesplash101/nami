@@ -18,6 +18,7 @@ import {
 import {
   decomposeScenarioStream,
   getAccess,
+  getFactors,
   getMethodology,
   getSamplePortfolios,
   getSampleScenarios,
@@ -39,7 +40,9 @@ import {
   groupByTag,
   normalizeTicker,
   parseNav,
+  preferredAttributionMethod,
 } from "./charts";
+import { factorDescription, factorDisplayName, factorMap } from "./factors";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
@@ -59,7 +62,9 @@ import { useOverlay } from "./useOverlay";
 import type {
   AccessResponse,
   AttributionMethod,
+  FactorMetadataMap,
   PortfolioSnapshotRecord,
+  RiskDiagnostic as RiskDiagnosticRecord,
   SamplePortfolio,
   SampleScenario,
   ScenarioResult,
@@ -75,6 +80,8 @@ type WaterfallTrace = {
   y: number[];
   measure: ("relative" | "total")[];
   text: string[];
+  hovertext: string[];
+  hovertemplate: string;
   textposition: "outside";
   connector: { line: { color: string } };
   increasing: { marker: { color: string } };
@@ -89,6 +96,7 @@ interface HoldingRow {
 }
 
 type PortfolioMode = "sample" | "custom";
+type ScenarioDraftMode = "sample" | "custom";
 
 type ValuationSortKey =
   | "ticker"
@@ -139,8 +147,10 @@ export default function App() {
   const [access, setAccess] = useState<AccessResponse | null>(null);
   const [portfolios, setPortfolios] = useState<SamplePortfolio[]>([]);
   const [scenarios, setScenarios] = useState<SampleScenario[]>([]);
+  const [factorMeta, setFactorMeta] = useState<FactorMetadataMap>({});
   const [portfolioKey, setPortfolioKey] = useState("us_tech_growth");
   const [scenarioKey, setScenarioKey] = useState("china_tariffs");
+  const [scenarioDraftMode, setScenarioDraftMode] = useState<ScenarioDraftMode>("sample");
   const [portfolioMode, setPortfolioMode] = useState<PortfolioMode>("sample");
   const [customName, setCustomName] = useState("Custom Book");
   const [customRows, setCustomRows] = useState<HoldingRow[]>(defaultCustomRows);
@@ -212,11 +222,12 @@ export default function App() {
 
   useEffect(() => {
     async function boot() {
-      const [accessResponse, portfolioResponse, scenarioResponse, methodologyText] =
+      const [accessResponse, portfolioResponse, scenarioResponse, factorResponse, methodologyText] =
         await Promise.all([
           getAccess(),
           getSamplePortfolios(),
           getSampleScenarios(),
+          getFactors().catch(() => []),
           getMethodology().catch(() => "")
         ]);
       setAccess(accessResponse);
@@ -225,9 +236,11 @@ export default function App() {
       setAsOfDate(accessResponse.latest_market_date);
       setPortfolios(portfolioResponse);
       setScenarios(scenarioResponse);
+      setFactorMeta(factorMap(factorResponse));
       setPortfolioKey(portfolioResponse[0]?.key ?? "us_tech_growth");
       setScenarioKey(scenarioResponse[0]?.key ?? "china_tariffs");
       setScenarioText(scenarioResponse[0]?.text ?? "");
+      setScenarioDraftMode("sample");
       setMethodology(methodologyText);
 
       // Permalink hydration: ?saved=<id> opens a saved scenario directly.
@@ -244,6 +257,7 @@ export default function App() {
             reproducibility: rec.reproducibility
           });
           setCanonicalSnapshot(rec.result);
+          setAttributionMethod(preferredAttributionMethod(rec.result));
         } catch (exc) {
           setError(`Could not load saved scenario: ${exc instanceof Error ? exc.message : exc}`);
         }
@@ -254,10 +268,10 @@ export default function App() {
 
   useEffect(() => {
     const selected = scenarios.find((scenario) => scenario.key === scenarioKey);
-    if (selected && access?.permissions.free_text_scenario) {
+    if (selected && scenarioDraftMode === "sample") {
       setScenarioText(selected.text);
     }
-  }, [access?.permissions.free_text_scenario, scenarioKey, scenarios]);
+  }, [scenarioDraftMode, scenarioKey, scenarios]);
 
   const selectedPortfolio = useMemo(
     () => portfolios.find((portfolio) => portfolio.key === portfolioKey) ?? portfolios[0],
@@ -272,6 +286,18 @@ export default function App() {
 
   async function refreshAccess() {
     setAccess(await getAccess());
+  }
+
+  function handleScenarioSeed(key: string) {
+    const scenario = scenarios.find((item) => item.key === key);
+    setScenarioKey(key);
+    setScenarioDraftMode("sample");
+    if (scenario) setScenarioText(scenario.text);
+  }
+
+  function handleScenarioTextChange(text: string) {
+    setScenarioText(text);
+    setScenarioDraftMode(text.trim() === selectedScenario?.text.trim() ? "sample" : "custom");
   }
 
   async function handleRun() {
@@ -306,12 +332,17 @@ export default function App() {
         as_of_date:
           asOfDate && asOfDate !== access.latest_market_date ? asOfDate : undefined
       };
-      const payload = access.permissions.free_text_scenario
+      const payload = isAdmin
         ? baseAdmin
-        : {
-            sample_scenario_key: scenarioKey,
-            portfolio_key: portfolioKey
-          };
+        : scenarioDraftMode === "custom"
+          ? {
+              scenario_text: scenarioText.trim(),
+              portfolio_key: portfolioKey
+            }
+          : {
+              sample_scenario_key: scenarioKey,
+              portfolio_key: portfolioKey
+            };
       const response = await runScenarioStream(payload, (event) => {
         if (event.stage === "cache_hit") {
           setCacheHit(true);
@@ -328,9 +359,7 @@ export default function App() {
       });
       setResultEnvelope(response);
       setCanonicalSnapshot(response.result);
-      setAttributionMethod(
-        response.result.portfolio_pnl.by_factor_conditional_shapley ? "conditional" : "naive"
-      );
+      setAttributionMethod(preferredAttributionMethod(response.result));
       // Surface dollars by default when the run is marked (shares) OR a notional
       // portfolio value is already entered (sticky knob); otherwise stay in percent.
       setDisplayMode(
@@ -349,6 +378,7 @@ export default function App() {
 
   function handlePrefillRerun(text: string) {
     setScenarioText(text);
+    setScenarioDraftMode("custom");
   }
 
   async function handleDecompose() {
@@ -448,7 +478,7 @@ export default function App() {
           </button>
           <div>
             <p className="eyebrow">Live workbench</p>
-            <h2>Forward scenario propagation</h2>
+            <h2>Hypothetical stress workbench</h2>
           </div>
           <div className="status-strip">
             <span className="status-chip">{access?.access_mode ?? "loading"}</span>
@@ -475,8 +505,8 @@ export default function App() {
         </header>
 
         <div className="notice">
-          Educational tool; not investment advice, not regulatory stress testing, not a substitute
-          for institutional risk management.
+          Hypothetical stress tool; not a forecast, not investment advice, not regulatory stress
+          testing, not a substitute for institutional risk management.
         </div>
 
         {error ? <div className="error-banner">{error}</div> : null}
@@ -485,9 +515,11 @@ export default function App() {
           access={access}
           scenarios={scenarios}
           scenarioKey={scenarioKey}
-          setScenarioKey={setScenarioKey}
+          scenarioDraftMode={scenarioDraftMode}
+          onSelectScenario={handleScenarioSeed}
+          onSetCustomMode={() => setScenarioDraftMode("custom")}
           scenarioText={scenarioText}
-          setScenarioText={setScenarioText}
+          setScenarioText={handleScenarioTextChange}
           selectedScenario={selectedScenario}
           isRunning={isRunning}
           onRun={handleRun}
@@ -518,6 +550,7 @@ export default function App() {
           envelope={resultEnvelope}
           attributionMethod={attributionMethod}
           setAttributionMethod={setAttributionMethod}
+          factorMeta={factorMeta}
           displayMode={displayMode}
           setDisplayMode={setDisplayMode}
           navInput={navInput}
@@ -540,6 +573,7 @@ export default function App() {
           <AdjustmentPanel
             envelope={resultEnvelope}
             canonicalSnapshot={canonicalSnapshot}
+            factorMeta={factorMeta}
             onResult={handleAdjustmentResult}
             prefillRerun={handlePrefillRerun}
           />
@@ -551,6 +585,7 @@ export default function App() {
             onOpen={(env) => {
               setResultEnvelope(env);
               setCanonicalSnapshot(env.result);
+              setAttributionMethod(preferredAttributionMethod(env.result));
             }}
           />
         ) : null}
@@ -913,7 +948,9 @@ export function ScenarioPanel({
   access,
   scenarios,
   scenarioKey,
-  setScenarioKey,
+  scenarioDraftMode,
+  onSelectScenario,
+  onSetCustomMode,
   scenarioText,
   setScenarioText,
   selectedScenario,
@@ -926,7 +963,9 @@ export function ScenarioPanel({
   access: AccessResponse | null;
   scenarios: SampleScenario[];
   scenarioKey: string;
-  setScenarioKey: (key: string) => void;
+  scenarioDraftMode: ScenarioDraftMode;
+  onSelectScenario: (key: string) => void;
+  onSetCustomMode: () => void;
   scenarioText: string;
   setScenarioText: (text: string) => void;
   selectedScenario?: SampleScenario;
@@ -936,13 +975,17 @@ export function ScenarioPanel({
   setAsOfDate: (v: string) => void;
   latestClose: string;
 }) {
-  const canFreeText = Boolean(access?.permissions.free_text_scenario);
-  const chipScenarios = canFreeText ? scenarios.slice(0, 6) : scenarios;
+  const isAdmin = access?.access_mode === "admin";
+  const canEditText = Boolean(access);
+  const chipScenarios = scenarios;
+  const seededFrom =
+    scenarioDraftMode === "custom" && selectedScenario ? selectedScenario.name : null;
+  const runDisabled = isRunning || !scenarioText.trim();
   return (
-    <section className={`scenario-card${canFreeText ? "" : " compact-scenario-card"}`}>
+    <section className="scenario-card">
       <div>
         <p className="eyebrow">Scenario</p>
-        <h3>{canFreeText ? "Author or seed a market narrative" : "Select a visitor sample"}</h3>
+        <h3>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h3>
       </div>
       {chipScenarios.length ? (
         <div className="scenario-chips" role="group" aria-label="Example scenarios">
@@ -950,40 +993,37 @@ export function ScenarioPanel({
             <button
               key={scenario.key}
               type="button"
-              className={`chip${scenario.key === scenarioKey ? " active" : ""}`}
-              onClick={() => setScenarioKey(scenario.key)}
+              className={`chip${
+                scenarioDraftMode === "sample" && scenario.key === scenarioKey ? " active" : ""
+              }`}
+              onClick={() => onSelectScenario(scenario.key)}
               title={scenario.text}
             >
               {scenario.name}
             </button>
           ))}
+          <button
+            type="button"
+            className={`chip${scenarioDraftMode === "custom" ? " active" : ""}`}
+            onClick={onSetCustomMode}
+          >
+            Custom
+          </button>
         </div>
       ) : null}
-      <div className={`scenario-grid${canFreeText ? "" : " visitor-scenario-grid"}`}>
-        {canFreeText ? (
-          <label>
-            Sample scenario
-            <select value={scenarioKey} onChange={(event) => setScenarioKey(event.target.value)}>
-              {scenarios.map((scenario) => (
-                <option key={scenario.key} value={scenario.key}>
-                  {scenario.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
+      <div className="scenario-grid visitor-scenario-grid">
         <label className="scenario-text">
-          Scenario text
+          Scenario text {seededFrom ? <span className="field-note">Seeded from {seededFrom}</span> : null}
           <textarea
-            className={canFreeText ? undefined : "scenario-text-input compact"}
-            value={canFreeText ? scenarioText : selectedScenario?.text ?? ""}
+            className="scenario-text-input"
+            value={scenarioText}
             onChange={(event) => setScenarioText(event.target.value)}
-            disabled={!canFreeText}
-            placeholder="Describe a forward-looking market scenario."
+            disabled={!canEditText}
+            placeholder="Describe a hypothetical market stress."
           />
         </label>
       </div>
-      {canFreeText ? (
+      {isAdmin ? (
         <AsOfDatePicker
           value={asOfDate}
           latestClose={latestClose}
@@ -991,8 +1031,8 @@ export function ScenarioPanel({
           disabled={isRunning}
         />
       ) : null}
-      <button className="primary-button" onClick={onRun} disabled={isRunning || !selectedScenario}>
-        {isRunning ? "Running pipeline..." : "Run scenario"} <ArrowRight size={16} />
+      <button className="primary-button" onClick={onRun} disabled={runDisabled}>
+        {isRunning ? "Running pipeline..." : "Run hypothetical stress"} <ArrowRight size={16} />
       </button>
     </section>
   );
@@ -1074,6 +1114,7 @@ export function ResultsPanel({
   envelope,
   attributionMethod,
   setAttributionMethod,
+  factorMeta,
   displayMode,
   setDisplayMode,
   navInput,
@@ -1091,6 +1132,7 @@ export function ResultsPanel({
   envelope: ScenarioRunResponse | null;
   attributionMethod: AttributionMethod;
   setAttributionMethod: (method: AttributionMethod) => void;
+  factorMeta: FactorMetadataMap;
   displayMode: "pct" | "usd";
   setDisplayMode: (mode: "pct" | "usd") => void;
   navInput: string;
@@ -1162,9 +1204,10 @@ export function ResultsPanel({
   };
   const waterfall =
     showDollars && nav != null
-      ? buildWaterfallDataDollars(result, attributionMethod, nav, currency)
-      : buildWaterfallData(result, attributionMethod);
-  const factorRows = factorReasoningRows(result, attributionMethod);
+      ? buildWaterfallDataDollars(result, attributionMethod, nav, currency, factorMeta)
+      : buildWaterfallData(result, attributionMethod, factorMeta);
+  const factorRows = factorReasoningRows(result, attributionMethod, factorMeta);
+  const readoutMethod = preferredAttributionMethod(result);
   const hasConditional = Boolean(result.portfolio_pnl.by_factor_conditional_shapley);
   const hasConditionalExplicit = Boolean(
     result.portfolio_pnl.by_factor_conditional_shapley_explicit
@@ -1186,43 +1229,68 @@ export function ResultsPanel({
   }[] = [
     {
       method: "naive",
-      label: "Naive",
-      title: "(Σᵢ wᵢ·βᵢ,f) · shock[f] — credit only to factors the LLM shocked",
+      label: "Naive algebra",
+      title: "Direct algebraic attribution. Useful for audit/debug; assumes factor independence.",
       disabled: false
     },
     {
       method: "conditional",
-      label: "Conditional (full)",
+      label: "Full conditional diagnostic",
       title:
-        "Full F-dim Shapley under the historical conditional distribution. Can cross-credit correlated factors the LLM did not name.",
+        "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors.",
       disabled: !hasConditional
     },
     {
       method: "conditional_explicit",
-      label: "Explicit-only",
+      label: "Scenario shocks",
       title:
-        "Shapley restricted to factors the LLM explicitly shocked. Unshocked factors stay at zero. Sum ≤ factor-driven P&L.",
+        "Production risk view restricted to factors explicitly shocked by the scenario. Unshocked factors stay at zero.",
       disabled: !hasConditionalExplicit
     },
     {
       method: "conditional_grouped",
-      label: "Grouped",
+      label: "Grouped shocks",
       title:
         "Shapley over factor groups (market / sector / style / macro), redistributed within-group by naive weight. Collapses within-group leakage.",
       disabled: !hasConditionalGrouped
     }
   ];
+  const mainAttributionOptions = attributionOptions.filter(
+    (option) => option.method === "conditional_explicit" || option.method === "conditional_grouped"
+  );
+  const diagnosticOptions = attributionOptions
+    .filter((option) => option.method === "naive" || option.method === "conditional")
+    .map((option) =>
+      option.method === "naive"
+        ? {
+            ...option,
+            label: "Naive algebra",
+            title:
+              "Direct algebraic attribution. Useful for audit/debug; assumes factor independence."
+          }
+        : {
+            ...option,
+            label: "Full conditional diagnostic",
+            title:
+              "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors."
+          }
+    );
 
   // Roving-radiogroup arrow nav: move to the next/prev ENABLED option and select it.
   function moveAttribution(direction: 1 | -1) {
-    setAttributionMethod(nextEnabledMethod(attributionOptions, attributionMethod, direction));
+    setAttributionMethod(nextEnabledMethod(mainAttributionOptions, attributionMethod, direction));
+  }
+
+  function moveDiagnosticAttribution(direction: 1 | -1) {
+    setAttributionMethod(nextEnabledMethod(diagnosticOptions, attributionMethod, direction));
   }
 
   return (
     <section className="results-stack">
       <ScenarioReadout
         result={result}
-        attributionMethod={attributionMethod}
+        attributionMethod={readoutMethod}
+        factorMeta={factorMeta}
         showDollars={showDollars}
         nav={nav}
         currency={currency}
@@ -1320,7 +1388,7 @@ export function ResultsPanel({
               }
             }}
           >
-            {attributionOptions.map((option) => (
+            {mainAttributionOptions.map((option) => (
               <button
                 key={option.method}
                 role="radio"
@@ -1337,6 +1405,23 @@ export function ResultsPanel({
           </div>
         </div>
         <AttributionGuide onOpenMethodology={onOpenMethodology} />
+        <AdvancedAttributionDiagnostics
+          options={diagnosticOptions}
+          attributionMethod={attributionMethod}
+          setAttributionMethod={setAttributionMethod}
+          moveAttribution={moveDiagnosticAttribution}
+        />
+        {attributionMethod === "conditional" ? (
+          <div className="risk-diagnostics" role="note">
+            <p className="eyebrow">Full conditional diagnostic</p>
+            <p className="muted">
+              Correlation credit, non-causal. Unshocked factors can receive positive or
+              negative P&amp;L through historical co-movement; do not read those bars as
+              explicit scenario shocks.
+            </p>
+          </div>
+        ) : null}
+        <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
         <Plot
           data={[
             {
@@ -1346,6 +1431,8 @@ export function ResultsPanel({
               y: waterfall.y,
               measure: waterfall.measure,
               text: waterfall.text,
+              hovertext: waterfall.hoverText,
+              hovertemplate: "%{hovertext}<extra></extra>",
               textposition: "outside",
               connector: { line: { color: "rgba(233,216,166,0.3)" } },
               increasing: { marker: { color: "#4cc38a" } },
@@ -1390,13 +1477,14 @@ export function ResultsPanel({
             </thead>
             <tbody>
               {factorRows.map((row) => (
-                <tr key={row.factor}>
+                <tr key={row.factor} className={row.isCorrelationCredit ? "diagnostic-row" : ""}>
                   <td>
                     <button
                       className="factor-link"
                       onClick={() => onOpenMethodology("factor-universe")}
+                      title={factorDescription(factorMeta, row.factor)}
                     >
-                      {row.factor}
+                      {row.factorLabel}
                     </button>
                   </td>
                   <td>{formatPercent(row.shockApplied)}</td>
@@ -1590,20 +1678,117 @@ export function ResultsPanel({
 }
 
 
+function AdvancedAttributionDiagnostics({
+  options,
+  attributionMethod,
+  setAttributionMethod,
+  moveAttribution
+}: {
+  options: {
+    method: AttributionMethod;
+    label: string;
+    title: string;
+    disabled: boolean;
+  }[];
+  attributionMethod: AttributionMethod;
+  setAttributionMethod: (method: AttributionMethod) => void;
+  moveAttribution: (direction: 1 | -1) => void;
+}) {
+  return (
+    <details
+      className="advanced-diagnostics"
+      open={attributionMethod === "naive" || attributionMethod === "conditional"}
+    >
+      <summary>Advanced attribution diagnostics</summary>
+      <p className="muted">
+        Audit/debug views only. Full conditional is correlation credit, non-causal, and can
+        assign P&L to factors with no explicit scenario shock.
+      </p>
+      <div
+        className="segmented"
+        role="radiogroup"
+        aria-label="Advanced attribution diagnostics"
+        onKeyDown={(event) => {
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            event.preventDefault();
+            moveAttribution(1);
+          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+            event.preventDefault();
+            moveAttribution(-1);
+          }
+        }}
+      >
+        {options.map((option) => (
+          <button
+            key={option.method}
+            role="radio"
+            aria-checked={attributionMethod === option.method}
+            tabIndex={attributionMethod === option.method ? 0 : -1}
+            className={attributionMethod === option.method ? "active" : ""}
+            onClick={() => setAttributionMethod(option.method)}
+            disabled={option.disabled}
+            title={option.title}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function RiskDiagnostics({
+  diagnostics,
+  factorMeta
+}: {
+  diagnostics: RiskDiagnosticRecord[];
+  factorMeta: FactorMetadataMap;
+}) {
+  if (!diagnostics.length) return null;
+  return (
+    <div className="risk-diagnostics" role="note" aria-label="Risk diagnostics">
+      <p className="eyebrow">Risk diagnostics</p>
+      <ul>
+        {diagnostics.map((diagnostic, index) => (
+          <li key={`${diagnostic.kind}-${index}`} className={diagnostic.severity}>
+            <strong>
+              {diagnostic.factors.length
+                ? diagnostic.factors.map((factor) => factorDisplayName(factorMeta, factor)).join(", ")
+                : "Scenario"}
+            </strong>
+            <span>{diagnostic.message}</span>
+            {Object.keys(diagnostic.evidence).length ? (
+              <code>
+                {Object.entries(diagnostic.evidence)
+                  .map(([key, value]) =>
+                    typeof value === "number" ? `${key}: ${value.toFixed(4)}` : `${key}: ${value}`
+                  )
+                  .join(" | ")}
+              </code>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ScenarioReadout({
   result,
   attributionMethod,
+  factorMeta,
   showDollars,
   nav,
   currency
 }: {
   result: ScenarioResult;
   attributionMethod: AttributionMethod;
+  factorMeta: FactorMetadataMap;
   showDollars: boolean;
   nav: number | null;
   currency: string;
 }) {
-  const readout = buildReadout(result, attributionMethod);
+  const readout = buildReadout(result, attributionMethod, factorMeta);
   const pnlText =
     showDollars && nav != null
       ? formatSignedCurrency(nav * readout.totalPnl, currency)

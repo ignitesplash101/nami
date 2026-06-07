@@ -62,8 +62,9 @@ def portfolio_pnl(
         }
 
     Linearity gives `sum(by_factor_naive) + sum(by_ticker_periphery) == total_pnl`.
-    Full and grouped Shapley sum to the factor-driven P&L by the efficiency axiom.
-    Explicit-only Shapley sums to a sub-game total ≤ factor-driven P&L by design.
+    Full, grouped, and explicit-only Shapley sum to the factor-driven P&L under
+    nami's demeaned-background contract. Explicit-only's distinguishing property
+    is that unshocked factors stay at exactly zero.
 
     `factor_returns_history` (demeaned, dropna'd) enables all three Conditional
     Shapley variants. When omitted or when shap fails, each variant is None

@@ -1,20 +1,39 @@
-import type { AttributionMethod, ScenarioResult, TickerMetadata } from "./types";
+import { factorDisplayName } from "./factors";
+import type {
+  AttributionMethod,
+  FactorMetadataMap,
+  ScenarioResult,
+  TickerMetadata
+} from "./types";
 
 export interface WaterfallData {
   x: string[];
   y: number[];
   measure: ("relative" | "total")[];
   text: string[];
+  hoverText: string[];
 }
 
 export interface FactorReasoningRow {
   factor: string;
+  factorLabel: string;
   shockApplied: number;
   contribution: number;
   reasoning: string;
+  isCorrelationCredit: boolean;
 }
 
-const NO_EXPLICIT_SHOCK = "No explicit LLM shock; attributed via correlation";
+const NO_EXPLICIT_SHOCK = "Correlation credit; no explicit shock";
+
+export function preferredAttributionMethod(result: ScenarioResult): AttributionMethod {
+  if (result.portfolio_pnl.by_factor_conditional_shapley_explicit) {
+    return "conditional_explicit";
+  }
+  if (result.portfolio_pnl.by_factor_conditional_shapley_grouped) {
+    return "conditional_grouped";
+  }
+  return "naive";
+}
 
 export function selectedFactorAttribution(
   result: ScenarioResult,
@@ -43,7 +62,8 @@ export function hasCorrelationCrossCredit(method: AttributionMethod): boolean {
 
 export function buildWaterfallData(
   result: ScenarioResult,
-  method: AttributionMethod
+  method: AttributionMethod,
+  factors?: FactorMetadataMap
 ): WaterfallData {
   const byFactor = selectedFactorAttribution(result, method);
   const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
@@ -56,19 +76,26 @@ export function buildWaterfallData(
     .slice(0, 14);
   bars.push(["Periphery", peripheryTotal]);
 
-  const x = [...bars.map(([name]) => name), "Total"];
+  const x = [...bars.map(([name]) => factorDisplayName(factors, name, "short")), "Total"];
   const y = [...bars.map(([, value]) => value), result.portfolio_pnl.total_pnl];
   return {
     x,
     y,
     measure: [...bars.map(() => "relative" as const), "total"],
-    text: y.map((value) => formatPercent(value))
+    text: y.map((value) => formatPercent(value)),
+    hoverText: [
+      ...bars.map(
+        ([name, value]) => `${factorDisplayName(factors, name)}<br>${formatPercent(value)}`
+      ),
+      `Total<br>${formatPercent(result.portfolio_pnl.total_pnl)}`
+    ]
   };
 }
 
 export function factorReasoningRows(
   result: ScenarioResult,
-  method: AttributionMethod
+  method: AttributionMethod,
+  factors?: FactorMetadataMap
 ): FactorReasoningRow[] {
   const byFactor = selectedFactorAttribution(result, method);
   const shocksByFactor = new Map(result.factor_shocks.map((shock) => [shock.factor, shock]));
@@ -78,8 +105,10 @@ export function factorReasoningRows(
       const explicitShock = shocksByFactor.get(factor);
       return {
         factor,
+        factorLabel: factorDisplayName(factors, factor),
         shockApplied: explicitShock?.shock ?? 0,
         contribution,
+        isCorrelationCredit: !explicitShock && showCorrelationLabel,
         reasoning:
           explicitShock?.reasoning ?? (showCorrelationLabel ? NO_EXPLICIT_SHOCK : "")
       };
@@ -88,14 +117,23 @@ export function factorReasoningRows(
     .sort((a, b) => a.contribution - b.contribution);
 }
 
-export function topContributor(result: ScenarioResult, method: AttributionMethod) {
+export function topContributor(
+  result: ScenarioResult,
+  method: AttributionMethod,
+  factors?: FactorMetadataMap
+) {
   const entries = Object.entries(selectedFactorAttribution(result, method));
   if (entries.length === 0) {
-    return { factor: "None", contribution: 0, shockApplied: 0 };
+    return { factor: "None", factorLabel: "None", contribution: 0, shockApplied: 0 };
   }
   const [factor, contribution] = entries.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
   const explicitShock = result.factor_shocks.find((shock) => shock.factor === factor);
-  return { factor, contribution, shockApplied: explicitShock?.shock ?? 0 };
+  return {
+    factor,
+    factorLabel: factorDisplayName(factors, factor),
+    contribution,
+    shockApplied: explicitShock?.shock ?? 0
+  };
 }
 
 export function formatPercent(value: number, digits = 2): string {
@@ -119,20 +157,24 @@ export interface ScenarioReadout {
  * headline numbers. Educational framing only — describes the modeled outcome,
  * never advises. "flat" is anything within ±5bps.
  */
-export function buildReadout(result: ScenarioResult, method: AttributionMethod): ScenarioReadout {
+export function buildReadout(
+  result: ScenarioResult,
+  method: AttributionMethod,
+  factors?: FactorMetadataMap
+): ScenarioReadout {
   const total = result.portfolio_pnl.total_pnl;
-  const top = topContributor(result, method);
+  const top = topContributor(result, method, factors);
   const direction = total > 0.0005 ? "gain" : total < -0.0005 ? "loss" : "flat";
   const magnitude = formatPercent(Math.abs(total));
   const headline =
     direction === "flat"
-      ? `In this scenario the portfolio is roughly flat (${formatPercent(total)}), with ${top.factor} the largest modeled driver.`
-      : `In this scenario the portfolio ${direction === "gain" ? "gains" : "loses"} ${magnitude}, driven mostly by ${top.factor}.`;
+      ? `In this scenario the portfolio is roughly flat (${formatPercent(total)}), with ${top.factorLabel} the largest modeled driver.`
+      : `In this scenario the portfolio ${direction === "gain" ? "gains" : "loses"} ${magnitude}, driven mostly by ${top.factorLabel}.`;
   return {
     headline,
     totalPnl: total,
     direction,
-    topFactor: top.factor,
+    topFactor: top.factorLabel,
     topContribution: top.contribution,
     activeReturn: result.active_return ?? null,
     benchmarkTicker: result.benchmark_ticker ?? null,
@@ -261,14 +303,18 @@ export function buildWaterfallDataDollars(
   result: ScenarioResult,
   method: AttributionMethod,
   nav: number,
-  currency = "USD"
+  currency = "USD",
+  factors?: FactorMetadataMap
 ): WaterfallData {
-  const base = buildWaterfallData(result, method);
+  const base = buildWaterfallData(result, method, factors);
   return {
     x: base.x,
     y: base.y.map((value) => value * nav),
     measure: base.measure,
-    text: base.y.map((value) => formatSignedCurrency(value * nav, currency))
+    text: base.y.map((value) => formatSignedCurrency(value * nav, currency)),
+    hoverText: base.hoverText.map((text, index) => {
+      const value = base.y[index] ?? 0;
+      return `${text}<br>${formatSignedCurrency(value * nav, currency)}`;
+    })
   };
 }
-

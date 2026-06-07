@@ -33,11 +33,14 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 #      last close) is now classified LIVE (grounded, Google-Search citations)
 #      where v6 classified it backdated/analog-only — same key, different
 #      semantics — so v6 entries must be invalidated.
-PROMPT_VERSION = "v7"
+# v8 - Shock extraction is framed explicitly as hypothetical stress construction,
+#      factor universe payloads include human-readable labels, and ScenarioResult
+#      gained warning-only risk_diagnostics.
+PROMPT_VERSION = "v8"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
-You are a quantitative strategist matching forward-looking market scenarios to
+You are a quantitative strategist matching hypothetical market stresses to
 historical analogs.
 
 {DISCLAIMER_LONG}
@@ -68,9 +71,9 @@ an equity portfolio scenario engine.
 You MUST use the Google Search tool before writing. The response is rejected when it
 does not return grounding metadata.
 
-Write a 3-5 sentence forward-looking narrative explaining the scenario mechanism and
-likely market impact. Ground the narrative in recent, real market news relevant to the
-user's scenario. Mention concrete dates, reported market moves, policy actions,
+Write a 3-5 sentence hypothetical stress narrative explaining the scenario mechanism
+and modeled market impact. Ground the narrative in recent, real market news relevant
+to the user's scenario. Mention concrete dates, reported market moves, policy actions,
 earnings/news items, or headlines when they are relevant.
 
 Do not propose numeric factor shocks in this step. Do not recommend trades. Output
@@ -90,7 +93,7 @@ Each sub-narrative must be:
 
 1. SELF-CONTAINED — readable on its own without referring to the others.
 2. CAUSALLY DISTINCT — does not logically imply or fully overlap with another sub-narrative.
-3. MATERIAL — removing it would meaningfully change the predicted portfolio P&L.
+3. MATERIAL - removing it would meaningfully change the modeled portfolio P&L.
 
 Return JSON matching the DecompositionOutput schema with exactly 2-4 strings under
 `sub_narratives`. No commentary outside the JSON.
@@ -102,13 +105,14 @@ the mechanism into its setup and its consequence. Never return fewer than 2 or m
 
 SHOCK_EXTRACTION_PROMPT = f"""\
 You are a quantitative scenario analyst extracting structured factor and periphery
-shocks from an already grounded market narrative.
+shocks from an already grounded hypothetical stress narrative. Treat the scenario
+as a conditional stress test, not as a forecast of expected returns.
 
 {DISCLAIMER_LONG}
 
 The narrative was generated upstream with Google Search grounding. Your job is purely
-to translate that narrative into numeric shocks using the empirical envelope, factor
-universe, and portfolio holdings provided by the user message.
+to translate that narrative into a coherent numeric stress vector using the empirical
+envelope, factor universe, and portfolio holdings provided by the user message.
 
 RULES
 1. Output JSON matching the ShockProposalOutput schema. No extra fields.
@@ -118,7 +122,12 @@ RULES
    explicitly explains why the scenario is outside the analog envelope.
 5. Down-weight factors with count < 3.
 6. Periphery shocks may only reference tickers in the provided portfolio holdings.
-7. Outputs are illustrative and probabilistic, not investment advice.
+7. When overlapping factors materially diverge (for example US large-cap equities
+   (SPY), Global equities (ACWI), US technology (XLK), Momentum stocks (MTUM), and
+   Quality stocks (QUAL)), the reasoning must explain the rotation rather than
+   leaving it implicit.
+8. Outputs are hypothetical stress estimates, not forecasts, investment advice, or
+   regulatory stress tests.
 """
 
 
