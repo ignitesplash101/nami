@@ -92,6 +92,9 @@ To exercise the GCS cache or Vertex AI, the local `.env` must have all 4 REQUIRE
 
 ---
 
+If a long-lived local `.venv` has a stale/broken Black entrypoint, use
+`uvx --python 3.12 --from black black --check .` to match fresh CI behavior.
+
 ## Known gotchas
 
 - **yfinance silently drops tickers it can't fetch.** Any function that maps tickers → returns must validate set membership and raise loudly. Documented at `app/data/market.py` (the dropna step).

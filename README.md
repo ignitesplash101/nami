@@ -154,6 +154,8 @@ cd frontend && npm run build      # TypeScript + Vite production build
 ```
 
 Live-LLM evaluation tests are gated on `RUN_NETWORK_TESTS=1` (cost ~$0.001 each).
+If a long-lived local `.venv` has a stale `black` entrypoint, verify formatting with
+`uvx --python 3.12 --from black black --check .`, which matches a fresh CI install.
 
 ## Deploying to Cloud Run
 
