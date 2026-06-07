@@ -38,8 +38,11 @@ class MarketCacheProtocol(Protocol):
     """Parquet I/O surface used by `_fetch_prices`. `CloudStorageCache` matches it;
     tests pass an in-memory fake."""
 
-    def get(self, key: str, ttl_hours: int = ...) -> pd.DataFrame | None: ...
-    def put(self, key: str, df: pd.DataFrame) -> None: ...
+    def get(self, key: str, ttl_hours: int = ...) -> pd.DataFrame | None:
+        ...
+
+    def put(self, key: str, df: pd.DataFrame) -> None:
+        ...
 
 
 def _normalize_date(value: date | datetime | str | None) -> str:
