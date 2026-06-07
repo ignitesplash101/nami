@@ -297,6 +297,12 @@ p {
   font-family: var(--font-mono);
   font-size: 0.78rem;
 }
+.status-strip .status-chip {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .notice {
   border-color: rgba(230, 181, 102, 0.35);
@@ -482,6 +488,9 @@ input[type="range"]::-moz-range-thumb {
   padding: 18px;
   margin-bottom: 18px;
 }
+.compact-scenario-card {
+  padding-bottom: 12px;
+}
 
 .scenario-grid {
   display: grid;
@@ -489,9 +498,21 @@ input[type="range"]::-moz-range-thumb {
   gap: 18px;
   align-items: start;
 }
+.visitor-scenario-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
 
 .scenario-text {
   grid-row: span 2;
+}
+.visitor-scenario-grid .scenario-text {
+  grid-row: auto;
+  margin: 2px 0 8px;
+}
+.scenario-text-input.compact {
+  min-height: 76px;
+  max-height: 96px;
 }
 
 .results-stack {
@@ -536,6 +557,9 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
+.secondary-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+}
 
 .metric {
   border: 1px solid var(--line);
@@ -570,6 +594,21 @@ input[type="range"]::-moz-range-thumb {
   min-height: 240px;
   text-align: center;
   color: var(--muted);
+}
+.compact-empty-results {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 92px;
+  text-align: left;
+}
+.compact-empty-results h3 {
+  font-size: 1rem;
+}
+.compact-empty-results p {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
 }
 
 .plot {

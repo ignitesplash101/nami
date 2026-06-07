@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import { saveScenario } from "./api";
-import { useFocusTrap } from "./useFocusTrap";
+import { OverlayShell } from "./OverlayShell";
 import type {
   AnalogEvent,
   SavedScenarioRecord,
@@ -37,29 +36,14 @@ export function SaveScenarioDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
-  const openerRef = useRef<Element | null>(null);
-  const panelRef = useRef<HTMLElement>(null);
-
-  useFocusTrap(panelRef, isOpen);
 
   // Dialog-specific focus management ONLY: body scroll lock + Escape are
-  // owned by the parent's useOverlay() (App.tsx::saveDialog). Capture the
-  // element that opened the dialog so we can restore focus on close, and
-  // focus the name input on open.
+  // owned by the parent's useOverlay() (App.tsx::saveDialog). OverlayShell
+  // owns focus trapping, focus return, backdrop click, and initial focus.
   useEffect(() => {
     if (!isOpen) return;
-    openerRef.current = document.activeElement;
-    requestAnimationFrame(() => nameRef.current?.focus());
-    return () => {
-      const opener = openerRef.current;
-      if (opener instanceof HTMLElement) {
-        opener.focus();
-      }
-      openerRef.current = null;
-    };
+    setError(null);
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   async function handleSave() {
     if (!name.trim()) {
@@ -96,60 +80,53 @@ export function SaveScenarioDialog({
   }
 
   return (
-    <div className="drawer-backdrop" onClick={onClose} role="presentation">
-      <aside
-        ref={panelRef}
-        className="save-dialog"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Save scenario"
-      >
-        <header className="drawer-header">
-          <h2>Save scenario</h2>
-          <button className="drawer-close" onClick={onClose} aria-label="Close">
-            <X size={18} />
-          </button>
-        </header>
-        <div className="save-dialog-body">
-          <label>
-            Name
-            <input
-              ref={nameRef}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={200}
-              placeholder="e.g. Q2 backdated trade-war replay"
-              aria-invalid={Boolean(error)}
-              aria-describedby={error ? "save-dialog-error" : undefined}
-            />
-          </label>
-          <label>
-            Tags (comma-separated)
-            <input
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              placeholder="geopolitical, backdated, sign-off"
-            />
-          </label>
-          <label>
-            Notes
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Why this scenario matters, sign-off context, etc."
-            />
-          </label>
-          <label>
-            Owner initials (optional — saved to your browser)
-            <input
-              value={ownerLabel}
-              onChange={(e) => setOwnerLabel(e.target.value)}
-              maxLength={32}
-              placeholder="rs"
-            />
-          </label>
-          <div className="save-dialog-meta muted">
+    <OverlayShell
+      isOpen={isOpen}
+      onClose={onClose}
+      className="save-dialog"
+      ariaLabel="Save scenario"
+      title="Save scenario"
+      initialFocusRef={nameRef}
+    >
+      <div className="save-dialog-body">
+        <label>
+          Name
+          <input
+            ref={nameRef}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={200}
+            placeholder="e.g. Q2 backdated trade-war replay"
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "save-dialog-error" : undefined}
+          />
+        </label>
+        <label>
+          Tags (comma-separated)
+          <input
+            value={tagsInput}
+            onChange={(e) => setTagsInput(e.target.value)}
+            placeholder="geopolitical, backdated, sign-off"
+          />
+        </label>
+        <label>
+          Notes
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Why this scenario matters, sign-off context, etc."
+          />
+        </label>
+        <label>
+          Owner initials (optional — saved to your browser)
+          <input
+            value={ownerLabel}
+            onChange={(e) => setOwnerLabel(e.target.value)}
+            maxLength={32}
+            placeholder="rs"
+          />
+        </label>
+        <div className="save-dialog-meta muted">
             <span>
               Portfolio: <strong>{result.portfolio_name}</strong>
             </span>
@@ -166,22 +143,21 @@ export function SaveScenarioDialog({
                 <code>{result.portfolio_nav.toLocaleString()}</code>
               </span>
             ) : null}
-          </div>
-          {error ? (
-            <div className="inline-error" id="save-dialog-error" role="alert">
-              {error}
-            </div>
-          ) : null}
-          <div className="button-row">
-            <button className="primary-button" onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
-            </button>
-            <button className="ghost-button" onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
-          </div>
         </div>
-      </aside>
-    </div>
+        {error ? (
+          <div className="inline-error" id="save-dialog-error" role="alert">
+            {error}
+          </div>
+        ) : null}
+        <div className="button-row">
+          <button className="primary-button" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+          <button className="ghost-button" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </OverlayShell>
   );
 }

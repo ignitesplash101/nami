@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { X } from "lucide-react";
-import { useFocusTrap } from "./useFocusTrap";
+import { OverlayShell } from "./OverlayShell";
 
 function scrollBehavior(): ScrollBehavior {
   return typeof window !== "undefined" &&
@@ -53,24 +52,6 @@ export function MethodologyDrawer({
   const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(new Set());
   const bodyRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const openerRef = useRef<Element | null>(null);
-  const panelRef = useRef<HTMLElement>(null);
-
-  useFocusTrap(panelRef, isOpen);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    openerRef.current = document.activeElement;
-    requestAnimationFrame(() => closeButtonRef.current?.focus());
-    return () => {
-      const opener = openerRef.current;
-      if (opener instanceof HTMLElement) {
-        opener.focus();
-      }
-      openerRef.current = null;
-    };
-  }, [isOpen]);
 
   const toggleSection = useCallback((slug: string) => {
     setExpandedSlugs((prev) => {
@@ -136,79 +117,60 @@ export function MethodologyDrawer({
     []
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div className="drawer-backdrop" onClick={onClose} role="presentation">
-      <aside
-        ref={panelRef}
-        className="drawer-panel"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Methodology"
-      >
-        <header className="drawer-header">
-          <h2>Methodology</h2>
+    <OverlayShell
+      isOpen={isOpen}
+      onClose={onClose}
+      className="drawer-panel"
+      ariaLabel="Methodology"
+      title="Methodology"
+    >
+      <nav className="drawer-nav">
+        {sections.map((section) => (
           <button
-            ref={closeButtonRef}
-            className="drawer-close"
-            onClick={onClose}
-            aria-label="Close"
+            key={section.slug}
+            className={activeSlug === section.slug ? "active" : ""}
+            onClick={() => scrollToSection(section.slug)}
           >
-            <X size={18} />
+            {section.title.length > 24 ? section.title.slice(0, 22) + "..." : section.title}
           </button>
-        </header>
+        ))}
+      </nav>
 
-        <nav className="drawer-nav">
-          {sections.map((section) => (
-            <button
+      <div className="drawer-body" ref={bodyRef}>
+        {sections.map((section) => {
+          const isExpanded = expandedSlugs.has(section.slug);
+          return (
+            <div
               key={section.slug}
-              className={activeSlug === section.slug ? "active" : ""}
-              onClick={() => scrollToSection(section.slug)}
+              className={`methodology-section${section.hasExample ? " methodology-example" : ""}`}
+              data-slug={section.slug}
+              ref={(el) => {
+                if (el) sectionRefs.current.set(section.slug, el);
+              }}
             >
-              {section.title.length > 24
-                ? section.title.slice(0, 22) + "..."
-                : section.title}
-            </button>
-          ))}
-        </nav>
-
-        <div className="drawer-body" ref={bodyRef}>
-          {sections.map((section) => {
-            const isExpanded = expandedSlugs.has(section.slug);
-            return (
-              <div
-                key={section.slug}
-                className={`methodology-section${section.hasExample ? " methodology-example" : ""}`}
-                data-slug={section.slug}
-                ref={(el) => {
-                  if (el) sectionRefs.current.set(section.slug, el);
-                }}
+              <button
+                className="section-toggle"
+                onClick={() => toggleSection(section.slug)}
+                aria-expanded={isExpanded}
               >
-                <button
-                  className="section-toggle"
-                  onClick={() => toggleSection(section.slug)}
-                  aria-expanded={isExpanded}
-                >
-                  <span className="toggle-icon">{isExpanded ? "−" : "+"}</span>
-                  <span className="section-title">{section.title}</span>
-                </button>
+                <span className="toggle-icon">{isExpanded ? "−" : "+"}</span>
+                <span className="section-title">{section.title}</span>
+              </button>
 
-                {!isExpanded && section.summary ? (
-                  <p className="section-summary">{section.summary}</p>
-                ) : null}
+              {!isExpanded && section.summary ? (
+                <p className="section-summary">{section.summary}</p>
+              ) : null}
 
-                {isExpanded ? (
-                  <div className="section-content">
-                    <ReactMarkdown>{section.body}</ReactMarkdown>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </aside>
-    </div>
+              {isExpanded ? (
+                <div className="section-content">
+                  <ReactMarkdown>{section.body}</ReactMarkdown>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </OverlayShell>
   );
 }

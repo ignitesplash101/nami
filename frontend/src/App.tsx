@@ -39,7 +39,6 @@ import {
   groupByTag,
   normalizeTicker,
   parseNav,
-  topContributor
 } from "./charts";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
@@ -452,8 +451,10 @@ export default function App() {
             <h2>Forward scenario propagation</h2>
           </div>
           <div className="status-strip">
-            <span>{access?.access_mode ?? "loading"}</span>
-            <span className="portfolio-name">{selectedPortfolio?.name ?? "No portfolio"}</span>
+            <span className="status-chip">{access?.access_mode ?? "loading"}</span>
+            <span className="status-chip portfolio-name" title={selectedPortfolio?.name}>
+              {selectedPortfolio?.name ?? "No portfolio"}
+            </span>
             <button
               className="methodology-btn"
               onClick={commandPalette.open}
@@ -908,7 +909,7 @@ function PortfolioPanel({
   );
 }
 
-function ScenarioPanel({
+export function ScenarioPanel({
   access,
   scenarios,
   scenarioKey,
@@ -936,15 +937,16 @@ function ScenarioPanel({
   latestClose: string;
 }) {
   const canFreeText = Boolean(access?.permissions.free_text_scenario);
+  const chipScenarios = canFreeText ? scenarios.slice(0, 6) : scenarios;
   return (
-    <section className="scenario-card">
+    <section className={`scenario-card${canFreeText ? "" : " compact-scenario-card"}`}>
       <div>
         <p className="eyebrow">Scenario</p>
         <h3>{canFreeText ? "Author or seed a market narrative" : "Select a visitor sample"}</h3>
       </div>
-      {scenarios.length ? (
+      {chipScenarios.length ? (
         <div className="scenario-chips" role="group" aria-label="Example scenarios">
-          {scenarios.slice(0, 6).map((scenario) => (
+          {chipScenarios.map((scenario) => (
             <button
               key={scenario.key}
               type="button"
@@ -957,20 +959,23 @@ function ScenarioPanel({
           ))}
         </div>
       ) : null}
-      <div className="scenario-grid">
-        <label>
-          Sample scenario
-          <select value={scenarioKey} onChange={(event) => setScenarioKey(event.target.value)}>
-            {scenarios.map((scenario) => (
-              <option key={scenario.key} value={scenario.key}>
-                {scenario.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className={`scenario-grid${canFreeText ? "" : " visitor-scenario-grid"}`}>
+        {canFreeText ? (
+          <label>
+            Sample scenario
+            <select value={scenarioKey} onChange={(event) => setScenarioKey(event.target.value)}>
+              {scenarios.map((scenario) => (
+                <option key={scenario.key} value={scenario.key}>
+                  {scenario.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label className="scenario-text">
           Scenario text
           <textarea
+            className={canFreeText ? undefined : "scenario-text-input compact"}
             value={canFreeText ? scenarioText : selectedScenario?.text ?? ""}
             onChange={(event) => setScenarioText(event.target.value)}
             disabled={!canFreeText}
@@ -1065,7 +1070,7 @@ function ExposureBreakdown({ result }: { result: ScenarioResult }) {
   );
 }
 
-function ResultsPanel({
+export function ResultsPanel({
   envelope,
   attributionMethod,
   setAttributionMethod,
@@ -1102,10 +1107,12 @@ function ResultsPanel({
 }) {
   if (!envelope) {
     return (
-      <section className="empty-results">
-        <BarChart3 size={22} />
-        <h3>No scenario run yet</h3>
-        <p>Run a sample or admin scenario to populate P&L, attribution, citations, and analogs.</p>
+      <section className="empty-results compact-empty-results" aria-label="Scenario results">
+        <BarChart3 size={18} />
+        <div>
+          <h3>No scenario run yet</h3>
+          <p>Run a sample or admin scenario to populate P&L, attribution, citations, and analogs.</p>
+        </div>
       </section>
     );
   }
@@ -1157,7 +1164,6 @@ function ResultsPanel({
     showDollars && nav != null
       ? buildWaterfallDataDollars(result, attributionMethod, nav, currency)
       : buildWaterfallData(result, attributionMethod);
-  const top = topContributor(result, attributionMethod);
   const factorRows = factorReasoningRows(result, attributionMethod);
   const hasConditional = Boolean(result.portfolio_pnl.by_factor_conditional_shapley);
   const hasConditionalExplicit = Boolean(
@@ -1278,8 +1284,8 @@ function ResultsPanel({
           </span>
         ) : null}
       </div>
-      <div className="metric-grid">
-        {hasNav ? (
+      {hasNav ? (
+        <div className="metric-grid secondary-metric-grid" aria-label="Portfolio value details">
           <Metric
             label="Portfolio NAV"
             value={formatCurrency(nav ?? 0, currency)}
@@ -1289,35 +1295,8 @@ function ResultsPanel({
                 : undefined
             }
           />
-        ) : null}
-        <Metric
-          label="Portfolio P&L"
-          value={
-            showDollars
-              ? formatSignedCurrency(result.portfolio_pnl.total_pnl * (nav ?? 0), currency)
-              : formatPercent(result.portfolio_pnl.total_pnl)
-          }
-          sub={showDollars ? formatPercent(result.portfolio_pnl.total_pnl) : undefined}
-        />
-        {result.benchmark_ticker && result.active_return != null && result.benchmark_pnl ? (
-          <Metric
-            label={`Active vs ${result.benchmark_ticker}`}
-            value={
-              showDollars
-                ? formatSignedCurrency(result.active_return * (nav ?? 0), currency)
-                : formatPercent(result.active_return)
-            }
-            sub={`${result.benchmark_ticker} ${formatPercent(result.benchmark_pnl.total_pnl)}`}
-          />
-        ) : null}
-        <Metric
-          label="Top contributor"
-          value={top.factor}
-          sub={`${formatPercent(top.shockApplied, 1)} shock -> ${formatPercent(top.contribution)} P&L`}
-        />
-        <Metric label="Analogs" value={String(result.analogs_selected.length)} />
-        <Metric label="Citations" value={String(result.citations.length)} />
-      </div>
+        </div>
+      ) : null}
 
       <ExposureBreakdown result={result} />
 
@@ -1629,6 +1608,14 @@ function ScenarioReadout({
     showDollars && nav != null
       ? formatSignedCurrency(nav * readout.totalPnl, currency)
       : formatPercent(readout.totalPnl);
+  const activeReturnText =
+    readout.activeReturn != null && showDollars && nav != null
+      ? `${formatSignedCurrency(nav * readout.activeReturn, currency)} (${formatPercent(
+          readout.activeReturn
+        )})`
+      : readout.activeReturn != null
+        ? formatPercent(readout.activeReturn)
+        : null;
   const toneClass =
     readout.direction === "gain" ? "up" : readout.direction === "loss" ? "down" : "flat";
   return (
@@ -1649,7 +1636,7 @@ function ScenarioReadout({
         {readout.activeReturn != null && readout.benchmarkTicker ? (
           <div>
             <span className="readout-metric-label">Active vs {readout.benchmarkTicker}</span>
-            <span className="readout-metric-value">{formatPercent(readout.activeReturn)}</span>
+            <span className="readout-metric-value">{activeReturnText}</span>
           </div>
         ) : null}
         <div>

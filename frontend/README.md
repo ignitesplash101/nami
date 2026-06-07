@@ -28,19 +28,23 @@ The dev server expects the FastAPI backend at `http://localhost:8080` (see `vite
 ## Notable internal modules
 
 - [src/api.ts](src/api.ts) — typed client for the FastAPI endpoints, including the SSE chunked reader (`runScenarioStream`) that drives the 7-step progress UI
-- [src/useOverlay.ts](src/useOverlay.ts) — shared body-scroll-lock + Esc-to-close primitive used by both the methodology drawer and the mobile rail drawer
+- [src/useOverlay.ts](src/useOverlay.ts) — shared body-scroll-lock + Esc-to-close primitive for overlay state
+- [src/OverlayShell.tsx](src/OverlayShell.tsx) — shared drawer/dialog frame for backdrop click, focus trap, focus return, optional close header, and initial focus
 - [src/useMediaQuery.ts](src/useMediaQuery.ts) — SSR-safe media-query hook; drives the desktop ↔ tablet rail switch and the mobile Plotly layout
 - [src/MethodologyDrawer.tsx](src/MethodologyDrawer.tsx) — slide-in drawer that parses `docs/methodology.md` at render time, sections split on `\n---\n`
 - [src/RunProgress.tsx](src/RunProgress.tsx) — the 7-step stepper (cache_check → market → analogs → envelope → narrative → betas → attribution)
 - [src/charts.ts](src/charts.ts) — Plotly trace builders for waterfall, factor shocks, and attribution comparison
+- [src/App.tsx](src/App.tsx) — first-screen workbench layout; visitor mode keeps sample selection chip-only and uses a compact empty-results placeholder
 
 ## Tests
 
-Three test files cover the load-bearing UI logic:
+Frontend tests cover the load-bearing UI logic:
 
 - `App.test.tsx` — access-gated rendering (visitor vs admin permissions)
 - `charts.test.ts` — waterfall and attribution-selection chart helpers
 - `useOverlay.test.ts` — overlay primitive (body lock, Esc handling, onClose ordering)
+- `OverlayShell.test.tsx` — shared overlay frame focus/backdrop behavior
+- `uiCleanup.test.tsx` — compact visitor first screen and non-duplicated result summary facts
 
 No e2e tests yet. Backend changes that affect the API contract should be paired with manual smoke checks via `npm run dev` against a live backend.
 
