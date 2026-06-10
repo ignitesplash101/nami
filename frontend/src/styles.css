@@ -60,6 +60,29 @@
   --dur: 260ms;
   --dur-slow: 520ms;
 
+  /* Spacing scale — apply to NEW/EDITED rules only; no mass refactor. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+
+  /* Layering (toasts sit above the overlay tier) */
+  --z-sticky: 10;
+  --z-backdrop: 100;
+  --z-overlay: 101;
+  --z-toast: 120;
+
+  /* Workbench content measure: 1280px content + 2x28px padding. */
+  --workbench-max: 1336px;
+
+  /* Chart-only alpha tints — read by charts.ts::chartTheme(); keep in sync
+     with --text / --accent if those ever change. */
+  --chart-grid: rgba(238, 242, 236, 0.08);
+  --chart-connector: rgba(233, 216, 166, 0.3);
+
   /* Focus ring (double-ring reads on any surface) */
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 
@@ -148,6 +171,12 @@ button:disabled {
 }
 
 .workbench {
+  /* Cap the readable measure on wide screens; inert below 1392px viewport so
+     the three responsive breakpoints behave exactly as before. The grid track
+     keeps growing — auto inline margins center the capped box within it. */
+  width: 100%;
+  max-width: var(--workbench-max);
+  margin-inline: auto;
   padding: 24px 28px 48px;
 }
 
@@ -519,6 +548,18 @@ input[type="range"]::-moz-range-thumb {
 .results-stack {
   display: grid;
   gap: 18px;
+  scroll-margin-top: var(--space-3);
+}
+
+/* Prior results dim (NOT unmount) while a re-run streams — a class toggle on
+   the same nodes, so the one-shot nami-rise stagger does not replay. Content
+   stays interactive for inspecting the previous numbers. */
+.results-stack.is-stale {
+  opacity: 0.55;
+  filter: saturate(0.55);
+  transition:
+    opacity var(--dur) var(--ease),
+    filter var(--dur) var(--ease);
 }
 
 /* "Ripple" reveal — results rise in sequence the first time they mount (the
@@ -596,20 +637,52 @@ input[type="range"]::-moz-range-thumb {
   text-align: center;
   color: var(--muted);
 }
-.compact-empty-results {
+/* First-run onboarding: 3-step hint + sample-scenario chips (seed-only — a
+   chip fills the textarea, it never auto-runs a paid scenario). */
+.onboarding-empty {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  min-height: 92px;
+  align-items: flex-start;
+  gap: var(--space-3);
   text-align: left;
+  min-height: 0;
+  padding: var(--space-5);
 }
-.compact-empty-results h3 {
+.onboarding-empty h3 {
   font-size: 1rem;
 }
-.compact-empty-results p {
-  margin: 6px 0 0;
+.empty-steps {
+  margin: var(--space-2) 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: var(--space-1);
+  color: var(--muted);
   font-size: 0.88rem;
+  line-height: 1.6;
+}
+.empty-chips {
+  margin-top: var(--space-3);
+}
+
+/* First-run skeleton while the initial scenario streams. */
+.results-skeleton {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  padding: var(--space-5);
+}
+.skeleton-block {
+  border-radius: var(--radius);
+  background: linear-gradient(100deg, var(--surface) 35%, var(--surface-2) 50%, var(--surface) 65%);
+  background-size: 240% 100%;
+  animation: nami-shimmer 1.4s linear infinite;
+}
+@keyframes nami-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
 }
 
 .plot {
@@ -625,6 +698,36 @@ input[type="range"]::-moz-range-thumb {
 .table-scroll {
   max-height: 420px;
   overflow: auto;
+}
+
+/* Consistent thin scrollbars on the app's own scroll containers (the page
+   keeps the OS default). Both forms together cover Firefox + WebKit/Blink. */
+.table-scroll,
+.rail,
+.drawer-body,
+.rail-drawer-panel,
+.holding-editor,
+.command-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.table-scroll::-webkit-scrollbar,
+.rail::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar,
+.rail-drawer-panel::-webkit-scrollbar,
+.holding-editor::-webkit-scrollbar,
+.command-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.table-scroll::-webkit-scrollbar-thumb,
+.rail::-webkit-scrollbar-thumb,
+.drawer-body::-webkit-scrollbar-thumb,
+.rail-drawer-panel::-webkit-scrollbar-thumb,
+.holding-editor::-webkit-scrollbar-thumb,
+.command-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 4px;
 }
 
 table {
@@ -649,6 +752,35 @@ th {
   font-family: var(--font-mono);
   font-size: 0.73rem;
   text-transform: uppercase;
+}
+
+/* Numeric columns: right-aligned lining tabular figures so magnitudes scan
+   down a column (IBM Plex Sans ships tabular figures). */
+th.num,
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Non-scrolling wrapper around .table-scroll: hosts the right-edge fade so the
+   affordance stays anchored to the scrollport instead of scrolling away with
+   the content (the old phone-only ::after sat on the scroller itself). */
+.table-wrap {
+  position: relative;
+}
+.table-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in srgb, var(--surface) 60%, transparent)
+  );
 }
 
 .narrative p {
@@ -693,7 +825,7 @@ a {
 .drawer-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--z-backdrop);
   background: rgba(4, 10, 18, 0.62);
   backdrop-filter: blur(4px);
   animation: fadeIn 0.2s ease-out;
@@ -712,7 +844,7 @@ a {
   background: var(--panel);
   border-left: 1px solid var(--line);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 0.4);
-  z-index: 101;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   animation: slideIn 0.25s ease-out;
@@ -1263,7 +1395,7 @@ a {
   background: var(--panel);
   border-right: 1px solid var(--line);
   box-shadow: 20px 0 60px rgba(0, 0, 0, 0.4);
-  z-index: 101;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   animation: slideInLeft 0.25s ease-out;
@@ -1452,7 +1584,7 @@ a {
   position: fixed;
   top: 16px;
   right: 16px;
-  z-index: 120;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1555,6 +1687,28 @@ a {
   gap: 10px;
 }
 
+/* Per-table CSV export + reproducibility copy affordances. */
+.table-export-btn {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+.chip-copy-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 1px;
+  margin-left: var(--space-1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+.chip-copy-btn:hover {
+  color: var(--accent-2);
+}
+
 /* Session-expired banner: inherits the .notice recipe via its second class;
    this rule only lays out the message + Unlock CTA. */
 .session-banner {
@@ -1589,7 +1743,7 @@ a {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-strong);
-  z-index: 101;
+  z-index: var(--z-overlay);
 }
 .confirm-body {
   padding: 16px 20px 20px;
@@ -1660,7 +1814,9 @@ a {
     min-height: 44px;
   }
   .methodology-btn {
-    min-height: 40px;
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
   }
   /* Methodology markdown tables: scroll horizontally inside .section-content
      so they don't force the drawer panel itself wider than the viewport. */
@@ -1700,25 +1856,11 @@ a {
 
   /* Tables inside .table-scroll: force a min-width so wide tables scroll
      horizontally instead of squishing to unreadable widths. Compact padding
-     and font for touch readability. */
+     and font for touch readability. (The right-edge fade now lives on the
+     baseline .table-wrap::after, anchored to the scrollport at all widths.) */
   .table-scroll {
     -webkit-overflow-scrolling: touch;
     overflow-x: auto;
-    position: relative;
-  }
-  .table-scroll::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 14px;
-    background: linear-gradient(
-      to right,
-      rgba(16, 37, 55, 0),
-      rgba(16, 37, 55, 0.6)
-    );
-    pointer-events: none;
   }
   .table-scroll > table {
     min-width: 480px;
@@ -1830,6 +1972,23 @@ a {
   gap: 10px;
   margin-bottom: 14px;
 }
+/* Desktop-only sticky toolbar (the file's first min-width query — the three
+   max-width breakpoints below are untouched). Sticky scope is bounded by
+   .results-stack, so it releases below the results; --z-sticky paints above
+   the sticky table headers (z-index auto) and below every overlay tier. */
+@media (min-width: 1080px) {
+  .results-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    padding: var(--space-2);
+    margin-inline: calc(-1 * var(--space-2));
+    border-radius: var(--radius-sm);
+  }
+}
 .results-toolbar-left {
   display: flex;
   align-items: center;
@@ -1844,10 +2003,13 @@ a {
 .results-units button {
   padding: 0 16px;
 }
-.valuation-table th.sortable {
+/* Sortable column headers — generalized from the valuation table so any table
+   can adopt SortableTh. (Also fixes a long-standing invalid transition that
+   referenced an undefined --motion token.) */
+th.sortable {
   padding: 0;
 }
-.valuation-table th.sortable button {
+th.sortable button {
   width: 100%;
   display: inline-flex;
   align-items: center;
@@ -1860,17 +2022,22 @@ a {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: color var(--motion), background var(--motion);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
-.valuation-table th.sortable button:hover {
+th.sortable button:hover {
   color: var(--accent);
 }
-.valuation-table th.sortable.sorted button {
+th.sortable.sorted button {
   color: var(--accent);
 }
-.valuation-table th.sortable .sort-arrow {
+th.sortable .sort-arrow {
   font-size: 0.7em;
   opacity: 0.85;
+}
+th.sortable.num button {
+  justify-content: flex-end;
 }
 
 /* Notional NAV knob in the results toolbar (instant client-side $ scaling). */
@@ -1915,7 +2082,7 @@ a {
   background: var(--panel);
   border-left: 1px solid var(--line);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 0.4);
-  z-index: 101;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   animation: slideIn 0.25s ease-out;

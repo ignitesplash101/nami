@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { saveScenario, toApiError } from "./api";
 import type { ApiError } from "./api";
+import { formatCurrency, formatPercent } from "./charts";
 import { ErrorNotice } from "./ErrorNotice";
 import { OverlayShell } from "./OverlayShell";
 import type {
@@ -142,11 +143,13 @@ export function SaveScenarioDialog({
             <span>
               Narrative mode: <code>{result.narrative_mode}</code>
             </span>
-            <span>Total P&amp;L: {(result.portfolio_pnl.total_pnl * 100).toFixed(2)}%</span>
+            <span>Total P&amp;L: {formatPercent(result.portfolio_pnl.total_pnl, 2)}</span>
             {result.portfolio_nav != null ? (
               <span>
-                NAV ({result.reporting_currency ?? "USD"}):{" "}
-                <code>{result.portfolio_nav.toLocaleString()}</code>
+                NAV:{" "}
+                <code>
+                  {formatCurrency(result.portfolio_nav, result.reporting_currency ?? "USD")}
+                </code>
               </span>
             ) : null}
         </div>

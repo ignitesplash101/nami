@@ -5,6 +5,7 @@ import type { ApiError } from "./api";
 import { formatPercent } from "./charts";
 import { ErrorNotice } from "./ErrorNotice";
 import { factorDisplayName } from "./factors";
+import { formatDateTime } from "./format";
 import { useToasts } from "./toast";
 import type {
   FactorMetadataMap,
@@ -304,7 +305,7 @@ function AdjustmentHistory({
         {history.map((entry, index) => (
           <li key={index}>
             <span className="kind">{entry.kind}</span>
-            <span className="time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+            <span className="time">{formatDateTime(entry.timestamp)}</span>
             {entry.prompt_text ? <em>{entry.prompt_text}</em> : null}
             <span className="changes">
               {Object.entries(entry.changed_factors)

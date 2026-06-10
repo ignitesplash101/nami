@@ -25,6 +25,57 @@ export interface FactorReasoningRow {
 
 const NO_EXPLICIT_SHOCK = "Correlation credit; no explicit shock";
 
+// --- Plotly theme from CSS tokens --------------------------------------------
+
+export interface ChartTheme {
+  text: string; // --text
+  fontMono: string; // --font-mono
+  up: string; // --up
+  down: string; // --down
+  total: string; // --accent-2
+  grid: string; // --chart-grid
+  connector: string; // --chart-connector
+}
+
+// Fallbacks mirror the current Hokusai Deep literals for jsdom/SSR where the
+// stylesheet isn't applied.
+const CHART_THEME_FALLBACK: ChartTheme = {
+  text: "#eef2ec",
+  fontMono: '"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace',
+  up: "#4cc38a",
+  down: "#e8615a",
+  total: "#7fb5d6",
+  grid: "rgba(238, 242, 236, 0.08)",
+  connector: "rgba(233, 216, 166, 0.3)"
+};
+
+let cachedChartTheme: ChartTheme | null = null;
+
+/** Reads the design tokens from :root ONCE (memoized — there is no runtime
+ * theme switching today). Unset properties fall back per-key to the current
+ * literals so charts render identically without a stylesheet. */
+export function chartTheme(): ChartTheme {
+  if (cachedChartTheme) return cachedChartTheme;
+  if (typeof document === "undefined") return CHART_THEME_FALLBACK;
+  const styles = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string): string =>
+    styles.getPropertyValue(name).trim() || fallback;
+  cachedChartTheme = {
+    text: read("--text", CHART_THEME_FALLBACK.text),
+    fontMono: read("--font-mono", CHART_THEME_FALLBACK.fontMono),
+    up: read("--up", CHART_THEME_FALLBACK.up),
+    down: read("--down", CHART_THEME_FALLBACK.down),
+    total: read("--accent-2", CHART_THEME_FALLBACK.total),
+    grid: read("--chart-grid", CHART_THEME_FALLBACK.grid),
+    connector: read("--chart-connector", CHART_THEME_FALLBACK.connector)
+  };
+  return cachedChartTheme;
+}
+
+export function resetChartThemeForTests(): void {
+  cachedChartTheme = null;
+}
+
 export function preferredAttributionMethod(result: ScenarioResult): AttributionMethod {
   if (result.portfolio_pnl.by_factor_conditional_shapley_explicit) {
     return "conditional_explicit";

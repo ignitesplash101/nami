@@ -11,6 +11,7 @@ import type { ApiError } from "./api";
 import { formatPercent } from "./charts";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorNotice } from "./ErrorNotice";
+import { relativeTime, slugify } from "./format";
 import { useToasts } from "./toast";
 import { useOverlay } from "./useOverlay";
 import type { ScenarioRunResponse, SavedScenarioListItem } from "./types";
@@ -19,18 +20,6 @@ interface SavedScenariosPanelProps {
   reloadKey: number;  // bump to trigger refresh after a new save
   onOpen: (envelope: ScenarioRunResponse) => void;
   onForbidden?: () => void;
-}
-
-function relativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
 
 export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedScenariosPanelProps) {
@@ -179,7 +168,7 @@ export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedSce
                 <a
                   className="ghost-button"
                   href={savedScenarioDownloadUrl(item.id)}
-                  download
+                  download={`nami_${item.portfolio_key}_${slugify(item.name)}_${item.effective_as_of_date}.json`}
                 >
                   <Download size={13} /> JSON
                 </a>

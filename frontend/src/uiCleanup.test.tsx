@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ResultsPanel, ScenarioPanel } from "./App";
 import type { AccessResponse, ScenarioResult, ScenarioRunResponse } from "./types";
@@ -77,7 +77,14 @@ function envelopeFixture(): ScenarioRunResponse {
   };
 }
 
-function renderResults(envelope: ScenarioRunResponse | null) {
+function renderResults(
+  envelope: ScenarioRunResponse | null,
+  overrides: {
+    isRunning?: boolean;
+    isStale?: boolean;
+    onSeedScenario?: (key: string) => void;
+  } = {}
+) {
   return render(
     <ResultsPanel
       envelope={envelope}
@@ -90,6 +97,13 @@ function renderResults(envelope: ScenarioRunResponse | null) {
       setNavInput={() => {}}
       valuationSort={{ key: "delta", dir: "asc" }}
       setValuationSort={() => {}}
+      isRunning={overrides.isRunning ?? false}
+      isStale={overrides.isStale ?? false}
+      sampleScenarios={[
+        { key: "covid", name: "COVID-like pandemic shock", text: "Pandemic shock text" },
+        { key: "tariffs", name: "China tariff escalation", text: "Tariff shock text" }
+      ]}
+      onSeedScenario={overrides.onSeedScenario ?? (() => {})}
       canDecompose={false}
       isDecomposing={false}
       decomposeProgress={null}
@@ -135,11 +149,30 @@ describe("first-screen UI cleanup", () => {
     expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
   });
 
-  it("renders first-run results as a compact placeholder", () => {
-    renderResults(null);
+  it("renders an onboarding empty state with steps and seed-only sample chips", () => {
+    const onSeedScenario = vi.fn();
+    renderResults(null, { onSeedScenario });
 
-    expect(screen.getByLabelText("Scenario results")).toHaveClass("compact-empty-results");
+    expect(screen.getByLabelText("Scenario results")).toHaveClass("onboarding-empty");
     expect(screen.getByText("No scenario run yet")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+
+    const chips = screen.getByRole("group", { name: "Try a sample scenario" });
+    expect(chips).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "China tariff escalation" }));
+    expect(onSeedScenario).toHaveBeenCalledWith("tariffs");
+  });
+
+  it("shows a shimmer skeleton on the first run and a stale dim on re-runs", () => {
+    renderResults(null, { isRunning: true });
+    expect(screen.getByLabelText("Scenario results")).toHaveClass("results-skeleton");
+    expect(screen.getByLabelText("Scenario results")).toHaveAttribute("aria-busy", "true");
+    cleanup();
+
+    renderResults(envelopeFixture(), { isRunning: true, isStale: true });
+    const stack = document.querySelector(".results-stack");
+    expect(stack).toHaveClass("is-stale");
+    expect(stack).toHaveAttribute("aria-busy", "true");
   });
 
   it("keeps summary facts in the readout instead of duplicating them as metric cards", () => {

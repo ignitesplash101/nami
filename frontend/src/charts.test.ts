@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   buildPositionValuations,
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
+  chartTheme,
   factorReasoningRows,
   formatCurrency,
   formatSignedCurrency,
   parseNav,
+  resetChartThemeForTests,
   topContributor
 } from "./charts";
 import type { ScenarioResult } from "./types";
@@ -161,5 +163,34 @@ describe("buildPositionValuations", () => {
     expect(aapl?.delta).toBeCloseTo(1_000_000 * -0.06); // NAV × by_ticker_total
     expect(aapl?.stressed).toBeCloseTo((aapl?.value ?? 0) + (aapl?.delta ?? 0));
     expect(aapl?.deltaPct).toBeCloseTo((aapl?.delta ?? 0) / (aapl?.value ?? 1));
+  });
+});
+
+describe("chartTheme", () => {
+  afterEach(() => {
+    resetChartThemeForTests();
+    document.documentElement.style.removeProperty("--up");
+  });
+
+  it("falls back to the Hokusai literals when tokens are unset (jsdom)", () => {
+    resetChartThemeForTests();
+    const theme = chartTheme();
+    expect(theme.up).toBe("#4cc38a");
+    expect(theme.down).toBe("#e8615a");
+    expect(theme.grid).toBe("rgba(238, 242, 236, 0.08)");
+  });
+
+  it("reads root custom properties and memoizes the first read", () => {
+    resetChartThemeForTests();
+    document.documentElement.style.setProperty("--up", "#123456");
+    const first = chartTheme();
+    expect(first.up).toBe("#123456");
+
+    // Changing the property after the first read must NOT change the theme —
+    // there is no runtime theme switching, so the read is one-shot.
+    document.documentElement.style.setProperty("--up", "#654321");
+    const second = chartTheme();
+    expect(second).toBe(first);
+    expect(second.up).toBe("#123456");
   });
 });
