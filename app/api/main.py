@@ -365,10 +365,14 @@ def _check_firestore() -> None:
 
 
 def _check_gcs(config) -> None:
-    # ADC / bucket reachability only — no object I/O.
+    # Probe OBJECT-level access (one list page) — that is what the runtime
+    # actually uses. `bucket.exists()` needs bucket-level storage.buckets.get,
+    # which roles/storage.objectAdmin deliberately lacks, so it reported
+    # "unavailable" while object reads/writes worked fine.
     from google.cloud import storage
 
-    storage.Client(project=config.google_cloud_project).bucket(config.gcs_bucket).exists()
+    client = storage.Client(project=config.google_cloud_project)
+    next(iter(client.list_blobs(config.gcs_bucket, max_results=1)), None)
 
 
 def _check_gemini(config) -> None:
