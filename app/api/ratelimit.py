@@ -16,6 +16,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.api.errors import ERROR_CODE_HEADER
 from app.api.middleware import client_ip
 from app.config import load_config
 
@@ -42,4 +43,5 @@ def _rate_limit_handler(request: object, exc: RateLimitExceeded) -> object:
     return JSONResponse(
         status_code=429,
         content={"detail": "Rate limit exceeded; slow down and retry shortly."},
+        headers={ERROR_CODE_HEADER: "rate_limited"},
     )

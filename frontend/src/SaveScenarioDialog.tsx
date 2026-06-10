@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { saveScenario } from "./api";
+import { saveScenario, toApiError } from "./api";
+import type { ApiError } from "./api";
+import { ErrorNotice } from "./ErrorNotice";
 import { OverlayShell } from "./OverlayShell";
 import type {
   AnalogEvent,
@@ -14,6 +16,7 @@ interface SaveScenarioDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved: (record: SavedScenarioRecord) => void;
+  onForbidden?: () => void;
   result: ScenarioResult;
   analogEvents: Record<string, AnalogEvent>;
   reproducibility: ScenarioReproducibility;
@@ -23,6 +26,7 @@ export function SaveScenarioDialog({
   isOpen,
   onClose,
   onSaved,
+  onForbidden,
   result,
   analogEvents,
   reproducibility
@@ -33,7 +37,7 @@ export function SaveScenarioDialog({
   const [ownerLabel, setOwnerLabel] = useState(
     () => window.localStorage.getItem(OWNER_LABEL_KEY) ?? ""
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | string | null>(null);
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -73,7 +77,9 @@ export function SaveScenarioDialog({
       setTagsInput("");
       setNotes("");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      const err = toApiError(exc);
+      if (err.kind === "forbidden") onForbidden?.();
+      setError(err);
     } finally {
       setSaving(false);
     }
@@ -144,11 +150,7 @@ export function SaveScenarioDialog({
               </span>
             ) : null}
         </div>
-        {error ? (
-          <div className="inline-error" id="save-dialog-error" role="alert">
-            {error}
-          </div>
-        ) : null}
+        {error ? <ErrorNotice variant="inline" error={error} id="save-dialog-error" /> : null}
         <div className="button-row">
           <button className="primary-button" onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save"}

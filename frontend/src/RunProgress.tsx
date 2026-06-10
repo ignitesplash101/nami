@@ -25,13 +25,15 @@ export interface RunProgressProps {
   stageStatus: "start" | "done" | null;
   completedStages: Set<SsePipelineStage>;
   cacheHit: boolean;
+  onCancel?: () => void;
 }
 
 export function RunProgress({
   currentStage,
   stageStatus,
   completedStages,
-  cacheHit
+  cacheHit,
+  onCancel
 }: RunProgressProps) {
   if (cacheHit) {
     return (
@@ -56,6 +58,17 @@ export function RunProgress({
           );
         })}
       </ol>
+      {onCancel ? (
+        <div className="run-cancel-row">
+          <button type="button" className="ghost-button" onClick={onCancel}>
+            Cancel run
+          </button>
+          <span className="muted">
+            Cancelling stops this view; the server may still finish and warm the cache, so
+            retrying can be instant.
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

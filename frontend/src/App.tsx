@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import Plot from "react-plotly.js";
 import {
   ArrowRight,
@@ -16,6 +16,7 @@ import {
   Upload
 } from "lucide-react";
 import {
+  ApiError,
   decomposeScenarioStream,
   getAccess,
   getFactors,
@@ -25,9 +26,15 @@ import {
   getTickerMetadata,
   lock,
   runScenarioStream,
+  toApiError,
   unlock,
   validatePortfolio
 } from "./api";
+import { ErrorNotice } from "./ErrorNotice";
+import { scrollBehavior } from "./motion";
+import { createRunLifecycle } from "./runLifecycle";
+import { useToasts } from "./toast";
+import { nextSessionExpired, useAccessWatch } from "./useAccessWatch";
 import {
   buildPositionValuations,
   buildReadout,
@@ -183,11 +190,23 @@ export default function App() {
   const [decomposeProgress, setDecomposeProgress] = useState<{ done: number; total: number } | null>(
     null
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | string | null>(null);
   const [currentStage, setCurrentStage] = useState<SsePipelineStage | null>(null);
   const [stageStatus, setStageStatus] = useState<"start" | "done" | null>(null);
   const [completedStages, setCompletedStages] = useState<Set<SsePipelineStage>>(new Set());
   const [cacheHit, setCacheHit] = useState(false);
+  // True only when an admin session silently downgraded (cookie expiry) — a
+  // deliberate lock passes intentional=true through applyAccess and stays quiet.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [bootSerial, setBootSerial] = useState(0);
+  const accessModeRef = useRef<AccessResponse["access_mode"] | null>(null);
+  const lastFailedActionRef = useRef<"run" | "decompose" | "boot" | null>(null);
+  const passcodeInputRef = useRef<HTMLInputElement>(null);
+  // Separate lifecycles: cancelling/superseding a run must not abort an
+  // in-flight decomposition and vice versa.
+  const runLifecycle = useRef(createRunLifecycle()).current;
+  const decomposeLifecycle = useRef(createRunLifecycle()).current;
+  const { push: pushToast } = useToasts();
   const methodologyDrawer = useMethodologyDrawer();
   const railDrawer = useOverlay();
   const commandPalette = useOverlay();
@@ -230,7 +249,7 @@ export default function App() {
           getFactors().catch(() => []),
           getMethodology().catch(() => "")
         ]);
-      setAccess(accessResponse);
+      applyAccess(accessResponse);
       // Seed the as-of picker with the latest NYSE close (the live anchor), so
       // "live" means the latest US close rather than the browser's local day.
       setAsOfDate(accessResponse.latest_market_date);
@@ -263,8 +282,9 @@ export default function App() {
         }
       }
     }
-    boot().catch((exc: Error) => setError(exc.message));
-  }, []);
+    boot().catch((exc: unknown) => reportError(exc, "boot"));
+    // bootSerial lets the error banner's Retry re-run a failed boot.
+  }, [bootSerial]);
 
   useEffect(() => {
     const selected = scenarios.find((scenario) => scenario.key === scenarioKey);
@@ -284,8 +304,51 @@ export default function App() {
 
   const isAdmin = access?.access_mode === "admin";
 
+  // Every access update routes through here so a silent admin→visitor
+  // downgrade (cookie expiry) raises the session banner exactly once.
+  function applyAccess(next: AccessResponse, opts?: { intentional?: boolean }) {
+    const prev = accessModeRef.current;
+    accessModeRef.current = next.access_mode;
+    if (next.access_mode === "admin") {
+      setSessionExpired(false);
+    } else if (nextSessionExpired(prev, next.access_mode, Boolean(opts?.intentional))) {
+      setSessionExpired(true);
+    }
+    setAccess(next);
+  }
+
   async function refreshAccess() {
-    setAccess(await getAccess());
+    applyAccess(await getAccess());
+  }
+
+  useAccessWatch({ enabled: access != null, onAccess: applyAccess });
+
+  // Normalize any failure into an ApiError; cancelled runs stay silent and a
+  // forbidden response triggers an access re-check (catches stale admin cookies).
+  function reportError(exc: unknown, action: "run" | "decompose" | "boot" | null = null) {
+    const err = toApiError(exc);
+    if (err.kind === "cancelled") return;
+    if (err.kind === "forbidden") void refreshAccess().catch(() => {});
+    lastFailedActionRef.current = action;
+    setError(err);
+  }
+
+  function retryLastAction() {
+    const action = lastFailedActionRef.current;
+    setError(null);
+    if (action === "run") void handleRun();
+    else if (action === "decompose") void handleDecompose();
+    else if (action === "boot") setBootSerial((serial) => serial + 1);
+  }
+
+  function focusUnlock() {
+    if (isMobileOrTablet) {
+      openRailDrawer();
+      requestAnimationFrame(() => passcodeInputRef.current?.focus());
+    } else {
+      passcodeInputRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+      passcodeInputRef.current?.focus();
+    }
   }
 
   function handleScenarioSeed(key: string) {
@@ -302,6 +365,9 @@ export default function App() {
 
   async function handleRun() {
     if (!access) return;
+    // begin() aborts any in-flight run and invalidates its sequence — its late
+    // frames/result/finally are dropped by the isCurrent guards below.
+    const handle = runLifecycle.begin();
     setError(null);
     setIsRunning(true);
     setCurrentStage(null);
@@ -343,20 +409,26 @@ export default function App() {
               sample_scenario_key: scenarioKey,
               portfolio_key: portfolioKey
             };
-      const response = await runScenarioStream(payload, (event) => {
-        if (event.stage === "cache_hit") {
-          setCacheHit(true);
-          return;
-        }
-        if (event.stage === "done" || event.stage === "error") {
-          return;
-        }
-        setCurrentStage(event.stage);
-        setStageStatus(event.status ?? null);
-        if (event.status === "done") {
-          setCompletedStages((prev) => new Set(prev).add(event.stage));
-        }
-      });
+      const response = await runScenarioStream(
+        payload,
+        (event) => {
+          if (!runLifecycle.isCurrent(handle.seq)) return;
+          if (event.stage === "cache_hit") {
+            setCacheHit(true);
+            return;
+          }
+          if (event.stage === "done" || event.stage === "error") {
+            return;
+          }
+          setCurrentStage(event.stage);
+          setStageStatus(event.status ?? null);
+          if (event.status === "done") {
+            setCompletedStages((prev) => new Set(prev).add(event.stage));
+          }
+        },
+        { signal: handle.signal }
+      );
+      if (!runLifecycle.isCurrent(handle.seq)) return;
       setResultEnvelope(response);
       setCanonicalSnapshot(response.result);
       setAttributionMethod(preferredAttributionMethod(response.result));
@@ -366,10 +438,17 @@ export default function App() {
         response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
       );
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      if (!runLifecycle.isCurrent(handle.seq)) return;
+      reportError(exc, "run");
     } finally {
-      setIsRunning(false);
+      if (runLifecycle.isCurrent(handle.seq)) {
+        setIsRunning(false);
+      }
     }
+  }
+
+  function handleCancelRun() {
+    runLifecycle.cancel();
   }
 
   function handleAdjustmentResult(response: ScenarioRunResponse) {
@@ -383,20 +462,33 @@ export default function App() {
 
   async function handleDecompose() {
     if (!resultEnvelope) return;
+    const handle = decomposeLifecycle.begin();
     setError(null);
     setIsDecomposing(true);
     setDecomposeProgress(null);
     try {
-      const response = await decomposeScenarioStream(resultEnvelope.result, (done, total) =>
-        setDecomposeProgress({ done, total })
+      const response = await decomposeScenarioStream(
+        resultEnvelope.result,
+        (done, total) => {
+          if (decomposeLifecycle.isCurrent(handle.seq)) setDecomposeProgress({ done, total });
+        },
+        { signal: handle.signal }
       );
+      if (!decomposeLifecycle.isCurrent(handle.seq)) return;
       setResultEnvelope(response);
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      if (!decomposeLifecycle.isCurrent(handle.seq)) return;
+      reportError(exc, "decompose");
     } finally {
-      setIsDecomposing(false);
-      setDecomposeProgress(null);
+      if (decomposeLifecycle.isCurrent(handle.seq)) {
+        setIsDecomposing(false);
+        setDecomposeProgress(null);
+      }
     }
+  }
+
+  function handleCancelDecompose() {
+    decomposeLifecycle.cancel();
   }
 
   // Palette actions are a thin accelerator over already-visible controls. Built
@@ -428,7 +520,7 @@ export default function App() {
       id: "lock",
       label: "Lock (return to visitor mode)",
       run: () => {
-        void lock().then(refreshAccess);
+        void lock().then((response) => applyAccess(response, { intentional: true }));
       }
     });
   }
@@ -442,7 +534,7 @@ export default function App() {
         <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
         <div className="brand-crest" aria-hidden="true" />
       </div>
-      <AccessPanel access={access} onAccessChange={setAccess} />
+      <AccessPanel access={access} onAccessChange={applyAccess} passcodeInputRef={passcodeInputRef} />
       <PortfolioPanel
         access={access}
         portfolios={portfolios}
@@ -509,7 +601,18 @@ export default function App() {
           testing, not a substitute for institutional risk management.
         </div>
 
-        {error ? <div className="error-banner">{error}</div> : null}
+        {sessionExpired && !isAdmin ? (
+          <div className="notice session-banner" role="alert">
+            <span>Admin session expired — unlock again to continue using admin features.</span>
+            <button type="button" className="ghost-button" onClick={focusUnlock}>
+              Unlock
+            </button>
+          </div>
+        ) : null}
+
+        {error ? (
+          <ErrorNotice error={error} onRetry={retryLastAction} onUnlock={focusUnlock} />
+        ) : null}
 
         <ScenarioPanel
           access={access}
@@ -543,6 +646,7 @@ export default function App() {
             stageStatus={stageStatus}
             completedStages={completedStages}
             cacheHit={cacheHit}
+            onCancel={handleCancelRun}
           />
         ) : null}
 
@@ -561,6 +665,7 @@ export default function App() {
           isDecomposing={isDecomposing}
           decomposeProgress={decomposeProgress}
           onDecompose={handleDecompose}
+          onCancelDecompose={handleCancelDecompose}
           onOpenMethodology={openMethodology}
           canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
           onSave={saveDialog.open}
@@ -576,6 +681,7 @@ export default function App() {
             factorMeta={factorMeta}
             onResult={handleAdjustmentResult}
             prefillRerun={handlePrefillRerun}
+            onForbidden={() => void refreshAccess().catch(() => {})}
           />
         ) : null}
 
@@ -587,11 +693,13 @@ export default function App() {
               setCanonicalSnapshot(env.result);
               setAttributionMethod(preferredAttributionMethod(env.result));
             }}
+            onForbidden={() => void refreshAccess().catch(() => {})}
           />
         ) : null}
 
         {isAdmin ? (
           <PortfolioHistoryPanel
+            onForbidden={() => void refreshAccess().catch(() => {})}
             currentHoldings={
               portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
             }
@@ -622,7 +730,9 @@ export default function App() {
           onSaved={() => {
             saveDialog.close();
             setSavedReloadKey((k) => k + 1);
+            pushToast({ variant: "success", message: "Scenario saved to library." });
           }}
+          onForbidden={() => void refreshAccess().catch(() => {})}
           result={resultEnvelope.result}
           analogEvents={resultEnvelope.analog_events}
           reproducibility={resultEnvelope.reproducibility}
@@ -651,14 +761,16 @@ export default function App() {
 
 function AccessPanel({
   access,
-  onAccessChange
+  onAccessChange,
+  passcodeInputRef
 }: {
   access: AccessResponse | null;
-  onAccessChange: (access: AccessResponse) => void;
+  onAccessChange: (access: AccessResponse, opts?: { intentional?: boolean }) => void;
+  passcodeInputRef?: RefObject<HTMLInputElement>;
 }) {
   const [passcode, setPasscode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<ApiError | string | null>(null);
   const isAdmin = access?.access_mode === "admin";
 
   async function handleUnlock() {
@@ -666,10 +778,10 @@ function AccessPanel({
     setMessage(null);
     try {
       const response = await unlock(passcode);
-      onAccessChange(response);
+      onAccessChange(response, { intentional: true });
       setPasscode("");
     } catch (exc) {
-      setMessage(exc instanceof Error ? exc.message : String(exc));
+      setMessage(toApiError(exc));
     } finally {
       setBusy(false);
     }
@@ -677,9 +789,15 @@ function AccessPanel({
 
   async function handleLock() {
     setBusy(true);
-    const response = await lock();
-    onAccessChange(response);
-    setBusy(false);
+    try {
+      const response = await lock();
+      // A deliberate lock must not raise the session-expired banner.
+      onAccessChange(response, { intentional: true });
+    } catch (exc) {
+      setMessage(toApiError(exc));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -700,6 +818,7 @@ function AccessPanel({
       ) : (
         <div className="unlock-row">
           <input
+            ref={passcodeInputRef}
             value={passcode}
             onChange={(event) => setPasscode(event.target.value)}
             type="password"
@@ -714,11 +833,7 @@ function AccessPanel({
           </button>
         </div>
       )}
-      {message ? (
-        <div className="inline-error" id="unlock-message" role="alert">
-          {message}
-        </div>
-      ) : null}
+      {message ? <ErrorNotice variant="inline" error={message} id="unlock-message" /> : null}
     </section>
   );
 }
@@ -762,8 +877,12 @@ function PortfolioPanel({
   async function validateCustom(rows = customRows) {
     // Shares mode is validated server-side (raw share counts, no sum-to-1 rule).
     if (isShares) return;
-    const response = await validatePortfolio(holdingsFromRows(rows));
-    setValidation(response.errors);
+    try {
+      const response = await validatePortfolio(holdingsFromRows(rows));
+      setValidation(response.errors);
+    } catch (exc) {
+      setValidation([toApiError(exc).message]);
+    }
   }
 
   async function handleCsv(file: File | null) {
@@ -1125,6 +1244,7 @@ export function ResultsPanel({
   isDecomposing,
   decomposeProgress,
   onDecompose,
+  onCancelDecompose,
   onOpenMethodology,
   canSave,
   onSave
@@ -1143,6 +1263,7 @@ export function ResultsPanel({
   isDecomposing: boolean;
   decomposeProgress: { done: number; total: number } | null;
   onDecompose: () => void;
+  onCancelDecompose?: () => void;
   onOpenMethodology: (section?: string) => void;
   canSave: boolean;
   onSave: () => void;
@@ -1625,17 +1746,24 @@ export function ResultsPanel({
             <p className="eyebrow">Experimental</p>
             <h3>Fixed-context shock attribution</h3>
           </div>
-          <button
-            className="ghost-button"
-            onClick={onDecompose}
-            disabled={!canDecompose || isDecomposing}
-          >
-            {isDecomposing
-              ? decomposeProgress
-                ? `Decomposing… ${decomposeProgress.done}/${decomposeProgress.total}`
-                : "Decomposing…"
-              : "Run decomposition"}
-          </button>
+          <div className="button-row">
+            <button
+              className="ghost-button"
+              onClick={onDecompose}
+              disabled={!canDecompose || isDecomposing}
+            >
+              {isDecomposing
+                ? decomposeProgress
+                  ? `Decomposing… ${decomposeProgress.done}/${decomposeProgress.total}`
+                  : "Decomposing…"
+                : "Run decomposition"}
+            </button>
+            {isDecomposing && onCancelDecompose ? (
+              <button className="ghost-button" onClick={onCancelDecompose}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
         </div>
         {result.narrative_shapley ? (
           <div className="table-scroll">

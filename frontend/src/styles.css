@@ -239,7 +239,8 @@ p {
 .result-card,
 .empty-results,
 .notice,
-.error-banner {
+.error-banner,
+.error-boundary-panel {
   border: 1px solid var(--line);
   background: rgba(16, 37, 55, 0.78);
   border-radius: var(--radius);
@@ -1442,6 +1443,177 @@ a {
 }
 
 /* ============================================================================
+ * Enterprise resilience surfaces: toasts, root error boundary, error refs.
+ * ========================================================================== */
+
+/* Toast stack renders ABOVE the 100/101 drawer tier — transient feedback must
+   not hide behind an open drawer. */
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-strong);
+  animation: toast-in var(--dur) var(--ease);
+}
+.toast-success {
+  border-left-color: var(--up);
+}
+.toast-info {
+  border-left-color: var(--accent-2);
+}
+.toast-error {
+  border-left-color: var(--down);
+}
+.toast-message {
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.toast-dismiss:hover {
+  color: var(--accent-2);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.error-boundary-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.error-boundary-panel {
+  max-width: 460px;
+  padding: 24px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+/* Request-id reference row inside error notices: small, mono, copyable. */
+.error-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.error-ref code {
+  color: var(--text-2);
+}
+.error-ref button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 1px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.error-ref button:hover {
+  color: var(--accent-2);
+}
+.error-cta-row {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+}
+
+/* Session-expired banner: inherits the .notice recipe via its second class;
+   this rule only lays out the message + Unlock CTA. */
+.session-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Cancel affordance under the run-progress stepper. */
+.run-cancel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.run-cancel-row .muted {
+  font-size: 0.8rem;
+}
+
+/* Confirm dialog: centered modal over the shared drawer backdrop. */
+.confirm-backdrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-dialog {
+  width: min(440px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-strong);
+  z-index: 101;
+}
+.confirm-body {
+  padding: 16px 20px 20px;
+  display: grid;
+  gap: 12px;
+}
+.confirm-text p {
+  margin: 0;
+}
+.confirm-hint {
+  font-size: 0.78rem;
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+/* Destructive confirms only — loss-red is reserved for loss/error. */
+.primary-button.danger {
+  background: var(--down);
+  color: var(--ink);
+}
+
+/* ============================================================================
  * Mobile + tablet responsive overrides.
  *
  * Breakpoints:
@@ -1958,6 +2130,12 @@ a {
   /* Snapshot-create form: hardcoded 2-col grid collapses to single column. */
   .snap-create {
     grid-template-columns: 1fr;
+  }
+
+  /* Toasts span the phone viewport instead of hugging the right edge. */
+  .toast-stack {
+    left: 16px;
+    width: auto;
   }
 }
 

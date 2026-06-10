@@ -4,8 +4,12 @@ import {
   createPortfolio,
   createPortfolioSnapshot,
   listPortfolioSnapshots,
-  listSavedPortfolios
+  listSavedPortfolios,
+  toApiError
 } from "./api";
+import type { ApiError } from "./api";
+import { ErrorNotice } from "./ErrorNotice";
+import { useToasts } from "./toast";
 import type { PortfolioSnapshotRecord, SavedPortfolioRecord } from "./types";
 
 interface PortfolioHistoryPanelProps {
@@ -16,6 +20,7 @@ interface PortfolioHistoryPanelProps {
   // snapshots store weights in v1). The string is shown as the reason.
   snapshotDisabledReason?: string;
   onLoadSnapshot: (snapshot: PortfolioSnapshotRecord) => void;
+  onForbidden?: () => void;
 }
 
 function todayIso(): string {
@@ -25,7 +30,8 @@ function todayIso(): string {
 export function PortfolioHistoryPanel({
   currentHoldings,
   snapshotDisabledReason,
-  onLoadSnapshot
+  onLoadSnapshot,
+  onForbidden
 }: PortfolioHistoryPanelProps) {
   const [portfolios, setPortfolios] = useState<SavedPortfolioRecord[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -33,15 +39,23 @@ export function PortfolioHistoryPanel({
   const [newName, setNewName] = useState("");
   const [snapDate, setSnapDate] = useState(todayIso());
   const [snapNotes, setSnapNotes] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { push } = useToasts();
+
+  function reportError(exc: unknown) {
+    const err = toApiError(exc);
+    if (err.kind === "forbidden") onForbidden?.();
+    setError(err);
+  }
 
   useEffect(() => {
     setLoading(true);
     listSavedPortfolios()
       .then(setPortfolios)
-      .catch((exc) => setError(exc instanceof Error ? exc.message : String(exc)))
+      .catch((exc) => reportError(exc))
       .finally(() => setLoading(false));
+    // Mount-only fetch; a remount (key change) refetches.
   }, []);
 
   useEffect(() => {
@@ -51,7 +65,7 @@ export function PortfolioHistoryPanel({
     }
     listPortfolioSnapshots(activeId)
       .then(setSnapshots)
-      .catch((exc) => setError(exc instanceof Error ? exc.message : String(exc)));
+      .catch((exc) => reportError(exc));
   }, [activeId]);
 
   async function handleCreate() {
@@ -65,8 +79,9 @@ export function PortfolioHistoryPanel({
       setPortfolios((p) => [rec, ...p]);
       setNewName("");
       setActiveId(rec.id);
+      push({ variant: "success", message: "Portfolio created." });
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      reportError(exc);
     }
   }
 
@@ -92,8 +107,9 @@ export function PortfolioHistoryPanel({
       });
       setSnapshots((s) => [snap, ...s]);
       setSnapNotes("");
+      push({ variant: "success", message: "Snapshot saved." });
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      reportError(exc);
     }
   }
 
@@ -120,7 +136,7 @@ export function PortfolioHistoryPanel({
         </button>
       </div>
 
-      {error ? <div className="inline-error">{error}</div> : null}
+      {error ? <ErrorNotice variant="inline" error={error} /> : null}
       {loading ? <p className="muted">Loading...</p> : null}
 
       {portfolios.length === 0 ? (

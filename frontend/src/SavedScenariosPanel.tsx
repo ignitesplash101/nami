@@ -4,14 +4,21 @@ import {
   deleteSavedScenario,
   getSavedScenario,
   listSavedScenarios,
-  savedScenarioDownloadUrl
+  savedScenarioDownloadUrl,
+  toApiError
 } from "./api";
+import type { ApiError } from "./api";
 import { formatPercent } from "./charts";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { ErrorNotice } from "./ErrorNotice";
+import { useToasts } from "./toast";
+import { useOverlay } from "./useOverlay";
 import type { ScenarioRunResponse, SavedScenarioListItem } from "./types";
 
 interface SavedScenariosPanelProps {
   reloadKey: number;  // bump to trigger refresh after a new save
   onOpen: (envelope: ScenarioRunResponse) => void;
+  onForbidden?: () => void;
 }
 
 function relativeTime(iso: string): string {
@@ -26,11 +33,21 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelProps) {
+export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedScenariosPanelProps) {
   const [items, setItems] = useState<SavedScenarioListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [tagFilter, setTagFilter] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SavedScenarioListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const confirmDelete = useOverlay();
+  const { push } = useToasts();
+
+  function reportError(exc: unknown) {
+    const err = toApiError(exc);
+    if (err.kind === "forbidden") onForbidden?.();
+    setError(err);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +58,11 @@ export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelPr
         if (!cancelled) setItems(data);
       })
       .catch((exc) => {
-        if (!cancelled) setError(exc instanceof Error ? exc.message : String(exc));
+        if (!cancelled) {
+          const err = toApiError(exc);
+          if (err.kind === "forbidden") onForbidden?.();
+          setError(err);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -49,6 +70,7 @@ export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelPr
     return () => {
       cancelled = true;
     };
+    // onForbidden is a stable App-level callback; reloadKey/tagFilter drive refetches.
   }, [reloadKey, tagFilter]);
 
   async function handleOpen(id: string) {
@@ -65,17 +87,29 @@ export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelPr
       url.searchParams.set("saved", id);
       window.history.replaceState({}, "", url.toString());
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      reportError(exc);
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this saved scenario? This cannot be undone.")) return;
+  function requestDelete(item: SavedScenarioListItem) {
+    setPendingDelete(item);
+    confirmDelete.open();
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteSavedScenario(id);
-      setItems((prev) => prev.filter((i) => i.id !== id));
+      await deleteSavedScenario(pendingDelete.id);
+      setItems((prev) => prev.filter((i) => i.id !== pendingDelete.id));
+      push({ variant: "success", message: "Saved scenario deleted." });
+      confirmDelete.close();
+      setPendingDelete(null);
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      reportError(exc);
+      confirmDelete.close();
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -109,7 +143,7 @@ export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelPr
           ))}
         </div>
       ) : null}
-      {error ? <div className="inline-error">{error}</div> : null}
+      {error ? <ErrorNotice variant="inline" error={error} /> : null}
       {loading && items.length === 0 ? (
         <p className="muted">Loading...</p>
       ) : items.length === 0 ? (
@@ -151,7 +185,7 @@ export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelPr
                 </a>
                 <button
                   className="ghost-button danger"
-                  onClick={() => handleDelete(item.id)}
+                  onClick={() => requestDelete(item)}
                   aria-label={`Delete ${item.name}`}
                 >
                   <Trash2 size={13} /> Delete
@@ -161,6 +195,24 @@ export function SavedScenariosPanel({ reloadKey, onOpen }: SavedScenariosPanelPr
           ))}
         </ol>
       )}
+      <ConfirmDialog
+        isOpen={confirmDelete.isOpen}
+        onClose={() => {
+          confirmDelete.close();
+          setPendingDelete(null);
+        }}
+        onConfirm={handleDeleteConfirmed}
+        title="Delete saved scenario"
+        body={
+          <p>
+            Delete <strong>{pendingDelete?.name ?? "this scenario"}</strong>? This cannot be
+            undone.
+          </p>
+        }
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+      />
     </section>
   );
 }

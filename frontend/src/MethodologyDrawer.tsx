@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { scrollBehavior } from "./motion";
 import { OverlayShell } from "./OverlayShell";
-
-function scrollBehavior(): ScrollBehavior {
-  return typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ? "auto"
-    : "smooth";
-}
 
 interface MethodologySection {
   title: string;

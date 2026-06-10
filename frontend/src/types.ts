@@ -299,6 +299,9 @@ export interface SseProgressEvent {
   status?: "start" | "done";
   result?: ScenarioRunResponse;
   message?: string;
+  // Machine-readable code on `stage: "error"` events (mirrors X-Error-Code).
+  // Absent/null maps to client kind "unknown".
+  code?: string | null;
 }
 
 export interface PortfolioValidationResponse {

@@ -38,6 +38,13 @@ class BudgetExceededError(Exception):
     """
 
 
+class RunCapExceededError(BudgetExceededError):
+    """Daily run cap hit (vs the cost cap). MUST subclass `BudgetExceededError`
+    so the endpoints' existing `except BudgetExceededError` handlers still catch
+    it; the subclass only lets them emit a distinct machine-readable error code.
+    """
+
+
 @dataclass
 class RunTelemetry:
     """Request-scoped accumulator for paid Gemini usage."""
@@ -84,7 +91,7 @@ def enforce_run_cap(store: SavedScenarioStore, config: Config, day: str) -> None
     with contextlib.suppress(Exception):
         runs = store.increment_daily_run(day)
     if runs and runs > config.daily_llm_run_cap:
-        raise BudgetExceededError("Daily scenario run cap reached; try again tomorrow.")
+        raise RunCapExceededError("Daily scenario run cap reached; try again tomorrow.")
 
 
 class MeteredGeminiClient(GeminiClient):

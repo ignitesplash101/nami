@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { ApiError } from "./api";
+import type { ApiErrorKind } from "./api";
+import { presentApiError } from "./errorCopy";
+import type { ErrorCta } from "./errorCopy";
+
+function present(kind: ApiErrorKind, detail = "raw server detail") {
+  return presentApiError(new ApiError({ status: null, detail, kind }));
+}
+
+describe("presentApiError", () => {
+  const cases: Array<[ApiErrorKind, RegExp, ErrorCta]> = [
+    ["budget_exhausted", /budget is exhausted/i, "wait_tomorrow"],
+    ["run_cap", /run cap reached/i, "wait_tomorrow"],
+    ["expired", /cache entry has expired/i, "rerun"],
+    ["too_large", /too large to save/i, "reduce_size"],
+    ["marking_unavailable", /failed closed/i, "retry"],
+    ["forbidden", /requires admin mode/i, "unlock"],
+    ["network", /network error/i, "retry"],
+    ["cancelled", /cancelled/i, null],
+    ["unavailable", /temporarily unavailable/i, "retry"]
+  ];
+
+  it.each(cases)("%s renders fixed copy with the %s CTA", (kind, pattern, cta) => {
+    const presentation = present(kind);
+    expect(presentation.message).toMatch(pattern);
+    expect(presentation.cta).toBe(cta);
+  });
+
+  it("passes raw detail through for validation/auth/timeout/rate_limited/unknown", () => {
+    expect(present("validation", "Weights must sum to ~1.0.").message).toBe(
+      "Weights must sum to ~1.0."
+    );
+    expect(present("auth", "Incorrect passcode.").message).toBe("Incorrect passcode.");
+    expect(present("timeout", "Stream timed out — no progress for 60s.").message).toMatch(
+      /timed out/
+    );
+    // Server copy differs between the per-IP limiter and the unlock lockout —
+    // both pass through verbatim with a retry CTA.
+    expect(present("rate_limited", "Too many unlock attempts; try again later.").message).toBe(
+      "Too many unlock attempts; try again later."
+    );
+    expect(present("rate_limited").cta).toBe("retry");
+    expect(present("unknown", "boom").message).toBe("boom");
+  });
+
+  it("appends the re-run explanation to rerun_required LLM details", () => {
+    const presentation = present("rerun_required", "That asks for a new mechanism.");
+    expect(presentation.message).toBe(
+      "That asks for a new mechanism. — this edit changes the scenario itself, so it needs a full re-run."
+    );
+    expect(presentation.cta).toBe("rerun");
+    expect(presentation.ctaLabel).toBe("Pre-fill re-run");
+  });
+
+  it("only fixed-copy kinds expose a CTA label", () => {
+    expect(present("budget_exhausted").ctaLabel).toBeNull();
+    expect(present("expired").ctaLabel).toBe("Re-run scenario");
+    expect(present("forbidden").ctaLabel).toBe("Unlock");
+  });
+});

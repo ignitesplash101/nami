@@ -16,31 +16,171 @@ import type {
   TickerMetadata
 } from "./types";
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    ...init
-  });
-  if (!response.ok) {
+// --- Typed API errors -------------------------------------------------------
+//
+// The `X-Error-Code` response header (and the `code` field on SSE error events)
+// is the machine-readable error contract; detail strings are display-only and
+// may be LLM-generated free text. Where no code is present, `kind` derives from
+// the HTTP status alone.
+
+export type ApiErrorKind =
+  | "rate_limited"
+  | "budget_exhausted"
+  | "run_cap"
+  | "expired"
+  | "too_large"
+  | "validation"
+  | "rerun_required"
+  | "marking_unavailable"
+  | "auth"
+  | "forbidden"
+  | "network"
+  | "timeout"
+  | "cancelled"
+  | "unavailable"
+  | "unknown";
+
+const KNOWN_ERROR_CODES: ReadonlySet<string> = new Set([
+  "rate_limited",
+  "budget_exhausted",
+  "run_cap",
+  "expired",
+  "too_large",
+  "validation",
+  "rerun_required",
+  "marking_unavailable",
+  "auth",
+  "forbidden",
+  "unavailable",
+  "unknown"
+]);
+
+export function deriveErrorKind(status: number | null, code: string | null): ApiErrorKind {
+  if (code && KNOWN_ERROR_CODES.has(code)) return code as ApiErrorKind;
+  if (status === null) return "network";
+  switch (status) {
+    case 401:
+      return "auth";
+    case 403:
+      return "forbidden";
+    case 410:
+      return "expired";
+    case 413:
+      return "too_large";
+    case 422:
+      return "validation";
+    case 429:
+      return "rate_limited";
+    case 503:
+      return "unavailable";
+    default:
+      return "unknown";
+  }
+}
+
+function headerOf(response: Response, name: string): string | null {
+  try {
+    return response.headers?.get(name) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export class ApiError extends Error {
+  readonly status: number | null;
+  readonly detail: string;
+  readonly requestId: string | null;
+  readonly kind: ApiErrorKind;
+
+  constructor(init: {
+    status: number | null;
+    detail: string;
+    requestId?: string | null;
+    kind: ApiErrorKind;
+  }) {
+    // message === detail so components not yet migrated to ErrorNotice keep
+    // rendering something sensible via `exc.message`.
+    super(init.detail);
+    this.name = "ApiError";
+    this.status = init.status;
+    this.detail = init.detail;
+    this.requestId = init.requestId ?? null;
+    this.kind = init.kind;
+  }
+
+  static async fromResponse(response: Response): Promise<ApiError> {
     // Read the body ONCE as text, then try to parse JSON — reading json() then
     // text() on a failed parse throws "body stream already read" and masks the
     // real server error.
     let detail = `${response.status} ${response.statusText}`;
-    const text = await response.text();
-    if (text) {
-      try {
-        const body = JSON.parse(text);
-        detail =
-          typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
-      } catch {
-        detail = text;
+    try {
+      const text = await response.text();
+      if (text) {
+        try {
+          const body = JSON.parse(text);
+          detail =
+            typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+        } catch {
+          detail = text;
+        }
       }
+    } catch {
+      // Body unreadable — keep the status line as the detail.
     }
-    throw new Error(detail);
+    return new ApiError({
+      status: response.status,
+      detail,
+      requestId: headerOf(response, "X-Request-ID"),
+      kind: deriveErrorKind(response.status, headerOf(response, "X-Error-Code"))
+    });
+  }
+
+  static network(_cause: unknown): ApiError {
+    return new ApiError({
+      status: null,
+      detail: "Network request failed.",
+      kind: "network"
+    });
+  }
+
+  /** In-band SSE errors arrive over a healthy HTTP 200 connection — an absent
+   * code maps to "unknown", NEVER "network". */
+  static fromSseError(
+    message: string,
+    code: string | null | undefined,
+    requestId: string | null
+  ): ApiError {
+    const kind = code && KNOWN_ERROR_CODES.has(code) ? (code as ApiErrorKind) : "unknown";
+    return new ApiError({ status: null, detail: message, requestId, kind });
+  }
+}
+
+/** Normalize any thrown value into an ApiError (user aborts become "cancelled"). */
+export function toApiError(exc: unknown): ApiError {
+  if (exc instanceof ApiError) return exc;
+  if (exc instanceof Error && exc.name === "AbortError") {
+    return new ApiError({ status: null, detail: "Run cancelled.", kind: "cancelled" });
+  }
+  const detail = exc instanceof Error ? exc.message : String(exc);
+  return new ApiError({ status: null, detail, kind: "unknown" });
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {})
+      },
+      ...init
+    });
+  } catch (exc) {
+    throw ApiError.network(exc);
+  }
+  if (!response.ok) {
+    throw await ApiError.fromResponse(response);
   }
   return response.json() as Promise<T>;
 }
@@ -115,18 +255,38 @@ export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunRes
   });
 }
 
-// Abort the stream if no progress event arrives for this long. The whole
-// pipeline is ~10-20s and the slowest single stage (grounded narrative) is well
-// under this, so an idle gap this large means the server stopped responding.
-const SSE_IDLE_TIMEOUT_MS = 60_000;
+// Abort the stream if no progress event arrives for this long. The run pipeline
+// is ~10-20s and the slowest single stage (grounded narrative) is well under
+// this, so an idle gap this large means the server stopped responding.
+const RUN_SSE_IDLE_TIMEOUT_MS = 60_000;
+// Decomposition gaps between subset events are much longer (each subset is a
+// full pipeline rerun), so its idle window is wider.
+const DECOMPOSE_SSE_IDLE_TIMEOUT_MS = 120_000;
 
-export async function runScenarioStream(
-  payload: RunScenarioPayload,
-  onProgress: (event: SseProgressEvent) => void
-): Promise<ScenarioRunResponse> {
+interface StreamSseOptions {
+  idleTimeoutMs: number;
+  signal?: AbortSignal;
+  onEvent: (event: SseProgressEvent) => void;
+}
+
+/** Shared SSE reader: owns the AbortController, external-signal forwarding,
+ * idle timeout, frame parsing, and the error ladder (timeout / cancelled /
+ * in-band error event / network). */
+async function streamSse(url: string, body: unknown, opts: StreamSseOptions): Promise<void> {
   const controller = new AbortController();
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
+  let cancelled = opts.signal?.aborted ?? false;
+  const cancelledError = () =>
+    new ApiError({ status: null, detail: "Run cancelled.", kind: "cancelled" });
+  if (cancelled) throw cancelledError();
+
+  const onExternalAbort = () => {
+    cancelled = true;
+    controller.abort();
+  };
+  opts.signal?.addEventListener("abort", onExternalAbort, { once: true });
+
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
   const clearIdle = () => {
     if (idleTimer !== undefined) clearTimeout(idleTimer);
   };
@@ -135,31 +295,53 @@ export async function runScenarioStream(
     idleTimer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, SSE_IDLE_TIMEOUT_MS);
+    }, opts.idleTimeoutMs);
+  };
+  const timeoutError = () =>
+    new ApiError({
+      status: null,
+      detail:
+        `Stream timed out — no progress for ${Math.round(opts.idleTimeoutMs / 1000)}s. ` +
+        "The server may still finish and warm the cache, so retrying can be instant.",
+      kind: "timeout"
+    });
+  const cleanup = () => {
+    clearIdle();
+    opts.signal?.removeEventListener("abort", onExternalAbort);
   };
 
   let response: Response;
   try {
-    response = await fetch("/api/scenarios/run-stream", {
+    response = await fetch(url, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: controller.signal
     });
   } catch (exc) {
-    clearIdle();
-    throw exc;
+    cleanup();
+    if (cancelled) throw cancelledError();
+    throw ApiError.network(exc);
   }
-  if (!response.ok || !response.body) {
-    clearIdle();
-    throw new Error(`${response.status} ${response.statusText}`);
+  const requestId = headerOf(response, "X-Request-ID");
+  if (!response.ok) {
+    cleanup();
+    throw await ApiError.fromResponse(response);
+  }
+  if (!response.body) {
+    cleanup();
+    throw new ApiError({
+      status: response.status,
+      detail: "Stream response had no body.",
+      requestId,
+      kind: "unknown"
+    });
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let finalResult: ScenarioRunResponse | null = null;
 
   armIdle();
   try {
@@ -168,12 +350,9 @@ export async function runScenarioStream(
       try {
         chunk = await reader.read();
       } catch (exc) {
-        if (timedOut) {
-          throw new Error(
-            "Scenario timed out — the server stopped responding. Please try again."
-          );
-        }
-        throw exc;
+        if (cancelled) throw cancelledError();
+        if (timedOut) throw timeoutError();
+        throw ApiError.network(exc);
       }
       if (chunk.done) break;
       buffer += decoder.decode(chunk.value, { stream: true });
@@ -182,27 +361,47 @@ export async function runScenarioStream(
       while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
         const frame = buffer.slice(0, separatorIdx);
         buffer = buffer.slice(separatorIdx + 2);
-        const dataLine = frame
-          .split("\n")
-          .find((line) => line.startsWith("data: "));
+        const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
         if (!dataLine) continue;
         const event: SseProgressEvent = JSON.parse(dataLine.slice("data: ".length));
         armIdle(); // progress arrived — reset the idle clock
-        onProgress(event);
+        opts.onEvent(event);
         if (event.stage === "error") {
-          throw new Error(event.message ?? "Scenario stream failed.");
-        }
-        if (event.stage === "done" && event.result) {
-          finalResult = event.result;
+          throw ApiError.fromSseError(
+            event.message ?? "Stream failed.",
+            event.code ?? null,
+            requestId
+          );
         }
       }
     }
   } finally {
-    clearIdle();
+    cleanup();
   }
+}
 
+export async function runScenarioStream(
+  payload: RunScenarioPayload,
+  onProgress: (event: SseProgressEvent) => void,
+  options?: { signal?: AbortSignal }
+): Promise<ScenarioRunResponse> {
+  let finalResult: ScenarioRunResponse | null = null;
+  await streamSse("/api/scenarios/run-stream", payload, {
+    idleTimeoutMs: RUN_SSE_IDLE_TIMEOUT_MS,
+    signal: options?.signal,
+    onEvent: (event) => {
+      onProgress(event);
+      if (event.stage === "done" && event.result) {
+        finalResult = event.result;
+      }
+    }
+  });
   if (!finalResult) {
-    throw new Error("Scenario stream ended without a final result.");
+    throw new ApiError({
+      status: null,
+      detail: "Scenario stream ended without a final result.",
+      kind: "unknown"
+    });
   }
   return finalResult;
 }
@@ -217,47 +416,32 @@ export function decomposeScenario(result: ScenarioResult): Promise<ScenarioRunRe
 /** SSE variant: reports "{done}/{total} subset runs" while the 2^N pipeline reruns. */
 export async function decomposeScenarioStream(
   result: ScenarioResult,
-  onProgress: (done: number, total: number) => void
+  onProgress: (done: number, total: number) => void,
+  options?: { signal?: AbortSignal }
 ): Promise<ScenarioRunResponse> {
-  const response = await fetch("/api/scenarios/decompose-stream", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ result })
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let finalResult: ScenarioRunResponse | null = null;
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let separatorIdx;
-    while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, separatorIdx);
-      buffer = buffer.slice(separatorIdx + 2);
-      const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
-      if (!dataLine) continue;
-      const event = JSON.parse(dataLine.slice("data: ".length));
-      if (event.stage === "subset") {
-        onProgress(event.done as number, event.total as number);
-      } else if (event.stage === "error") {
-        throw new Error(event.message ?? "Decomposition failed.");
-      } else if (event.stage === "done" && event.result) {
-        finalResult = event.result as ScenarioRunResponse;
+  await streamSse(
+    "/api/scenarios/decompose-stream",
+    { result },
+    {
+      idleTimeoutMs: DECOMPOSE_SSE_IDLE_TIMEOUT_MS,
+      signal: options?.signal,
+      onEvent: (event) => {
+        const raw = event as unknown as Record<string, unknown>;
+        if (raw.stage === "subset") {
+          onProgress(raw.done as number, raw.total as number);
+        } else if (event.stage === "done" && event.result) {
+          finalResult = event.result;
+        }
       }
     }
-  }
-
+  );
   if (!finalResult) {
-    throw new Error("Decomposition stream ended without a result.");
+    throw new ApiError({
+      status: null,
+      detail: "Decomposition stream ended without a result.",
+      kind: "unknown"
+    });
   }
   return finalResult;
 }
@@ -304,15 +488,19 @@ export function getSavedScenario(id: string): Promise<SavedScenarioRecord> {
   );
 }
 
-export function deleteSavedScenario(id: string): Promise<void> {
-  return fetch(`/api/saved-scenarios/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    credentials: "same-origin"
-  }).then((response) => {
-    if (!response.ok && response.status !== 204) {
-      throw new Error(`${response.status} ${response.statusText}`);
-    }
-  });
+export async function deleteSavedScenario(id: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/saved-scenarios/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      credentials: "same-origin"
+    });
+  } catch (exc) {
+    throw ApiError.network(exc);
+  }
+  if (!response.ok && response.status !== 204) {
+    throw await ApiError.fromResponse(response);
+  }
 }
 
 export function savedScenarioDownloadUrl(id: string): string {
@@ -360,9 +548,14 @@ export function listPortfolioSnapshots(
 }
 
 export async function getMethodology(): Promise<string> {
-  const response = await fetch("/api/docs/methodology", { credentials: "same-origin" });
+  let response: Response;
+  try {
+    response = await fetch("/api/docs/methodology", { credentials: "same-origin" });
+  } catch (exc) {
+    throw ApiError.network(exc);
+  }
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw await ApiError.fromResponse(response);
   }
   return response.text();
 }

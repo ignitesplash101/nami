@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sliders, X } from "lucide-react";
-import { adjustScenarioShocks } from "./api";
+import { adjustScenarioShocks, toApiError } from "./api";
+import type { ApiError } from "./api";
 import { formatPercent } from "./charts";
+import { ErrorNotice } from "./ErrorNotice";
 import { factorDisplayName } from "./factors";
+import { useToasts } from "./toast";
 import type {
   FactorMetadataMap,
   ScenarioResult,
@@ -16,6 +19,7 @@ interface AdjustmentPanelProps {
   factorMeta: FactorMetadataMap;
   onResult: (response: ScenarioRunResponse) => void;
   prefillRerun: (text: string) => void;
+  onForbidden?: () => void;
 }
 
 interface SliderRow {
@@ -39,15 +43,17 @@ export function AdjustmentPanel({
   canonicalSnapshot,
   factorMeta,
   onResult,
-  prefillRerun
+  prefillRerun,
+  onForbidden
 }: AdjustmentPanelProps) {
   const result = envelope.result;
   const cacheKey = envelope.cache_key;
+  const { push } = useToasts();
 
   const [rows, setRows] = useState<SliderRow[]>(() => rowsFromResult(result));
   const [adjustmentText, setAdjustmentText] = useState("");
   const [isAdjusting, setIsAdjusting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | string | null>(null);
   const [rerunSuggestion, setRerunSuggestion] = useState<string | null>(null);
 
   // Reset slider state when a new canonical scenario lands.
@@ -97,8 +103,11 @@ export function AdjustmentPanel({
         benchmark: result.benchmark_ticker
       });
       onResult(response);
+      push({ variant: "success", message: "Adjustment applied." });
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
+      const err = toApiError(exc);
+      if (err.kind === "forbidden") onForbidden?.();
+      setError(err);
     } finally {
       setIsAdjusting(false);
     }
@@ -116,14 +125,17 @@ export function AdjustmentPanel({
         benchmark: result.benchmark_ticker
       });
       onResult(response);
+      push({ variant: "success", message: "Adjustment applied." });
       setAdjustmentText("");
     } catch (exc) {
-      const message = exc instanceof Error ? exc.message : String(exc);
-      // 422 from the backend means scope=rerun_required: surface a rerun CTA.
-      if (/rerun|requires a full/i.test(message)) {
-        setRerunSuggestion(message);
+      const err = toApiError(exc);
+      if (err.kind === "forbidden") onForbidden?.();
+      // kind dispatch via X-Error-Code — the rejection_reason detail is LLM
+      // free text, so string-matching it can never be sound.
+      if (err.kind === "rerun_required") {
+        setRerunSuggestion(err.detail);
       } else {
-        setError(message);
+        setError(err);
       }
     } finally {
       setIsAdjusting(false);
@@ -247,9 +259,15 @@ export function AdjustmentPanel({
       </div>
 
       {error ? (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
+        <ErrorNotice
+          variant="inline"
+          error={error}
+          onRerun={
+            typeof error !== "string" && error.kind === "expired"
+              ? () => prefillRerun(result.scenario_text)
+              : undefined
+          }
+        />
       ) : null}
       {rerunSuggestion ? (
         <div className="rerun-suggestion">

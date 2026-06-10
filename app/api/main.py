@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.errors import http_error
 from app.api.middleware import request_context_middleware
 from app.api.portfolio_validation import validate_holdings, validate_nav, validate_quantities
 from app.api.ratelimit import limiter, llm_limit, setup_rate_limiting, unlock_limit
@@ -84,6 +85,7 @@ from app.observability.logging import configure_logging
 from app.observability.metering import (
     BudgetExceededError,
     MeteredGeminiClient,
+    RunCapExceededError,
     RunTelemetry,
     enforce_run_cap,
     today_key,
@@ -133,7 +135,7 @@ with contextlib.suppress(Exception):
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
-            expose_headers=["X-Request-ID"],
+            expose_headers=["X-Request-ID", "X-Error-Code"],
         )
 
 # nami engine version used in reproducibility metadata. Bumps with any
@@ -172,6 +174,27 @@ def _metered_gemini() -> tuple[MeteredGeminiClient, RunTelemetry, str]:
     telemetry = RunTelemetry()
     gemini = MeteredGeminiClient(config, store=store, telemetry=telemetry, day=day)
     return gemini, telemetry, day
+
+
+def _budget_http_error(exc: BudgetExceededError) -> HTTPException:
+    """429 whose X-Error-Code distinguishes the run cap from the cost cap."""
+    code = "run_cap" if isinstance(exc, RunCapExceededError) else "budget_exhausted"
+    return http_error(429, code, str(exc))
+
+
+def _sse_error_code(exc: Exception) -> str | None:
+    """Machine-readable code for in-band SSE error events — no HTTP status exists
+    mid-stream, so the event itself must carry the discriminator. Clients map an
+    absent code to "unknown" (never "network": the HTTP connection was healthy)."""
+    if isinstance(exc, RunCapExceededError):
+        return "run_cap"
+    if isinstance(exc, BudgetExceededError):
+        return "budget_exhausted"
+    if isinstance(exc, MarkingError):
+        return "marking_unavailable"
+    if isinstance(exc, ValueError):
+        return "validation"
+    return None
 
 
 def _audit(
@@ -402,7 +425,7 @@ def unlock(body: UnlockRequest, request: Request, response: Response) -> AccessR
             >= config.unlock_max_failures
         )
     if locked:
-        raise HTTPException(status_code=429, detail="Too many unlock attempts; try again later.")
+        raise http_error(429, "rate_limited", "Too many unlock attempts; try again later.")
 
     if not verify_passcode(body.passcode):
         with contextlib.suppress(Exception):
@@ -570,11 +593,11 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
             benchmark=body.benchmark,
         )
     except BudgetExceededError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        raise _budget_http_error(exc) from exc
     except MarkingError as exc:
         # Requested valuation could not be marked (missing/stale price or FX):
         # fail closed with 503 rather than return a percentage-only result.
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise http_error(503, "marking_unavailable", str(exc)) from exc
     except InsufficientHistoryError as exc:
         # A holding has too little weekly history for beta estimation — a
         # RuntimeError subclass that would otherwise surface as a 500.
@@ -618,7 +641,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
     try:
         gemini, _telemetry, _day = _metered_gemini()
     except BudgetExceededError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        raise _budget_http_error(exc) from exc
 
     events_q: queue.Queue[dict] = queue.Queue()
     SENTINEL = object()
@@ -660,7 +683,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
             )
             events_q.put({"stage": "done", "result": response.model_dump(mode="json")})
         except Exception as exc:  # noqa: BLE001 — stream errors as SSE events
-            events_q.put({"stage": "error", "message": str(exc)})
+            events_q.put({"stage": "error", "message": str(exc), "code": _sse_error_code(exc)})
         finally:
             events_q.put(SENTINEL)
 
@@ -704,13 +727,13 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
             benchmark=body.benchmark,
         )
     except BudgetExceededError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        raise _budget_http_error(exc) from exc
     except LookupError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
     except MarkingError as exc:
         # Re-marking the adjusted result failed (missing/stale price or FX) —
         # fail closed. MUST precede RuntimeError (MarkingError subclasses it).
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise http_error(503, "marking_unavailable", str(exc)) from exc
     except InsufficientHistoryError as exc:
         # MUST precede RuntimeError (it subclasses it): too little weekly
         # history is a data problem, NOT the LLM's "rerun_required" rejection —
@@ -718,8 +741,9 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         # scope="rerun_required" from the LLM patch path. The message is the
-        # rejection_reason the UI surfaces to the user.
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # rejection_reason the UI surfaces to the user — it is LLM free text, so
+        # the X-Error-Code header is the only sound way for clients to detect it.
+        raise http_error(422, "rerun_required", str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -742,12 +766,12 @@ def decompose_endpoint(
 
     config = load_config()
     try:
+        # The WHOLE compute stays inside the try: the metered client raises
+        # BudgetExceededError mid-pipeline (during the 2^N subset Gemini calls),
+        # not just at construction.
         gemini, _telemetry, _day = _metered_gemini()
-    except BudgetExceededError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
-    scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
-    decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
-    try:
+        scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
+        decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
         result = compute_narrative_shapley(
             body.result,
             config=config,
@@ -756,6 +780,8 @@ def decompose_endpoint(
             decomposition_cache=decomposition_cache,
             market_date=body.result.market_date,
         )
+    except BudgetExceededError as exc:
+        raise _budget_http_error(exc) from exc
     except InsufficientHistoryError as exc:
         # Subset reruns re-estimate betas; surface a data problem as 422, not 500.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -783,7 +809,7 @@ def decompose_stream_endpoint(
     try:
         gemini, _telemetry, _day = _metered_gemini()
     except BudgetExceededError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        raise _budget_http_error(exc) from exc
     scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
     decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
 
@@ -809,7 +835,7 @@ def decompose_stream_endpoint(
             )
             events_q.put({"stage": "done", "result": response.model_dump(mode="json")})
         except Exception as exc:  # noqa: BLE001 — stream errors as SSE events
-            events_q.put({"stage": "error", "message": str(exc)})
+            events_q.put({"stage": "error", "message": str(exc), "code": _sse_error_code(exc)})
         finally:
             events_q.put(SENTINEL)
 
