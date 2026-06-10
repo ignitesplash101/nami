@@ -31,6 +31,47 @@ class _MockGeminiWithPatch(_MockGeminiClient):
         return self._patch
 
 
+def test_prompt_patch_low_evidence_factor_rejected(monkeypatch):
+    """The count<3 keep-or-remove rule binds the LLM patch path too — a direct
+    API call cannot re-tune a low-evidence factor just because the UI slider
+    is disabled."""
+    canonical, cache, _gemini, key, config = _canonical_run(monkeypatch)
+    target = canonical.factor_shocks[0]
+
+    envelope_copy = {k: dict(v) for k, v in canonical.factor_envelope.items()}
+    envelope_copy[target.factor] = {
+        "mean": target.shock,
+        "p10": target.shock,
+        "p90": target.shock + 0.02,
+        "count": 2,
+    }
+    cache.put_json(
+        key,
+        canonical.model_copy(update={"factor_envelope": envelope_copy}).model_dump(mode="json"),
+    )
+
+    gemini = _MockGeminiWithPatch(
+        ShockEditPatch(
+            scope="local",
+            edits=[
+                FactorEdit(
+                    factor=target.factor,
+                    new_shock=target.shock + 0.01,
+                    reasoning="Magnified per user request.",
+                )
+            ],
+        )
+    )
+    with pytest.raises(ValueError, match="analog observation"):
+        adjust_scenario_shocks(
+            key,
+            adjustment_text="make the first factor larger",
+            config=config,
+            gemini=gemini,
+            cache=cache,
+        )
+
+
 def test_prompt_local_scope_applies_edit_and_preserves_invariants(monkeypatch):
     canonical, cache, _gemini, key, config = _canonical_run(monkeypatch)
     target = canonical.factor_shocks[0]

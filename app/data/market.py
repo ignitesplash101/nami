@@ -121,7 +121,8 @@ def fetch_weekly_prices(
 ) -> pd.DataFrame:
     """Fetch weekly adjusted close prices.
 
-    Returns a DataFrame indexed by week-ending date, with one column per ticker.
+    Returns a DataFrame indexed by Monday-anchored week-START dates (yfinance's
+    `1wk` convention — NOT week-ending Fridays), one column per ticker.
     Tickers yfinance fails to return are silently dropped — check the column set
     against the input if completeness matters.
     """

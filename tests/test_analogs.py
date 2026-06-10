@@ -15,7 +15,9 @@ from app.factors import analogs
 from app.factors.analogs import (
     HistoricalEvent,
     compute_envelope,
+    compute_envelope_from_matrix,
     fetch_event_returns,
+    fetch_event_returns_matrix,
     load_events,
 )
 
@@ -183,3 +185,47 @@ def test_compute_envelope_validates_inputs_and_aggregates(monkeypatch) -> None:
 
     assert env.loc["SPY", "p10"] == pytest.approx(-0.180, abs=1e-6)
     assert env.loc["SPY", "p90"] == pytest.approx(-0.060, abs=1e-6)
+
+
+def test_fetch_event_returns_matrix_preserves_order_and_matches_envelope(monkeypatch) -> None:
+    """`compute_envelope` is a wrapper over matrix-fetch + aggregate; callers that
+    also need per-event rows use the two pieces directly without a duplicate fetch."""
+    fake_registry = {
+        "e1": HistoricalEvent(
+            id="e1",
+            name="E1",
+            start_date=date(2020, 1, 1),
+            end_date=date(2020, 1, 10),
+            tags=("banking",),
+            description="x",
+        ),
+        "e2": HistoricalEvent(
+            id="e2",
+            name="E2",
+            start_date=date(2021, 1, 1),
+            end_date=date(2021, 1, 31),
+            tags=("banking",),
+            description="x",
+        ),
+    }
+    fake_returns = {
+        "e1": pd.Series({"SPY": -0.10, "VIX": 0.40, "XLC": np.nan}, name="e1"),
+        "e2": pd.Series({"SPY": -0.20, "VIX": 0.80, "XLC": 0.30}, name="e2"),
+    }
+    monkeypatch.setattr(analogs, "fetch_event_returns", lambda e: fake_returns[e.id])
+
+    matrix = fetch_event_returns_matrix(["e2", "e1"], registry=fake_registry)
+    assert list(matrix.index) == ["e2", "e1"], "input order must be preserved"
+    assert pd.isna(matrix.loc["e1", "XLC"])
+    assert matrix.loc["e2", "SPY"] == pytest.approx(-0.20)
+
+    env_via_matrix = compute_envelope_from_matrix(matrix)
+    env_direct = compute_envelope(["e2", "e1"], registry=fake_registry)
+    pd.testing.assert_frame_equal(env_via_matrix, env_direct)
+
+    with pytest.raises(ValueError, match="non-empty"):
+        fetch_event_returns_matrix([], registry=fake_registry)
+    with pytest.raises(ValueError, match="duplicate"):
+        fetch_event_returns_matrix(["e1", "e1"], registry=fake_registry)
+    with pytest.raises(KeyError, match="unknown"):
+        fetch_event_returns_matrix(["ghost"], registry=fake_registry)

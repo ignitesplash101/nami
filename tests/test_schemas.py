@@ -59,6 +59,18 @@ def test_scenario_result_json_roundtrip():
     assert rehydrated == original
 
 
+def test_pre_phase18_payload_validates_with_new_fields_defaulted():
+    # A cached/saved payload from before Phase 18 has no regression_quality /
+    # analog_event_returns keys; it must deserialize with None defaults rather
+    # than fail under extra="forbid".
+    dumped = _sample_result().model_dump(mode="json")
+    dumped.pop("regression_quality", None)
+    dumped.pop("analog_event_returns", None)
+    rehydrated = ScenarioResult.model_validate(dumped)
+    assert rehydrated.regression_quality is None
+    assert rehydrated.analog_event_returns is None
+
+
 def test_portfolio_pnl_model_from_portfolio_pnl_dict():
     # Mirrors the shape `app.factors.shocks.portfolio_pnl` returns.
     raw = {

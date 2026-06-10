@@ -2,9 +2,11 @@
 
 The key hashes EVERY input that could change the response semantically: scenario text,
 portfolio identity AND weights, the market date, the LLM model id, the prompt version,
-the factor universe version, and the events registry version. Bumping any of these
-invalidates cache cleanly — same tickers with different weights, or a prompt rewrite,
-or a model swap, all produce distinct cache entries.
+the factor universe version, the events registry version, and the regression spec
+(estimator id + lookback + alpha + min_obs — the engine-math lever, so changing
+RIDGE_ALPHA or the estimator itself never serves stale cached P&L). Bumping any of
+these invalidates cache cleanly — same tickers with different weights, or a prompt
+rewrite, or a model swap, all produce distinct cache entries.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ def scenario_cache_key(
     prompt_version: str,
     factor_universe_version: str,
     events_version: str,
+    regression_spec: str,
     position_quantities: dict[str, float] | None = None,
     pinned_event_ids: list[str] | None = None,
 ) -> str:
@@ -45,6 +48,9 @@ def scenario_cache_key(
         "prompt_version": prompt_version,
         "factor_universe_version": factor_universe_version,
         "events_version": events_version,
+        # Folded UNCONDITIONALLY (unlike the back-compat conditional inputs below):
+        # engine-math changes must invalidate every key exactly once.
+        "regression_spec": regression_spec,
     }
     if position_quantities:
         payload_obj["position_quantities"] = sorted(

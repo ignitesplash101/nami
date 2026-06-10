@@ -12,14 +12,18 @@ A user describes a hypothetical market stress in natural language ("60% US tarif
 China imports, prolonged trade war"). nami:
 
 1. Asks Gemini to pick 2–5 **historical analog events** from a curated registry whose
-   *mechanism* matches the scenario.
+   *mechanism* matches the scenario (the 2–5 cardinality is enforced in code — an
+   out-of-range selection fails the run with a 422).
 2. Pulls the **realized factor returns** over each analog's window from yfinance and
-   computes an **empirical envelope** (mean / p10 / p90 / count) per factor.
+   computes an **empirical envelope** (mean / p10 / p90 / count) per factor, plus the
+   per-event return rows behind it.
 3. Asks Gemini to write a **grounded hypothetical stress narrative** about the scenario (Google Search active
    → real news citations) and then, in a separate sub-call, **extract structured factor
-   shocks + periphery shocks** that stay inside the empirical envelope.
-4. Estimates the portfolio's **factor betas** via mean-centered ridge OLS on 3 years of
-   weekly returns, applies the shocks, and returns a portfolio P&L with attribution.
+   shocks** (validated against the empirical envelope for factors with `count >= 3`)
+   plus **periphery shocks** (idiosyncratic; hard-banded to ±0.75, no envelope).
+4. Estimates the portfolio's **factor betas** via standardized (unit-variance) ridge OLS
+   on 3 years of weekly returns, applies the shocks, and returns a portfolio P&L with
+   attribution and per-name regression fit quality.
 
 Every market-context claim in the narrative is **cited** to a real source the LLM
 retrieved during grounding. Without citations the pipeline refuses to return.
@@ -83,9 +87,12 @@ construction at the ETF level).
 | **Macro** (4) | US 10Y yield (`TNX`, yfinance `^TNX`), US dollar (`DXY`, yfinance `DX-Y.NYB`), Equity volatility (`VIX`, yfinance `^VIX`), Oil price (`OIL`, yfinance `CL=F`) |
 
 The app renders factors as `Human label (TICKER)` wherever space allows, while the
-internal keys and model math stay ticker-based. Unit convention: percent change of the weekly close. For macro indices that means percent
-change in the *level* (so a VIX shock of `+0.50` = the VIX index spiking by 50%, e.g.
-15 → 22.5). The full description per factor is in [`app/factors/universe.py`](../app/factors/universe.py).
+internal keys and model math stay ticker-based. Unit convention: decimal price returns
+for equity factors; decimal change in the *level* for macro indices (so a VIX shock of
+`+0.50` = the VIX index spiking by 50%, e.g. 15 → 22.5). Betas are estimated on weekly
+returns while shocks are episode total moves — see the "Shock horizon and units" section
+for the full contract. The full description per factor is in
+[`app/factors/universe.py`](../app/factors/universe.py).
 
 **Pre-launch dates** matter for the analog matcher — events before a factor's ETF launch
 return NaN for that factor and are excluded from its envelope count:
@@ -101,18 +108,28 @@ return NaN for that factor and are excluded from its envelope count:
 
 ## Beta estimation
 
-`app/factors/regression.py::estimate_betas` runs **mean-centered ridge OLS** on weekly
-returns:
+`app/factors/regression.py::estimate_betas_and_stats` runs **standardized
+(unit-variance) ridge OLS** on weekly returns:
 
 ```
-X̃ = X − mean(X, axis=0)            # T × F factor returns, centered
-Ỹ = Y − mean(Y, axis=0)            # T × N ticker returns, centered
-β̂ = solve(X̃ᵀX̃ + αI_F, X̃ᵀỸ)      # F × N — vectorized over tickers
+X̃ = X − mean(X, axis=0)             # T × F factor returns, centered
+Ỹ = Y − mean(Y, axis=0)             # T × N ticker returns, centered
+σ̂ = std(X̃, axis=0, ddof=1)         # per-factor weekly vol
+β̂_std = solve((X̃/σ̂)ᵀ(X̃/σ̂) + αI, (X̃/σ̂)ᵀỸ)
+β̂ = β̂_std / σ̂                      # rescaled to RAW units — β̂ · raw_shock is unchanged in meaning
 ```
 
 - Default lookback: 156 weeks (3 years) per `Config.beta_lookback_weeks`.
 - Default ridge `α = 0.1` per `Config.ridge_alpha` — stabilizes against the collinearity
   between SPY/ACWI/XLK and between sector ETFs ([Hoerl & Kennard, 1970](https://doi.org/10.1080/00401706.1970.10488634)).
+- **Why standardize:** in standardized units every factor column's Gram diagonal is
+  `T − 1 ≈ 155`, so `α = 0.1` shrinks each eigendirection by `λ/(λ + 0.1)` — near-zero
+  bias on well-identified directions and a meaningful floor only on near-degenerate
+  (collinear) ones. Without standardization the same `α` in raw weekly-return² units
+  shrank low-vol equity-factor directions ~50% while barely touching high-vol macro
+  factors like VIX — heterogeneous shrinkage that depended silently on each factor's
+  variance. Coefficients are rescaled back to raw units after the solve, so the output
+  betas apply to raw decimal shocks exactly as before.
 - Mean-centering removes the through-origin bias when returns have nonzero historical
   means (equivalent to including an unpenalized intercept and discarding it). Why it
   works: the normal equations for `[X, 1] @ [beta; mu]` decouple — the intercept row
@@ -120,12 +137,29 @@ X̃ = X − mean(X, axis=0)            # T × F factor returns, centered
   system. Mean-centering keeps the ridge penalty away from the intercept; penalizing
   the intercept would shrink portfolio alphas toward zero, which is a substantive
   modeling choice we don't want the regularizer to make.
+- **Per-ticker masks + history floor:** rows where any *factor* is NaN drop globally,
+  then each ticker is regressed on its own non-NaN weeks (grouped by identical mask
+  pattern, one vectorized solve per group) — one short-history holding no longer
+  truncates the estimation window for the whole book. Every ticker needs at least
+  **40 non-NaN weeks** (`MIN_REGRESSION_WEEKS`) or the run fails with a 422 naming the
+  offending ticker(s).
+- **Fit quality is reported, not hidden.** Each result carries per-ticker
+  `regression_quality`: in-sample `r2` (clipped to [0, 1]), `n_obs` (weeks surviving the
+  mask), and `idio_vol_weekly` (ddof=1 weekly residual vol, not annualized). Names with
+  `r2 < 0.30` get a warning diagnostic — the factor model explains little of their
+  variance, so factor-implied scenario P&L likely understates their true risk.
+- **Currency:** non-USD listings (e.g. the Japan book's `.T` tickers) have their weekly
+  returns converted to USD (`(1 + r_local)(1 + r_FX) − 1`, vintage-correct FX series)
+  *before* the regression, so betas absorb FX exposure and active return vs a USD-quoted
+  benchmark compares like with like.
 - Uses `np.linalg.solve` instead of `inv` — more numerically stable, and vectorizes
-  cleanly across all tickers in one call.
+  cleanly across tickers within each mask group.
 
-The unit test `test_estimate_betas_recovers_known_coefficients` (with zero-mean factors)
-and `test_estimate_betas_handles_nonzero_factor_means` (with drift) prove the
-implementation recovers known coefficients within 0.05 of truth.
+The unit tests recover known coefficients within 0.05 of truth using a near-zero test
+ridge (`α = 0.001`) so shrinkage bias does not dominate the tolerance; the production
+default `α = 0.1` deliberately trades a small (now homogeneous) shrinkage bias for
+collinearity stability. A dedicated column-scale-invariance test pins the
+standardize-then-rescale property.
 
 ---
 
@@ -155,6 +189,62 @@ would create hard-to-debug coverage gaps.
 
 ---
 
+## Shock horizon and units
+
+**A shock is an episode total return, not a weekly return.** Every factor shock the LLM
+proposes — and every envelope statistic it is constrained by — is the cumulative decimal
+change of that factor over the full hypothetical stress episode:
+`price[end] / price[start] − 1` over an analog event's exact-day window. The selected
+analogs set the implied horizon; registry windows range from 5 calendar days (the 2024
+yen-carry unwind) to ~7.5 months (the 2014–15 oil crash), and two windows are deliberate
+RECOVERY episodes (GFC trough 2009, COVID liquidity 2020). The extraction prompt states
+this contract explicitly and shows the model each analog's **per-event factor returns and
+window length**, not just the aggregated band — so it can reason about duration and see
+which analog drives each band edge.
+
+**Betas are weekly; shocks are episode-level — a deliberate horizon-invariance
+assumption.** Betas are estimated on 156 weekly returns and applied linearly to
+episode-horizon shocks. A linear factor model has no compounding, so this is exact only
+if betas are horizon-invariant; empirically betas drift across horizons, and the linear
+approximation of a geometric path understates compounding as |shock| grows (two −10%
+weeks compound to −19%, not −20%). For the magnitudes the envelope permits this error is
+second-order, but it grows with shock size — one reason outputs are illustrative, not
+forecasts. A modeled name-level loss can mathematically breach −100% of the position;
+nami never clamps (linearity is the engine contract behind attribution sums and the
+client-side dollar view) — instead a `position_loss_exceeds_100pct` warning diagnostic
+flags it.
+
+**The envelope mixes window lengths by design.** It is an empirical distribution of
+*episode* moves across mechanically similar analogs, not a fixed-horizon return
+distribution. The p10–p90 band therefore blends short crashes and multi-month episodes;
+the per-event table shows which analog drives each band edge. With only 2–5 events the
+percentiles are linear interpolations over a handful of points — which is why the band
+check is enforced only at `count >= 3` and why adjustments to lower-count factors are
+restricted to keep-or-remove.
+
+**Macro factors are level changes.** VIX, TNX, DXY, and OIL shocks are decimal changes
+in the index level. They are level-dependent: +0.50 on VIX means 12 → 18 in a calm
+regime but 35 → 52.5 in a stressed one. The %-change convention is kept deliberately —
+it normalizes across volatility regimes, which is what makes a 2008 analog comparable to
+a 2024 one inside a single envelope — at the cost that a shock does not pin an absolute
+level.
+
+**Periphery shocks are idiosyncratic episode returns with a hard band, not an
+envelope.** They have no historical envelope; the validator enforces `|shock| <= 0.75`
+(a single-episode idiosyncratic move beyond ±75% on top of factor effects is outside
+this tool's plausible-stress scope, and anything ≤ −1.0 is economically impossible for a
+long position), and a warning diagnostic flags `|shock| > 0.35` plus any name whose P&L
+is dominated by its periphery shock rather than the factor model.
+
+**Japan book currency handling.** Tokyo-listed (`.T`) weekly returns are converted to
+USD (`(1 + r_local)(1 + r_FX) − 1`, using the as-of-consistent USDJPY series) before
+beta estimation, so betas absorb FX exposure and active return vs the USD-quoted EWJ
+benchmark compares like with like. Remaining limitation: Tokyo and US weekly bars close
+at different times, so cross-market betas are attenuated by non-synchronous trading;
+nami does not apply a lead/lag correction.
+
+---
+
 ## LLM pipeline
 
 `app/llm/scenario.run_scenario` orchestrates two Gemini calls + one structured extraction.
@@ -162,7 +252,10 @@ would create hard-to-debug coverage gaps.
 ### Call 1 — Analog selection (`select_analogs`)
 - Input: scenario text + `event_summaries()` (JSON of all 17 events)
 - No grounding tool, structured-output schema `AnalogSelectionOutput`
-- Output: 2–5 event IDs the LLM thinks share the scenario's *mechanism*
+- Output: 2–5 event IDs the LLM thinks share the scenario's *mechanism*. The 2–5
+  cardinality is enforced post-hoc in `run_scenario` (it also covers the
+  pinned-decomposition path, which bypasses the LLM); out-of-range selections fail
+  with a 422.
 
 ### Call 2a — Grounded narrative (`_grounded_narrative`)
 - Input: scenario + envelope + factor universe + holdings
@@ -170,7 +263,10 @@ would create hard-to-debug coverage gaps.
 - Output: 3-5 sentence narrative citing recent market news
 
 ### Call 2b — Structured extraction (`_extract_structured_shocks`)
-- Input: the grounded narrative from 2a + envelope + factor universe + holdings
+- Input: the grounded narrative from 2a + envelope + **per-event factor returns with
+  window lengths** + factor universe + holdings. The prompt defines the shock contract
+  explicitly: a shock is the cumulative total move over the episode, not a weekly
+  return, and the reasoning field cannot authorize an out-of-band value.
 - NO tools, `response_schema=ShockProposalOutput`
 - Output: structured `FactorShock` + `PeripheryShock` list
 
@@ -188,15 +284,27 @@ retries on validation errors, so a schema fix doesn't trigger redundant web grou
 - Factor shocks for factors not in `FACTORS`
 - Periphery shocks for tickers not in the portfolio
 - Duplicates
+- Periphery shocks that are non-finite or outside the hard band `|shock| <= 0.75`
+  (an advisory diagnostic separately flags `|shock| > 0.35`)
 - Factor shocks outside `[p10, p90]` **when `count >= 3`**. Below that threshold the
   band collapses (count=1: a single point; count=2: a 2-point span) and rejection on
   floating-point divergence between the LLM's emitted value and the envelope is
-  unjustifiable, so the band check is skipped. The LLM is still shown the envelope in
-  the prompt and is separately instructed to "down-weight factors with `count < 3`" —
-  that prompt guidance remains the only constraint at low count.
+  unjustifiable, so the band check is skipped. The LLM is still shown the envelope and
+  the per-event rows in the prompt and is separately instructed to "down-weight factors
+  with `count < 3`" — that prompt guidance remains the only constraint at low count on
+  the proposal side.
 
 On validation failure, 2b is re-asked once with the errors embedded in the user message.
-A second failure raises.
+A second failure raises — every validator string is blocking, not advisory.
+
+### Iterative adjustment validation
+Shock *adjustments* (sliders or LLM patch) are validated by the stricter
+`app/llm/adjust_validation.validate_factor_overrides`: an override must be inside
+`[p10, p90]`, or exactly `0.0` (the removal sentinel — always accepted), and for
+low-evidence factors (`count < 3`, where the band is interpolation-shaped) the only
+valid moves are **keep the canonical shock or remove it** — no re-tuning without
+evidence. The UI disables those sliders; the server-side rule binds direct API calls
+and LLM patches identically.
 
 ---
 
@@ -317,16 +425,25 @@ audit the math or investigate correlation leakage.
 post-processing, not an LLM judgment and not a shock rewrite. Old cached or saved
 results deserialize with an empty list.
 
-V1 diagnostics flag review points when:
+Diagnostics flag review points when:
 
 - Highly positively correlated factors receive opposite-signed material explicit shocks.
 - Highly negatively correlated factors receive same-signed material explicit shocks.
 - An explicit shock materially conflicts with the selected analog envelope mean.
 - The full conditional diagnostic assigns material correlation credit to an unshocked factor.
+- A name's regression `r2 < 0.30` — the factor model explains little of its weekly
+  variance, so factor-implied P&L likely understates that name's scenario risk.
+- A name's modeled scenario return breaches **−100% of the position** — the linear
+  engine never clamps below −100%; linearity is the engine contract, so the breach is
+  flagged honestly instead of being hidden by a floor.
+- A periphery shock exceeds the ±35% advisory tier (the ±75% hard band is enforced by
+  the validator, not here).
+- A name's modeled P&L is dominated by its periphery shock rather than the factor
+  model (the factor attribution views do not explain that name's result).
 
-Each warning includes factor labels plus tickers, the relevant correlation or envelope
-statistic, and a short review message. The correct response is human review or a rerun
-with clearer stress text, not an automatic sign hack or post-hoc clamp.
+Each warning includes the relevant tickers/factors, the statistic that fired, and a
+short review message. The correct response is human review or a rerun with clearer
+stress text, not an automatic sign hack or post-hoc clamp.
 
 ---
 
@@ -372,14 +489,19 @@ news-drift variance the narrative-level sum previously carried.
   + PROMPT_VERSION                 # bumped for any prompt OR schema change
   + factor_universe_version()      # 12-char hash of FACTORS dict
   + events_version()               # 12-char hash of historical_events.yaml
+  + regression_spec                # estimator id|lookback|alpha|min_obs — engine-math lever
+  + position_quantities            # only when present (MTM share counts)
+  + pinned_event_ids               # only when present (fixed-context decomposition subsets)
   ```
 - TTL = 7 days (`LLM_CACHE_TTL_DAYS`) on cache reads.
 - Cache backend: `CloudStorageCache` (GCS, prefix `scenario_cache/`), JSON serialized via
   `ScenarioResult.model_dump(mode="json")`. Tests inject `InMemoryCache` instead.
 
-`PROMPT_VERSION` is the single invalidation lever: bumping it forces every cached scenario
-to be re-derived against the new prompts / schema. Same-day re-runs of an unchanged scenario
-hit cache in <500ms; the 7-day TTL forces eventual refresh against drifted news.
+`PROMPT_VERSION` is the invalidation lever for prompt/schema semantics; the
+`regression_spec` component is the lever for engine math — changing the estimator,
+`RIDGE_ALPHA`, or `BETA_LOOKBACK_WEEKS` produces new keys automatically, so stale P&L is
+never served after a regression change. Same-day re-runs of an unchanged scenario hit
+cache in <500ms; the 7-day TTL forces eventual refresh against drifted news.
 
 ---
 
@@ -392,7 +514,7 @@ By default nami works in **return space**: a portfolio is a set of weights and P
 
 Both surface the same **original → stressed** view: `stressed_value = value + NAV·by_ticker_total[t]`, `stressed_NAV = NAV·(1 + total_pnl)`, and per-name `Δ% = delta / value` (the position's scenario return).
 
-**Marking (share-quantity mode).** For each holding nami fetches the **raw** (un-split/dividend-adjusted) daily close on the as-of date — a dedicated fetch, distinct from the adjusted-close series used for return modelling, because valuing a share count needs the actual traded price. Each position is converted to USD:
+**Marking (share-quantity mode).** For each holding nami fetches the **last valid raw** (un-split/dividend-adjusted) daily close **on or before the as-of date** — rejected as stale if more than 7 calendar days older (`MAX_STALENESS_DAYS`) — a dedicated fetch, distinct from the adjusted-close series used for return modelling, because valuing a share count needs the actual traded price. Each position is converted to USD:
 
 ```
 position_value_usd[i] = shares[i] · raw_close[i] · pence_scale[i] · fx_to_usd[ccy(i)]
@@ -400,7 +522,7 @@ NAV                    = Σ position_value_usd[i]
 weight[i]              = position_value_usd[i] / NAV        (price-derived; drifts from any target)
 ```
 
-The quote currency is inferred from the Yahoo exchange suffix (e.g. `.T` → JPY; `.L` → GBP quoted in **pence**, so the price is divided by 100; no suffix → USD). FX uses explicit, direction-checked pairs (e.g. `USDJPY=X` inverted to USD-per-JPY) marked on the **same as-of date**, and the per-instrument close date and per-currency FX date are recorded.
+The quote currency is inferred from the Yahoo exchange suffix (e.g. `.T` → JPY; `.L` → GBP quoted in **pence**, so the price is divided by 100; no suffix → USD; an **unknown** suffix falls back to USD with a logged warning — currency inference is the one non-fail-closed input). FX uses explicit, direction-checked pairs (e.g. `USDJPY=X` inverted to USD-per-JPY) marked at the **last valid close on or before the as-of date** (same 7-day staleness rule), and the per-instrument close date and per-currency FX date are recorded independently.
 
 **Dollars are a linear overlay.** Because the factor engine is linear in weights, the entire dollar view is the return-space result scaled by NAV — no separate dollar P&L is computed or stored:
 
@@ -424,9 +546,11 @@ post-shock value[i] = position_value_usd[i] + by_ticker_total[i] · NAV
 
 See [`docs/backtest_results.md`](backtest_results.md) for the live-LLM evaluation snapshot
 and the semantic invariants enforced by `tests/test_live_evals.py`. The in-pipeline validator
-already guarantees factor shocks stay inside the empirical envelope; the live evals add
-mechanism-level smoke checks (pandemic → pandemic-tagged analog selected; banking crisis →
-XLF beats SPY to the downside; Taiwan scenario → semis appear in periphery).
+guarantees factor shocks stay inside the empirical envelope **for factors with envelope
+`count >= 3`** (below that the band is degenerate and unenforced) and hard-bands periphery
+shocks to ±0.75; the live evals add mechanism-level smoke checks (pandemic →
+pandemic-tagged analog selected; banking crisis → XLF beats SPY to the downside; Taiwan
+scenario → semis appear in periphery).
 
 ---
 

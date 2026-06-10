@@ -209,17 +209,19 @@ def fetch_event_returns(event: HistoricalEvent) -> pd.Series:
     return full
 
 
-def compute_envelope(
+def fetch_event_returns_matrix(
     event_ids: list[str],
     registry: dict[str, HistoricalEvent] | None = None,
 ) -> pd.DataFrame:
-    """Per-factor empirical distribution across the selected events.
+    """Events × factors matrix of total returns over each event's exact-day window.
 
-    Returns a DataFrame indexed by friendly factor name with columns:
-        mean, p10, p90, count
+    Index = event_id (input order preserved), columns = friendly factor names.
+    NaN where a factor's ETF did not exist in the window. Parallel fetch (≤8
+    workers), order-preserving via `executor.map`.
 
-    `count` < len(event_ids) when some factors are missing for some events (e.g.,
-    XLC pre-2018). Downstream (Phase 4 LLM prompt) should down-weight low-count factors.
+    Raises:
+        ValueError: empty or duplicate `event_ids`.
+        KeyError: unknown event ids.
     """
     if not event_ids:
         raise ValueError("event_ids must be non-empty")
@@ -246,8 +248,17 @@ def compute_envelope(
             rows = list(pool.map(fetch_event_returns, events_to_fetch))
     else:
         rows = [fetch_event_returns(events_to_fetch[0])]
-    returns_matrix = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
 
+
+def compute_envelope_from_matrix(returns_matrix: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate an events × factors return matrix into the per-factor envelope.
+
+    Returns a DataFrame indexed by friendly factor name with columns:
+        mean, p10, p90, count
+
+    Percentiles use pandas' default linear interpolation, NaN-skipping.
+    """
     return pd.DataFrame(
         {
             "mean": returns_matrix.mean(axis=0, skipna=True),
@@ -256,6 +267,24 @@ def compute_envelope(
             "count": returns_matrix.count(axis=0),
         }
     )
+
+
+def compute_envelope(
+    event_ids: list[str],
+    registry: dict[str, HistoricalEvent] | None = None,
+) -> pd.DataFrame:
+    """Per-factor empirical distribution across the selected events.
+
+    Returns a DataFrame indexed by friendly factor name with columns:
+        mean, p10, p90, count
+
+    `count` < len(event_ids) when some factors are missing for some events (e.g.,
+    XLC pre-2018). Downstream (Phase 4 LLM prompt) should down-weight low-count factors.
+    Callers that also need the per-event rows (e.g. the shock-extraction payload)
+    should call `fetch_event_returns_matrix` + `compute_envelope_from_matrix`
+    directly to avoid a duplicate fetch.
+    """
+    return compute_envelope_from_matrix(fetch_event_returns_matrix(event_ids, registry))
 
 
 def events_version(path: Path | None = None) -> str:

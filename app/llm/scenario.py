@@ -13,22 +13,31 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 
+import pandas as pd
+
 from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
+from app.data.fx import convert_weekly_returns_to_usd
 from app.data.market import compute_weekly_returns, fetch_weekly_prices
 from app.data.marking import MarkResult, mark_book
 from app.data.sample_portfolios import CASH_TICKER, Portfolio, get_portfolio, sample_benchmark
 from app.factors.analogs import (
-    compute_envelope,
+    HistoricalEvent,
+    compute_envelope_from_matrix,
     event_summaries,
     events_version,
+    fetch_event_returns_matrix,
     filter_events_as_of,
     load_events,
     summarize_events,
 )
 from app.factors.regression import (
+    MIN_REGRESSION_WEEKS,
+    REGRESSION_ESTIMATOR_ID,
+    TickerRegressionStats,
     estimate_betas_for_portfolio,
     fetch_factor_returns_with_history,
+    regression_spec,
 )
 from app.factors.shocks import portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
@@ -38,11 +47,14 @@ from app.llm.gemini_client import GeminiClient
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.risk_diagnostics import generate_risk_diagnostics
 from app.llm.schemas import (
+    AnalogEventReturns,
     AnalogSelection,
     FactorShock,
     PortfolioPnL,
+    RegressionQuality,
     ScenarioResult,
     ShockAdjustment,
+    TickerRegressionQuality,
 )
 from app.utils.calendar import latest_market_date, resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
@@ -52,6 +64,14 @@ logger = logging.getLogger(__name__)
 # Minimum number of historical analog events required for envelope computation.
 # Surfaces as a 422 error from the API layer rather than a raw Gemini failure.
 MIN_ELIGIBLE_ANALOG_EVENTS = 2
+
+# Enforced analog-selection cardinality (the prompt asks for "2 to 5"; this is the
+# enforcement of record — it also covers the pinned-decomposition path, which
+# bypasses the LLM entirely). Below 2 the envelope is a single point; above 5 the
+# analog set stops being a mechanism match. Out-of-range selections raise
+# ValueError → HTTP 422.
+MIN_SELECTED_ANALOGS = 2
+MAX_SELECTED_ANALOGS = 5
 
 ProgressCallback = Callable[[str, str], None]
 """Optional progress hook for `run_scenario`. Called as `progress(stage, status)`
@@ -101,6 +121,9 @@ def compute_scenario_cache_key(
         prompt_version=PROMPT_VERSION,
         factor_universe_version=factor_universe_version(),
         events_version=events_version(),
+        regression_spec=regression_spec(
+            lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
+        ),
         position_quantities=position_quantities,
     )
 
@@ -175,15 +198,16 @@ def _estimate_betas_cash_aware(
     config: Config,
     factor_returns,
     ticker_returns,
-):
-    """Betas for the book, injecting a zero-beta row for a CASH sleeve.
+) -> tuple[pd.DataFrame, dict[str, TickerRegressionStats]]:
+    """(Betas, fit stats) for the book, injecting a zero-beta row for a CASH sleeve.
 
     CASH is never sent to yfinance. The beta estimator runs on a cash-free
     (re-normalized — betas are weight-independent) portfolio so its sum-to-1 +
     ticker-membership invariants hold; the CASH row is then injected as all-zeros
     so `portfolio_pnl` carries CASH at exactly 0 factor contribution while its
-    weight still dilutes the rest. Non-cash books take the unchanged path (and the
-    same `estimate_betas_for_portfolio` call the test mocks patch).
+    weight still dilutes the rest. The stats dict deliberately carries NO entry
+    for CASH — no regression ran for it. Non-cash books take the unchanged path
+    (and the same `estimate_betas_for_portfolio` call the test mocks patch).
     """
     if CASH_TICKER not in portfolio.holdings:
         return estimate_betas_for_portfolio(
@@ -200,7 +224,7 @@ def _estimate_betas_cash_aware(
         description=portfolio.description,
         holdings={t: w / total for t, w in market.items()},
     )
-    betas = estimate_betas_for_portfolio(
+    betas, stats = estimate_betas_for_portfolio(
         beta_portfolio,
         lookback_weeks=config.beta_lookback_weeks,
         alpha=config.ridge_alpha,
@@ -208,7 +232,51 @@ def _estimate_betas_cash_aware(
         ticker_returns=ticker_returns,
     )
     betas.loc[CASH_TICKER] = 0.0
-    return betas
+    return betas, stats
+
+
+def _per_event_records(
+    returns_matrix: pd.DataFrame,
+    events: dict[str, HistoricalEvent],
+) -> list[dict[str, object]]:
+    """JSON-safe per-analog factor returns + window length (selection order).
+
+    The same payload feeds the shock-extraction prompt's PER-EVENT section and
+    `ScenarioResult.analog_event_returns`. Values are 4-dp decimal total returns
+    over the event's exact-day window; None where the factor's ETF predates it.
+    """
+    records: list[dict[str, object]] = []
+    for event_id, row in returns_matrix.iterrows():
+        event = events[str(event_id)]
+        records.append(
+            {
+                "event_id": str(event_id),
+                "window_calendar_days": (event.end_date - event.start_date).days,
+                "factor_returns": {
+                    str(f): (round(float(v), 4) if pd.notna(v) else None) for f, v in row.items()
+                },
+            }
+        )
+    return records
+
+
+def _regression_quality_block(
+    stats: dict[str, TickerRegressionStats],
+    config: Config,
+) -> RegressionQuality:
+    """Map the estimator's fit stats into the cached `ScenarioResult` block."""
+    return RegressionQuality(
+        estimator=REGRESSION_ESTIMATOR_ID,
+        lookback_weeks=config.beta_lookback_weeks,
+        alpha=config.ridge_alpha,
+        min_obs=MIN_REGRESSION_WEEKS,
+        by_ticker={
+            ticker: TickerRegressionQuality(
+                r2=s.r2, n_obs=s.n_obs, idio_vol_weekly=s.idio_vol_weekly
+            )
+            for ticker, s in stats.items()
+        },
+    )
 
 
 def _resolve_benchmark(
@@ -263,7 +331,7 @@ def _benchmark_overlay(
             description="Benchmark",
             holdings={benchmark_ticker: 1.0},
         )
-        bench_betas = estimate_betas_for_portfolio(
+        bench_betas, _ = estimate_betas_for_portfolio(
             bench_portfolio,
             lookback_weeks=config.beta_lookback_weeks,
             alpha=config.ridge_alpha,
@@ -377,6 +445,9 @@ def run_scenario(
         prompt_version=PROMPT_VERSION,
         factor_universe_version=factor_universe_version(),
         events_version=events_version(),
+        regression_spec=regression_spec(
+            lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
+        ),
         position_quantities=position_quantities,
         pinned_event_ids=pinned_event_ids,
     )
@@ -511,10 +582,22 @@ def run_scenario(
                 f"{'backdated ' if is_backdated else ''}registry: {unknown_ids}. "
                 "Please re-run the scenario."
             )
+        # Cardinality enforcement of record — the "2 to 5" in the selection prompt
+        # is guidance only, and the pinned path bypasses the LLM entirely.
+        # Duplicate ids within bounds are caught by fetch_event_returns_matrix.
+        unique_ids = set(selected_ids)
+        if not (MIN_SELECTED_ANALOGS <= len(unique_ids) <= MAX_SELECTED_ANALOGS):
+            raise ValueError(
+                f"Analog selection must contain {MIN_SELECTED_ANALOGS} to "
+                f"{MAX_SELECTED_ANALOGS} unique events; got {len(unique_ids)}. "
+                "Please re-run the scenario."
+            )
         progress("analogs", "done")
 
         progress("envelope", "start")
-        envelope = compute_envelope(selected_ids, registry=events)
+        returns_matrix = fetch_event_returns_matrix(selected_ids, registry=events)
+        envelope = compute_envelope_from_matrix(returns_matrix)
+        per_event_returns = _per_event_records(returns_matrix, events)
         progress("envelope", "done")
 
         progress("narrative", "start")
@@ -541,6 +624,7 @@ def run_scenario(
                 analog_grounded=True,
                 as_of_date=effective_as_of,
                 selected_analog_events=selected_analog_events,
+                per_event_returns=per_event_returns,
             )
         else:
             shock_out, citations = gemini.propose_shocks_with_retry(
@@ -549,6 +633,7 @@ def run_scenario(
                 factor_universe_descriptions=factor_universe_desc,
                 envelope=envelope,
                 events_registry=events,
+                per_event_returns=per_event_returns,
             )
         progress("narrative", "done")
 
@@ -556,10 +641,15 @@ def run_scenario(
         factor_returns, factor_history = factors_future.result()
         progress("market", "done")
 
-    ticker_returns = compute_weekly_returns(ticker_prices)
+    # Non-USD listings (e.g. `.T`) are converted to USD returns BEFORE beta
+    # estimation so betas absorb FX exposure and active return vs a USD
+    # benchmark is currency-consistent. All-USD books pass through untouched.
+    ticker_returns = convert_weekly_returns_to_usd(
+        compute_weekly_returns(ticker_prices), end=yf_end
+    )
 
     progress("betas", "start")
-    betas = _estimate_betas_cash_aware(
+    betas, regression_stats = _estimate_betas_cash_aware(
         portfolio_obj,
         config=config,
         factor_returns=factor_returns,
@@ -590,11 +680,15 @@ def run_scenario(
     }
 
     portfolio_pnl_model = PortfolioPnL(**pnl)
+    regression_quality = _regression_quality_block(regression_stats, config)
     risk_diagnostics = generate_risk_diagnostics(
         factor_shocks=shock_out.factor_shocks,
         envelope=envelope,
         factor_returns_history=factor_history,
         portfolio_pnl=portfolio_pnl_model,
+        portfolio_holdings=portfolio_obj.holdings,
+        periphery_shocks=shock_out.periphery_shocks,
+        regression_quality=regression_quality,
     )
 
     result = ScenarioResult(
@@ -611,6 +705,8 @@ def run_scenario(
         factor_envelope=factor_envelope,
         portfolio_pnl=portfolio_pnl_model,
         risk_diagnostics=risk_diagnostics,
+        regression_quality=regression_quality,
+        analog_event_returns=[AnalogEventReturns.model_validate(rec) for rec in per_event_returns],
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,
@@ -797,9 +893,12 @@ def adjust_scenario_shocks(
             )
         ticker_prices = portfolio_future.result()
         factor_returns, factor_history = factors_future.result()
-    ticker_returns = compute_weekly_returns(ticker_prices)
+    # Same USD conversion as run_scenario, vintage-correct to the canonical as-of.
+    ticker_returns = convert_weekly_returns_to_usd(
+        compute_weekly_returns(ticker_prices), end=yf_end
+    )
 
-    betas = _estimate_betas_cash_aware(
+    betas, regression_stats = _estimate_betas_cash_aware(
         portfolio_obj,
         config=config,
         factor_returns=factor_returns,
@@ -840,11 +939,15 @@ def adjust_scenario_shocks(
     )
 
     portfolio_pnl_model = PortfolioPnL(**pnl)
+    regression_quality = _regression_quality_block(regression_stats, config)
     risk_diagnostics = generate_risk_diagnostics(
         factor_shocks=new_factor_shocks,
         envelope=_envelope_df_from_canonical(canonical),
         factor_returns_history=factor_history,
         portfolio_pnl=portfolio_pnl_model,
+        portfolio_holdings=canonical.portfolio_holdings,
+        periphery_shocks=canonical.periphery_shocks,
+        regression_quality=regression_quality,
     )
 
     adjusted = canonical.model_copy(
@@ -852,6 +955,8 @@ def adjust_scenario_shocks(
             "factor_shocks": new_factor_shocks,
             "portfolio_pnl": portfolio_pnl_model,
             "risk_diagnostics": risk_diagnostics,
+            # Freshly recomputed alongside the betas (free — rides the same tuple).
+            "regression_quality": regression_quality,
             "adjustment_history": [*canonical.adjustment_history, new_entry],
         }
     )
@@ -876,8 +981,6 @@ def _envelope_df_from_canonical(canonical: ScenarioResult):
     Used by `propose_shock_edit` which expects the same DataFrame shape that
     `compute_envelope` returns.
     """
-    import pandas as pd
-
     if not canonical.factor_envelope:
         return pd.DataFrame(columns=["mean", "p10", "p90", "count"])
     return pd.DataFrame.from_dict(canonical.factor_envelope, orient="index")

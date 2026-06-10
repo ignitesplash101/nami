@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ import pytest
 from app.config import Config
 from app.data.marking import MarkingError, MarkResult
 from app.data.sample_portfolios import Portfolio, get_portfolio
+from app.factors.regression import TickerRegressionStats
 from app.factors.universe import FACTORS
 from app.llm.gemini_client import GeminiClient
 from app.llm.scenario import run_scenario
@@ -60,6 +61,7 @@ class _MockGeminiClient:
         analog_grounded: bool = False,
         as_of_date=None,
         selected_analog_events=None,
+        per_event_returns=None,
     ):
         # Capture the analog_grounded flag so backdating tests can assert that
         # run_scenario routed through the no-Search path. `last_analog_grounded`
@@ -124,10 +126,16 @@ def _patch_market_layer(monkeypatch):
     def _fake_estimate_betas(portfolio, lookback_weeks=156, alpha=0.1, end=None, **_kwargs):
         # Beta of 1.0 to first factor, 0 elsewhere. `factor_returns` /
         # `ticker_returns` may be passed pre-fetched in the parallel-fetch path;
-        # the mock ignores them since the betas are hardcoded.
+        # the mock ignores them since the betas are hardcoded. Returns the
+        # (betas, stats) tuple matching the real estimator's contract.
         data = np.zeros((len(portfolio.tickers), len(factor_names)))
         data[:, 0] = 1.0
-        return pd.DataFrame(data, index=portfolio.tickers, columns=factor_names)
+        betas = pd.DataFrame(data, index=portfolio.tickers, columns=factor_names)
+        stats = {
+            t: TickerRegressionStats(r2=0.9, n_obs=104, idio_vol_weekly=0.01)
+            for t in portfolio.tickers
+        }
+        return betas, stats
 
     # Capture `end=` arg so backdating tests can assert the vintage threading.
     captured: dict[str, object] = {}
@@ -152,6 +160,15 @@ def _patch_market_layer(monkeypatch):
         captured["warm_cache_called"] = True
         return _fake_factor_returns_with_history(lookback_weeks=lookback_weeks)
 
+    def _fake_convert_to_usd(returns, *, end=None, cache="default"):
+        # Identity stand-in for app.data.fx.convert_weekly_returns_to_usd so
+        # orchestrator tests stay network-free even for non-USD books; captures
+        # the vintage end= so wiring tests can assert it.
+        captured["fx_convert_called"] = True
+        captured["fx_convert_end"] = end
+        return returns
+
+    monkeypatch.setattr("app.llm.scenario.convert_weekly_returns_to_usd", _fake_convert_to_usd)
     monkeypatch.setattr("app.factors.analogs.fetch_event_returns", _fake_fetch_event_returns)
     monkeypatch.setattr("app.llm.scenario.estimate_betas_for_portfolio", _fake_estimate_betas)
     monkeypatch.setattr("app.llm.scenario.fetch_weekly_prices", _fake_fetch_weekly_prices)
@@ -394,6 +411,161 @@ def test_cash_sleeve_contributes_zero_and_dilutes(monkeypatch):
     )
     # The cash book's |total| should be ~0.9× the fully-invested book's |total|.
     assert abs(result.portfolio_pnl.total_pnl) < abs(result_full.portfolio_pnl.total_pnl)
+
+
+def test_run_scenario_rejects_out_of_range_analog_selection(monkeypatch):
+    """The '2 to 5' cardinality lives in code, not just the selection prompt."""
+    _patch_market_layer(monkeypatch)
+
+    class _OneAnalogClient(_MockGeminiClient):
+        def select_analogs(self, scenario_text, event_summaries):
+            self.analog_calls += 1
+            return AnalogSelectionOutput(
+                selected_events=[
+                    AnalogSelection(event_id="covid-crash-2020", why_relevant="only one")
+                ],
+                reasoning="one only",
+            )
+
+    with pytest.raises(ValueError, match="2 to 5"):
+        run_scenario(
+            scenario_text="risk-off",
+            portfolio_key="us_tech_growth",
+            config=_config(),
+            gemini=_OneAnalogClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+        )
+
+    class _SixAnalogClient(_MockGeminiClient):
+        def select_analogs(self, scenario_text, event_summaries):
+            self.analog_calls += 1
+            ids = [
+                "covid-crash-2020",
+                "lehman-gfc-2008",
+                "brexit-2016",
+                "svb-banking-2023",
+                "china-deval-2015",
+                "taper-tantrum-2013",
+            ]
+            return AnalogSelectionOutput(
+                selected_events=[AnalogSelection(event_id=i, why_relevant="breadth") for i in ids],
+                reasoning="six",
+            )
+
+    with pytest.raises(ValueError, match="2 to 5"):
+        run_scenario(
+            scenario_text="risk-off",
+            portfolio_key="us_tech_growth",
+            config=_config(),
+            gemini=_SixAnalogClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+        )
+
+
+def test_run_scenario_rejects_out_of_range_pinned_ids(monkeypatch):
+    """The cardinality guard also covers the pinned-decomposition path, which
+    bypasses the LLM selector entirely."""
+    _patch_market_layer(monkeypatch)
+    with pytest.raises(ValueError, match="2 to 5"):
+        run_scenario(
+            scenario_text="risk-off",
+            portfolio_key="us_tech_growth",
+            config=_config(),
+            gemini=_MockGeminiClient(),
+            cache=InMemoryCache(),
+            market_date=date(2026, 5, 25),
+            pinned_event_ids=["covid-crash-2020"],
+        )
+
+
+def test_run_scenario_attaches_analog_event_returns(monkeypatch):
+    """Per-analog returns + window lengths ride the result and the cache."""
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+
+    result = run_scenario(
+        scenario_text="risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    assert result.analog_event_returns is not None
+    assert [r.event_id for r in result.analog_event_returns] == [
+        "covid-crash-2020",
+        "lehman-gfc-2008",
+    ]
+    covid = result.analog_event_returns[0]
+    assert covid.window_calendar_days == 33  # 2020-02-19 -> 2020-03-23
+    assert set(covid.factor_returns) == set(FACTORS.keys())
+    assert covid.factor_returns["SPY"] == pytest.approx(-0.05)
+
+    hit = run_scenario(
+        scenario_text="risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    assert hit.analog_event_returns is not None
+    assert len(hit.analog_event_returns) == 2
+
+
+def test_run_scenario_routes_ticker_returns_through_usd_conversion(monkeypatch):
+    """The beta-estimation return history passes through the USD converter with
+    the vintage-correct exclusive-end bound (backdated run here)."""
+    captured = _patch_market_layer(monkeypatch)
+    result = run_scenario(
+        scenario_text="risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=InMemoryCache(),
+        market_date=date(2026, 5, 25),
+    )
+    assert captured["fx_convert_called"] is True
+    assert captured["fx_convert_end"] == result.market_date + timedelta(days=1)
+
+
+def test_run_scenario_attaches_and_caches_regression_quality(monkeypatch):
+    """The fit-quality block is set on fresh runs, excludes CASH, and — unlike the
+    NAV/benchmark overlays — round-trips the scenario cache."""
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    book = Portfolio(
+        name="Cash test",
+        description="60/30/10 with cash",
+        holdings={"AAPL": 0.6, "MSFT": 0.3, "CASH": 0.1},
+    )
+
+    result = run_scenario(
+        scenario_text="risk-off",
+        portfolio=book,
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    assert result.regression_quality is not None
+    assert result.regression_quality.estimator == "ridge-std-v2"
+    # No regression runs for the CASH sentinel — no stats entry for it.
+    assert set(result.regression_quality.by_ticker) == {"AAPL", "MSFT"}
+    assert result.regression_quality.by_ticker["AAPL"].r2 == 0.9
+
+    hit = run_scenario(
+        scenario_text="risk-off",
+        portfolio=book,
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    assert hit.regression_quality is not None
+    assert set(hit.regression_quality.by_ticker) == {"AAPL", "MSFT"}
 
 
 def _fake_mark_book(nav: float = 1_000_000.0):

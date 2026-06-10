@@ -18,6 +18,7 @@ def _base_kwargs(**overrides):
         "prompt_version": "v1",
         "factor_universe_version": "abcdef012345",
         "events_version": "0123456789ab",
+        "regression_spec": "ridge-std-v2|lookback=156|alpha=0.1|min_obs=40",
     }
     base.update(overrides)
     return base
@@ -47,6 +48,25 @@ def test_scenario_cache_key_sensitive_to_model_and_prompt_version():
     assert k_default != k_prompt_bump
     assert k_default != k_universe_bump
     assert k_default != k_events_bump
+
+
+def test_scenario_cache_key_sensitive_to_regression_spec():
+    # The regression spec is the engine-math invalidation lever: a different
+    # estimator id, alpha, or lookback must never serve a stale cached result.
+    base = _base_kwargs()
+    k_default = scenario_cache_key(**base)
+    k_alpha = scenario_cache_key(
+        **{**base, "regression_spec": "ridge-std-v2|lookback=156|alpha=0.5|min_obs=40"}
+    )
+    k_lookback = scenario_cache_key(
+        **{**base, "regression_spec": "ridge-std-v2|lookback=104|alpha=0.1|min_obs=40"}
+    )
+    k_estimator = scenario_cache_key(
+        **{**base, "regression_spec": "ridge-raw-v1|lookback=156|alpha=0.1|min_obs=40"}
+    )
+    assert k_default != k_alpha
+    assert k_default != k_lookback
+    assert k_default != k_estimator
 
 
 def test_scenario_cache_key_order_independent_on_holdings():

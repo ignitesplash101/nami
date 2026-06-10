@@ -132,6 +132,38 @@ def test_validate_still_enforces_band_at_count_3():
     assert not any("justify going outside" in e for e in errs)
 
 
+@pytest.mark.parametrize("shock", [0.75, -0.75, 0.10])
+def test_validate_accepts_periphery_within_hard_band(shock):
+    out = ShockProposalOutput(
+        factor_shocks=[],
+        periphery_shocks=[PeripheryShock(ticker="AAPL", shock=shock, reasoning="x")],
+        narrative="ok",
+    )
+    assert validate_shock_proposal(out, envelope=_envelope(), portfolio=_portfolio()) == []
+
+
+@pytest.mark.parametrize("shock", [0.76, -0.9, -1.0])
+def test_validate_rejects_periphery_beyond_hard_band(shock):
+    out = ShockProposalOutput(
+        factor_shocks=[],
+        periphery_shocks=[PeripheryShock(ticker="AAPL", shock=shock, reasoning="x")],
+        narrative="ok",
+    )
+    errs = validate_shock_proposal(out, envelope=_envelope(), portfolio=_portfolio())
+    assert any("|shock| must be <= 0.75" in e for e in errs)
+
+
+@pytest.mark.parametrize("shock", [float("nan"), float("inf"), float("-inf")])
+def test_validate_rejects_non_finite_periphery(shock):
+    out = ShockProposalOutput(
+        factor_shocks=[],
+        periphery_shocks=[PeripheryShock(ticker="AAPL", shock=shock, reasoning="x")],
+        narrative="ok",
+    )
+    errs = validate_shock_proposal(out, envelope=_envelope(), portfolio=_portfolio())
+    assert any("not finite" in e for e in errs)
+
+
 def test_validate_flags_duplicates():
     out = ShockProposalOutput(
         factor_shocks=[

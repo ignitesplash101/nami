@@ -15,7 +15,9 @@ requested valuation must never silently fall back to a percentage-only view.
 
 Currency for v1 is inferred from the Yahoo exchange suffix (sufficient for the
 sample universe); the reporting currency is USD. `fast_info.currency` and a
-user-selectable base currency are documented follow-ups.
+user-selectable base currency are documented follow-ups. Caveat: currency
+*inference* is suffix-based and falls back to USD with a warning for unknown
+suffixes — prices and FX fail closed, the currency guess does not.
 """
 
 from __future__ import annotations
@@ -106,8 +108,24 @@ def currency_for_ticker(ticker: str) -> str:
     return "USD"
 
 
-def _major_currency(unit: str) -> str:
+def major_currency(unit: str) -> str:
+    """Major currency for a quote unit (e.g. 'GBp' -> 'GBP'; identity otherwise)."""
     return _MINOR_UNIT[unit][0] if unit in _MINOR_UNIT else unit
+
+
+def fx_pair_for_currency(major: str) -> tuple[str, bool]:
+    """Yahoo FX symbol + invert flag for a major currency.
+
+    `invert=True` means the symbol quotes units-per-USD (e.g. `USDJPY=X` gives
+    JPY per USD) and the price series must be inverted to get USD-per-unit.
+    Raises MarkingError for unsupported majors so callers fail closed rather
+    than guessing a pair. Shared by the MTM marking path and the weekly-return
+    USD conversion in `app/data/fx.py`.
+    """
+    pair = _FX_PAIR.get(major)
+    if pair is None:
+        raise MarkingError(f"No FX pair configured for currency: {major}.")
+    return pair
 
 
 def fetch_marks(
@@ -249,6 +267,6 @@ def mark_book(
     marks = fetch_marks(market, as_of=as_of, cache=cache)
     if CASH_TICKER in quantities:
         marks[CASH_TICKER] = (1.0, as_of)
-    majors = {_major_currency(currency_for_ticker(t)) for t in market}
+    majors = {major_currency(currency_for_ticker(t)) for t in market}
     fx = fetch_fx_to_usd(majors, as_of=as_of, cache=cache)
     return mark_positions(quantities, marks, fx, reporting_currency=reporting_currency)

@@ -114,6 +114,7 @@ class GeminiClient:
         analog_grounded: bool = False,
         as_of_date: date | None = None,
         selected_analog_events: list[dict] | None = None,
+        per_event_returns: list[dict] | None = None,
     ) -> tuple[ShockProposalOutput, list[Citation]]:
         del events_registry  # currently unused; reserved for future cross-checks
 
@@ -153,6 +154,7 @@ class GeminiClient:
                 factor_universe_descriptions=factor_universe_descriptions,
                 portfolio=portfolio,
                 prior_errors=prior_errors if attempt > 0 else None,
+                per_event_returns=per_event_returns,
             )
             shock_output = shock_output.model_copy(update={"narrative": narrative})
 
@@ -261,6 +263,7 @@ class GeminiClient:
         factor_universe_descriptions: list[dict],
         portfolio: Portfolio,
         prior_errors: list[str] | None = None,
+        per_event_returns: list[dict] | None = None,
     ) -> ShockProposalOutput:
         """Call 2b: schema-bound shock extraction from the grounded narrative, no tools."""
         user_msg = format_shock_extraction_user_message(
@@ -269,6 +272,7 @@ class GeminiClient:
             factor_universe_descriptions=factor_universe_descriptions,
             portfolio_holdings=portfolio.holdings,
             prior_errors=prior_errors,
+            per_event_returns=per_event_returns,
         )
         response = self._generate_content(
             contents=user_msg,

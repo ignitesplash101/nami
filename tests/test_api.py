@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.api.main import api
 from app.data.firestore_store import InMemoryFirestoreStore
 from app.data.sample_portfolios import get_portfolio
+from app.factors.regression import InsufficientHistoryError
 from app.llm.schemas import (
     AnalogSelection,
     Citation,
@@ -98,6 +99,39 @@ def test_visitor_can_run_custom_text_on_sample_portfolio(client, monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["result"]["scenario_text"] == "Custom visitor stress"
+
+
+def test_run_maps_insufficient_history_to_422(client, monkeypatch):
+    """InsufficientHistoryError subclasses RuntimeError, which /run does not
+    catch — without the explicit clause it would surface as a 500."""
+
+    def _raise(*args, **kwargs):
+        raise InsufficientHistoryError(
+            "Insufficient weekly history for beta estimation: NEWIPO (n=12); "
+            "minimum 40 non-NaN weeks overlapping the factor matrix required"
+        )
+
+    monkeypatch.setattr("app.api.main.run_scenario", _raise)
+    response = client.post(
+        "/api/scenarios/run",
+        json={"scenario_text": "Custom visitor stress", "portfolio_key": "us_tech_growth"},
+    )
+    assert response.status_code == 422
+    assert "NEWIPO" in response.json()["detail"]
+
+
+def test_run_reproducibility_carries_regression_spec(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.api.main.run_scenario", lambda text, portfolio, **kwargs: _fake_result(text)
+    )
+    response = client.post(
+        "/api/scenarios/run",
+        json={"scenario_text": "Custom visitor stress", "portfolio_key": "us_tech_growth"},
+    )
+    assert response.status_code == 200
+    spec = response.json()["reproducibility"]["regression_spec"]
+    assert spec.startswith("ridge-std-v2|lookback=")
+    assert "alpha=" in spec and "min_obs=" in spec
 
 
 def test_visitor_rejects_admin_only_run_inputs(client):

@@ -20,7 +20,8 @@ class Factor:
     group: str  # "market" | "sector" | "style" | "macro"
     short_label: str  # compact display label for charts/tables
     display_name: str  # human-readable factor name for the UI/docs
-    description: str  # what this factor is + units of its weekly return
+    description: str  # what this factor is + the unit convention for its returns/shocks
+    # (horizon-neutral: shocks are episode total moves, betas use weekly returns)
 
 
 FACTORS: dict[str, Factor] = {
@@ -31,7 +32,7 @@ FACTORS: dict[str, Factor] = {
         "market",
         "US large-cap",
         "US large-cap equities",
-        "S&P 500 ETF; weekly % return.",
+        "S&P 500 ETF; decimal price return (-0.05 = -5%).",
     ),
     "ACWI": Factor(
         "ACWI",
@@ -39,7 +40,7 @@ FACTORS: dict[str, Factor] = {
         "market",
         "Global equities",
         "Global equities",
-        "MSCI All Country World ETF; weekly % return.",
+        "MSCI All Country World ETF; decimal price return.",
     ),
     # Sectors
     "XLK": Factor(
@@ -48,7 +49,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US technology",
         "US technology",
-        "US Technology sector ETF; weekly % return.",
+        "US Technology sector ETF; decimal price return.",
     ),
     "XLF": Factor(
         "XLF",
@@ -56,10 +57,15 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US financials",
         "US financials",
-        "US Financials sector ETF; weekly % return.",
+        "US Financials sector ETF; decimal price return.",
     ),
     "XLE": Factor(
-        "XLE", "XLE", "sector", "US energy", "US energy", "US Energy sector ETF; weekly % return."
+        "XLE",
+        "XLE",
+        "sector",
+        "US energy",
+        "US energy",
+        "US Energy sector ETF; decimal price return.",
     ),
     "XLV": Factor(
         "XLV",
@@ -67,7 +73,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US health care",
         "US health care",
-        "US Health Care sector ETF; weekly % return.",
+        "US Health Care sector ETF; decimal price return.",
     ),
     "XLI": Factor(
         "XLI",
@@ -75,7 +81,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US industrials",
         "US industrials",
-        "US Industrials sector ETF; weekly % return.",
+        "US Industrials sector ETF; decimal price return.",
     ),
     "XLY": Factor(
         "XLY",
@@ -83,7 +89,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US discretionary",
         "US consumer discretionary",
-        "US Consumer Discretionary sector ETF; weekly % return.",
+        "US Consumer Discretionary sector ETF; decimal price return.",
     ),
     "XLP": Factor(
         "XLP",
@@ -91,7 +97,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US staples",
         "US consumer staples",
-        "US Consumer Staples sector ETF; weekly % return.",
+        "US Consumer Staples sector ETF; decimal price return.",
     ),
     "XLU": Factor(
         "XLU",
@@ -99,7 +105,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US utilities",
         "US utilities",
-        "US Utilities sector ETF; weekly % return.",
+        "US Utilities sector ETF; decimal price return.",
     ),
     "XLB": Factor(
         "XLB",
@@ -107,7 +113,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US materials",
         "US materials",
-        "US Materials sector ETF; weekly % return.",
+        "US Materials sector ETF; decimal price return.",
     ),
     "XLRE": Factor(
         "XLRE",
@@ -115,7 +121,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US real estate",
         "US real estate",
-        "US Real Estate sector ETF; weekly % return.",
+        "US Real Estate sector ETF; decimal price return.",
     ),
     "XLC": Factor(
         "XLC",
@@ -123,7 +129,7 @@ FACTORS: dict[str, Factor] = {
         "sector",
         "US comm services",
         "US communication services",
-        "US Communication Services sector ETF; weekly % return.",
+        "US Communication Services sector ETF; decimal price return.",
     ),
     # Styles
     "MTUM": Factor(
@@ -132,7 +138,7 @@ FACTORS: dict[str, Factor] = {
         "style",
         "Momentum",
         "Momentum stocks",
-        "MSCI USA Momentum factor ETF; weekly % return.",
+        "MSCI USA Momentum factor ETF; decimal price return.",
     ),
     "QUAL": Factor(
         "QUAL",
@@ -140,7 +146,7 @@ FACTORS: dict[str, Factor] = {
         "style",
         "Quality",
         "Quality stocks",
-        "MSCI USA Quality factor ETF; weekly % return.",
+        "MSCI USA Quality factor ETF; decimal price return.",
     ),
     "VLUE": Factor(
         "VLUE",
@@ -148,7 +154,7 @@ FACTORS: dict[str, Factor] = {
         "style",
         "Value",
         "Value stocks",
-        "MSCI USA Value factor ETF; weekly % return.",
+        "MSCI USA Value factor ETF; decimal price return.",
     ),
     "SIZE": Factor(
         "SIZE",
@@ -156,7 +162,7 @@ FACTORS: dict[str, Factor] = {
         "style",
         "Small-cap tilt",
         "Small-cap tilt",
-        "MSCI USA Size (small-cap) factor ETF; weekly % return.",
+        "MSCI USA Size (small-cap) factor ETF; decimal price return.",
     ),
     "USMV": Factor(
         "USMV",
@@ -164,7 +170,7 @@ FACTORS: dict[str, Factor] = {
         "style",
         "Low volatility",
         "Low-volatility stocks",
-        "MSCI USA Minimum Volatility factor ETF; weekly % return.",
+        "MSCI USA Minimum Volatility factor ETF; decimal price return.",
     ),
     # Macro
     "TNX": Factor(
@@ -173,8 +179,8 @@ FACTORS: dict[str, Factor] = {
         "macro",
         "US 10Y yield",
         "US 10Y yield",
-        "CBOE 10-Year Treasury Note Yield Index; weekly % change in the yield index level "
-        "(e.g., +0.05 ~= +20 bps in 10Y yield from 4.00% to 4.20%).",
+        "CBOE 10-Year Treasury Note Yield Index; decimal change in the yield index level "
+        "(e.g., +0.05 moves the 10Y yield from 4.00% to about 4.20%).",
     ),
     "DXY": Factor(
         "DXY",
@@ -182,7 +188,8 @@ FACTORS: dict[str, Factor] = {
         "macro",
         "US dollar",
         "US dollar",
-        "ICE US Dollar Index; weekly % change in dollar strength against a basket of major currencies.",
+        "ICE US Dollar Index; decimal change in the index level (dollar strength "
+        "against a basket of major currencies).",
     ),
     "VIX": Factor(
         "VIX",
@@ -190,8 +197,9 @@ FACTORS: dict[str, Factor] = {
         "macro",
         "Equity volatility",
         "Equity volatility",
-        "CBOE Volatility Index (S&P 500 implied vol); weekly % change in the VIX level "
-        "(e.g., 15 -> 22.5 == +0.50).",
+        "CBOE Volatility Index (S&P 500 implied vol); decimal change in the VIX level "
+        "(e.g., 15 -> 22.5 == +0.50). Level-dependent: the same decimal move means "
+        "different vol points at different starting levels.",
     ),
     "OIL": Factor(
         "OIL",
@@ -199,7 +207,7 @@ FACTORS: dict[str, Factor] = {
         "macro",
         "Oil price",
         "Oil price",
-        "WTI Crude Oil front-month futures; weekly % change in the futures price.",
+        "WTI Crude Oil front-month futures; decimal change in the futures price.",
     ),
 }
 
@@ -246,7 +254,9 @@ def factor_universe_version() -> str:
     """Short hash of the factor universe shape used in scenario cache keys.
 
     Display label edits intentionally do not change this hash; they do not change
-    model inputs, regression columns, or market-data tickers.
+    model inputs, regression columns, or market-data tickers. Description edits do
+    not change it either, but they DO change the LLM prompt payloads — a
+    description change therefore requires a PROMPT_VERSION bump instead.
     """
     payload = json.dumps(
         [(name, f.ticker, f.group) for name, f in sorted(FACTORS.items())],

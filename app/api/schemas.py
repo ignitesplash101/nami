@@ -177,6 +177,9 @@ class ScenarioReproducibility(BaseModel):
     narrative_mode: Literal["grounded", "analog_only"]
     beta_lookback_weeks: int
     ridge_alpha: float
+    # Full estimator identity (id|lookback|alpha|min_obs) — the engine-math
+    # cache-key component. None on records saved before Phase 18.
+    regression_spec: str | None = None
     selected_event_ids: list[str]
     portfolio_holdings: dict[str, float]
     portfolio_key: str

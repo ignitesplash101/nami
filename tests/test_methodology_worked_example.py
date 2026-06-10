@@ -1,8 +1,10 @@
-"""Math-invariant regression guard for the worked example in `docs/methodology.md`.
+"""Synthetic math-invariant guard for the four attribution variants.
 
-Specific Conditional Shapley magnitudes (e.g. SPY=-0.441%, XLK=-1.653%) can drift
-across `shap` library versions and are NOT asserted here. What IS asserted are the
-math invariants that must hold by construction in nami's codebase:
+(`docs/methodology.md`'s attribution section keeps only a qualitative worked
+example; no printed magnitudes exist to pin, and SHAP magnitudes drift across
+`shap` library versions anyway — do not reintroduce magnitude pinning without
+also pinning the shap version.) What IS asserted are the math invariants that
+must hold by construction in nami's codebase:
 
 1. Naive attribution matches the closed-form `(Σᵢ wᵢ · βᵢ,f) · shock[f]`.
 2. Naive sum equals factor-driven P&L by linearity.
@@ -15,7 +17,6 @@ math invariants that must hold by construction in nami's codebase:
 Tolerances:
 - 1e-9 for deterministic / closed-form algebra.
 - 1e-6 for SHAP-driven sums (LinearExplainer + Impute masker introduce float noise).
-- 5e-4 for the doc's printed naive numbers (rounding to 3 decimals in the doc).
 """
 
 from __future__ import annotations
@@ -34,7 +35,6 @@ from app.factors.regression import estimate_betas
 
 TOL_DETERMINISTIC = 1e-9
 TOL_SHAP_SUM = 1e-6
-TOL_NAIVE_PRINTED = 5e-4
 
 
 def _make_synthetic_data(
@@ -44,7 +44,8 @@ def _make_synthetic_data(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Generate 60 weeks of correlated factor returns and matching ticker returns.
 
-    Factor correlation: SPY/XLK ≈ +0.84, SPY/VIX ≈ -0.47 (matches the worked example).
+    Factor correlation: SPY/XLK ≈ +0.84, SPY/VIX ≈ -0.47 (realistic co-movement so
+    the conditional/naive variants visibly diverge).
     Ticker generating process: known betas + small idiosyncratic noise.
     """
     rng = np.random.default_rng(seed)

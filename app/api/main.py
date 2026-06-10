@@ -70,6 +70,7 @@ from app.data.marking import MarkingError
 from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio, ticker_metadata
 from app.factors import warm_cache
 from app.factors.analogs import HistoricalEvent, events_version, load_events
+from app.factors.regression import InsufficientHistoryError, regression_spec
 from app.factors.universe import factor_metadata, factor_universe_version
 from app.llm.narrative_shapley import compute_narrative_shapley
 from app.llm.prompts import PROMPT_VERSION
@@ -137,7 +138,9 @@ with contextlib.suppress(Exception):
 
 # nami engine version used in reproducibility metadata. Bumps with any
 # release-significant change to the engine; not in lockstep with PROMPT_VERSION.
-NAMI_ENGINE_VERSION = "0.1.0"
+# (Display metadata only — the cache-invalidation lever for engine math is the
+# `regression_spec` component inside the scenario cache key.)
+NAMI_ENGINE_VERSION = "0.2.0"
 MIN_SCENARIO_TEXT_CHARS = 10
 MAX_SCENARIO_TEXT_CHARS = 2000
 
@@ -199,6 +202,9 @@ def _build_reproducibility(
         narrative_mode=result.narrative_mode,
         beta_lookback_weeks=config.beta_lookback_weeks,
         ridge_alpha=config.ridge_alpha,
+        regression_spec=regression_spec(
+            lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
+        ),
         selected_event_ids=list(result.selected_event_ids),
         portfolio_holdings=dict(result.portfolio_holdings),
         portfolio_key=portfolio_key,
@@ -569,6 +575,10 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
         # Requested valuation could not be marked (missing/stale price or FX):
         # fail closed with 503 rather than return a percentage-only result.
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except InsufficientHistoryError as exc:
+        # A holding has too little weekly history for beta estimation — a
+        # RuntimeError subclass that would otherwise surface as a 500.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         # Insufficient analogs / data when backdating; user-facing 422.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -701,6 +711,11 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
         # Re-marking the adjusted result failed (missing/stale price or FX) —
         # fail closed. MUST precede RuntimeError (MarkingError subclasses it).
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except InsufficientHistoryError as exc:
+        # MUST precede RuntimeError (it subclasses it): too little weekly
+        # history is a data problem, NOT the LLM's "rerun_required" rejection —
+        # mislabeling it would make the UI offer a rerun CTA that cannot help.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         # scope="rerun_required" from the LLM patch path. The message is the
         # rejection_reason the UI surfaces to the user.
@@ -732,14 +747,18 @@ def decompose_endpoint(
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     scenario_cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
     decomposition_cache = CloudStorageCache(config.gcs_bucket, prefix="decomposition_cache")
-    result = compute_narrative_shapley(
-        body.result,
-        config=config,
-        gemini=gemini,
-        cache=scenario_cache,
-        decomposition_cache=decomposition_cache,
-        market_date=body.result.market_date,
-    )
+    try:
+        result = compute_narrative_shapley(
+            body.result,
+            config=config,
+            gemini=gemini,
+            cache=scenario_cache,
+            decomposition_cache=decomposition_cache,
+            market_date=body.result.market_date,
+        )
+    except InsufficientHistoryError as exc:
+        # Subset reruns re-estimate betas; surface a data problem as 422, not 500.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ScenarioRunResponse(result=result, analog_events=_analog_events(load_events()))
 
 

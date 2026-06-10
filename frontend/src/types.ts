@@ -101,11 +101,38 @@ export interface ShockAdjustment {
 export type NarrativeMode = "grounded" | "analog_only";
 
 export interface RiskDiagnostic {
-  kind: "correlation_conflict" | "envelope_direction_conflict" | "conditional_cross_credit";
+  kind:
+    | "correlation_conflict"
+    | "envelope_direction_conflict"
+    | "conditional_cross_credit"
+    | "low_regression_r2"
+    | "position_loss_exceeds_100pct"
+    | "periphery_magnitude"
+    | "periphery_dominance";
   severity: "info" | "warning";
   message: string;
   factors: string[];
   evidence: Record<string, number | string>;
+}
+
+export interface TickerRegressionQuality {
+  r2: number;
+  n_obs: number;
+  idio_vol_weekly: number;
+}
+
+export interface RegressionQuality {
+  estimator: string;
+  lookback_weeks: number;
+  alpha: number;
+  min_obs: number;
+  by_ticker: Record<string, TickerRegressionQuality>;
+}
+
+export interface AnalogEventReturns {
+  event_id: string;
+  window_calendar_days: number;
+  factor_returns: Record<string, number | null>;
 }
 
 export interface ScenarioResult {
@@ -124,6 +151,10 @@ export interface ScenarioResult {
   narrative_shapley: NarrativeShapleyResult | null;
   adjustment_history: ShockAdjustment[];
   risk_diagnostics?: RiskDiagnostic[];
+  // Beta-regression fit quality + per-analog factor returns (Phase 18).
+  // Null/absent on pre-Phase-18 payloads.
+  regression_quality?: RegressionQuality | null;
+  analog_event_returns?: AnalogEventReturns[] | null;
   // Backdating metadata (added Phase 11). Defaults match live runs so older
   // cached payloads deserialize cleanly.
   requested_as_of_date: string | null;
@@ -157,6 +188,7 @@ export interface ScenarioReproducibility {
   narrative_mode: NarrativeMode;
   beta_lookback_weeks: number;
   ridge_alpha: number;
+  regression_spec?: string | null;
   selected_event_ids: string[];
   portfolio_holdings: Record<string, number>;
   portfolio_key: string;

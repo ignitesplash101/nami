@@ -96,9 +96,10 @@ class NarrativeContribution(BaseModel):
 class NarrativeShapleyResult(BaseModel):
     """Result of running 2^N subset evaluations to assign per-sub-narrative Shapley values.
 
-    Experimental counterfactual *pipeline* attribution — each subset reruns analog
-    selection + grounded narrative + shock extraction, so the values reflect pipeline
-    behavior on the subset, not a causal decomposition of the original scenario.
+    Fixed-context shock attribution — each subset PINS the source scenario's analog
+    set and uses the analog-only narrative path (no Google re-grounding), so only the
+    shock proposal varies per fragment. Deterministic and illustrative, not a causal
+    decomposition of the original scenario.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -170,11 +171,60 @@ class RiskDiagnostic(BaseModel):
         "correlation_conflict",
         "envelope_direction_conflict",
         "conditional_cross_credit",
+        "low_regression_r2",
+        "position_loss_exceeds_100pct",
+        "periphery_magnitude",
+        "periphery_dominance",
     ]
     severity: Literal["info", "warning"] = "warning"
     message: str
     factors: list[str] = Field(default_factory=list)
     evidence: dict[str, float | int | str] = Field(default_factory=dict)
+
+
+class TickerRegressionQuality(BaseModel):
+    """Per-ticker beta-regression fit quality (mirrors regression.TickerRegressionStats).
+
+    `r2` is in-sample on the centered standardized-ridge fit, in [0, 1].
+    `idio_vol_weekly` is the ddof=1 weekly residual vol, NOT annualized.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    r2: float
+    n_obs: int
+    idio_vol_weekly: float
+
+
+class RegressionQuality(BaseModel):
+    """Fit-quality block for the beta regression behind a scenario result.
+
+    Deterministic from the same vintage-controlled data as the betas (same cache
+    key), so unlike NAV/benchmark overlays it IS cached with the canonical result.
+    `by_ticker` deliberately has no entry for the CASH sentinel — no regression
+    runs for it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    estimator: str
+    lookback_weeks: int
+    alpha: float
+    min_obs: int
+    by_ticker: dict[str, TickerRegressionQuality]
+
+
+class AnalogEventReturns(BaseModel):
+    """Total factor returns over one selected analog's exact-day window.
+
+    Mirrors the per-event payload shown to the shock-extraction call so the UI
+    can show which analog drives each envelope band edge. `factor_returns` values
+    are decimal total returns over the event window (None where the factor's ETF
+    did not exist in the window); `window_calendar_days` is end − start.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    event_id: str
+    window_calendar_days: int
+    factor_returns: dict[str, float | None]
 
 
 class ScenarioResult(BaseModel):
@@ -194,6 +244,12 @@ class ScenarioResult(BaseModel):
     narrative_shapley: NarrativeShapleyResult | None = None  # opt-in only
     adjustment_history: list[ShockAdjustment] = Field(default_factory=list)
     risk_diagnostics: list[RiskDiagnostic] = Field(default_factory=list)
+    # Beta-regression fit quality (Phase 18). Cached with the canonical result
+    # (deterministic from the keyed vintage); None on pre-Phase-18 payloads.
+    regression_quality: RegressionQuality | None = None
+    # Per-analog factor returns + window lengths backing the envelope (Phase 18).
+    # Same payload the shock-extraction call sees; None on older payloads.
+    analog_event_returns: list[AnalogEventReturns] | None = None
     # Backdating metadata (added Phase 11). All default-defaulted so cached v5
     # entries deserialize cleanly under v6 lazy re-derivation.
     # `market_date` is the *effective* as-of date (last NYSE trading day on or

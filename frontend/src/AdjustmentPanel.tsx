@@ -151,6 +151,12 @@ export function AdjustmentPanel({
           const env = result.factor_envelope[row.factor];
           const p10 = env?.p10 ?? -0.5;
           const p90 = env?.p90 ?? 0.5;
+          const count = env?.count ?? 0;
+          // Server-side rule (adjust_validation.py): when a factor's analog
+          // count < 3 the band is interpolation-shaped, so the only valid
+          // values are the canonical shock (keep) or 0.0 (remove). Disable
+          // re-tuning here so the panel never offers values the server rejects.
+          const lowEvidence = count < 3;
           const canonical = canonicalShocks.get(row.factor) ?? row.value;
           const changedFromCanonical = Math.abs(row.value - canonical) > 1e-9;
           const isRemoved = row.value === 0 && canonical !== 0;
@@ -164,7 +170,9 @@ export function AdjustmentPanel({
               <div className="adjust-row-head">
                 <strong>{factorDisplayName(factorMeta, row.factor)}</strong>
                 <span className="muted">
-                  envelope {formatBefore(p10, 2)} to {formatBefore(p90, 2)}
+                  {lowEvidence
+                    ? `n=${count} analog observation${count === 1 ? "" : "s"} — keep or remove`
+                    : `envelope ${formatBefore(p10, 2)} to ${formatBefore(p90, 2)}`}
                 </span>
               </div>
               <div className="adjust-row-controls">
@@ -175,7 +183,7 @@ export function AdjustmentPanel({
                   step={0.001}
                   value={row.value}
                   onChange={(event) => setValue(index, Number(event.target.value))}
-                  disabled={isAdjusting || sliderOutOfRange}
+                  disabled={isAdjusting || sliderOutOfRange || lowEvidence}
                   aria-label={`${factorDisplayName(factorMeta, row.factor)} shock (slider)`}
                 />
                 <input
@@ -189,7 +197,7 @@ export function AdjustmentPanel({
                       row.value === 0 ? 0 : Math.min(p90, Math.max(p10, row.value))
                     )
                   }
-                  disabled={isAdjusting}
+                  disabled={isAdjusting || lowEvidence}
                   aria-label={`${factorDisplayName(factorMeta, row.factor)} shock value`}
                 />
                 <button

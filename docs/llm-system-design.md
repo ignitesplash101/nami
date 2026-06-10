@@ -38,7 +38,7 @@ This is documented in code, not just docs. Reviewers can grep for the assertion.
 
 ## 3. `PROMPT_VERSION` as the cache-invalidation lever
 
-Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v8"`. The version is mixed into the scenario cache key:
+Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v9"`. The version is mixed into the scenario cache key:
 
 ```python
 # app/utils/hashing.py::scenario_cache_key
@@ -46,6 +46,8 @@ key_inputs = (
     scenario_text, portfolio_key, holdings, market_date, model_id,
     prompt_version,            # <-- here
     factor_universe_version, events_version,
+    regression_spec,           # estimator id|lookback|alpha|min_obs — engine-math lever
+    # + position_quantities / pinned_event_ids when present
 )
 ```
 
@@ -57,6 +59,7 @@ The full version history is in the file header. Highlights:
 - v5 → v6: backdating + analog-only narrative path; analog filter switched to `end_date <= as_of` (was implicitly unbounded). Same `(scenario_text, portfolio, market_date)` could have returned a different result under v5 if an event was still in progress on `market_date` — so the cache must be invalidated.
 - v6 → v7: later prompt semantics update; see [`app/llm/prompts.py`](../app/llm/prompts.py) for the canonical changelog.
 - v7 → v8: shock extraction is explicitly framed as hypothetical stress construction, overlapping factor divergence must be explained, and `ScenarioResult` gained warning-only `risk_diagnostics`.
+- v8 → v9: shock-units/horizon contract in the extraction prompt (cumulative episode total returns, not weekly) + honest rule-4 wording (the reasoning-based envelope escape hatch never existed in code), per-event envelope payload + window lengths, 2–5 analog cardinality enforced post-hoc, periphery hard band ±0.75, horizon-neutral factor descriptions, `ScenarioResult` gained `regression_quality` + `analog_event_returns`, and `.T`-suffix ticker returns are USD-converted before beta estimation. Engine-math changes (standardized ridge, per-ticker masks) are keyed separately via the new `regression_spec` cache-key component — that lever, not `PROMPT_VERSION`, owns estimator/alpha/lookback changes from here on.
 
 ML-systems framing: this is *experiment versioning*. Same prompt + same model + same data + same code → byte-for-byte same output (modulo Gemini's own non-determinism, which `temperature=0` reduces but doesn't eliminate). Bump the version when any input to that contract changes.
 
@@ -89,8 +92,9 @@ Two adjustment modes:
 - **Manual** (sliders): `overrides: dict[str, float]` keyed by factor name. Every factor must be present (use `0.0` to remove). Validated by [`app/llm/adjust_validation.py::validate_factor_overrides`](../app/llm/adjust_validation.py).
 - **LLM** (free-text): `adjustment_text: str`. A 4th Gemini call (`propose_shock_edit`) returns a typed `ShockEditPatch` with `scope: Literal["local", "rerun_required"]`. `scope="local"` is applied; `scope="rerun_required"` is rejected with a 422 + `rejection_reason` so the UI can offer a "rerun full scenario" CTA.
 
-Two non-obvious validation rules:
-- **Zero-removal carve-out**: `new_shock == 0.0` is always accepted regardless of envelope. Otherwise must be in `[p10, p90]`. The looser `validate_shock_proposal` only advisorily flags out-of-envelope on *initial* proposals; adjustment is the surgical-edit path and has stricter rules encoded in code, not in prompt wording.
+Three non-obvious validation rules:
+- **Zero-removal carve-out**: `new_shock == 0.0` is always accepted regardless of envelope. Otherwise must be in `[p10, p90]` when the factor's analog `count >= 3`. (`validate_shock_proposal` blocks out-of-envelope *initial* proposals too — but only after a one-retry repair loop and only at `count >= 3`; adjustment rejects immediately.)
+- **Low-evidence keep-or-remove**: when a factor's envelope `count < 3` the band is interpolation-shaped, so the only valid overrides are the canonical shock itself or `0.0` — mirroring the proposal-side count gate. Binds sliders, LLM patches, and direct API calls identically.
 - **No client-supplied prior**: clients echo back the `cache_key` from the original run; the server re-fetches the canonical result. Tamper-proof.
 
 Why does this design matter? It means the LLM can't accidentally rewrite the narrative or citations while editing a single factor — the invariants are *structural*, enforced by `model_copy` and a separate `ShockEditPatch` schema. Reusing `ShockProposalOutput` for adjustments would have made every slider drag a potential narrative rewrite.
@@ -122,7 +126,7 @@ Every saved scenario (Firestore `saved_scenarios/{id}`) stores a full `ScenarioR
 - `events_version` (hash of `historical_events.yaml`)
 - `requested_as_of_date` + `effective_as_of_date` (raw user date + NYSE-resolved date)
 - `narrative_mode` (`grounded` | `analog_only`)
-- `beta_lookback_weeks`, `ridge_alpha`
+- `beta_lookback_weeks`, `ridge_alpha`, `regression_spec` (full estimator identity)
 - `selected_event_ids`, full `portfolio_holdings` dict, `portfolio_key`
 - `nami_engine_version`
 
@@ -136,4 +140,4 @@ What this buys: a scenario saved today can be re-rendered a year later from the 
 
 - **Attribution as ML interpretability.** The 4 attribution maps in [`app/factors/attribution.py`](../app/factors/attribution.py) treat the linear factor model `R_p = Σ β_i · w_i · F` as a multivariate function and apply Shapley credit allocation. The product split is deliberate: **Scenario shocks** is the production risk view, **Grouped shocks** is the risk-committee view, and `Naive algebra` plus `Full conditional diagnostic` stay in advanced diagnostics. The "Conditional Shapley" name follows Aas et al. (2021) and Janzing et al. (2020) — credit is allocated under the *historical conditional distribution* of factor returns, computed via `shap.LinearExplainer((coefs, intercept), masker=shap.maskers.Impute(background))`. This is not a causal decomposition. The full diagnostic can credit unshocked factors through correlation; it never drives the headline readout.
 
-- **Narrative-level Shapley** ([`app/llm/narrative_shapley.py`](../app/llm/narrative_shapley.py)) is *counterfactual pipeline attribution*: a scenario is decomposed into N=2..4 sub-narratives, then re-run on 2^N − 1 subsets in parallel (4-worker `ThreadPoolExecutor`), then Shapley-aggregated. Each subset re-runs analog selection + grounded narrative + shock extraction, so the result reflects pipeline behavior on the subset, not a "true" contribution. Framed honestly in the UI as "Experimental:".
+- **Narrative-level Shapley** ([`app/llm/narrative_shapley.py`](../app/llm/narrative_shapley.py)) is *fixed-context shock attribution*: a scenario is decomposed into N=2..4 sub-narratives, then re-run on 2^N − 1 subsets in parallel (4-worker `ThreadPoolExecutor`), then Shapley-aggregated. Each subset **pins the source scenario's analog set and uses the analog-only narrative path (no Google re-grounding)** — only the shock proposal varies per fragment, so `v(S)` is deterministic. It measures the marginal shock each theme adds *within the original analog context*; illustrative, not causal. Framed honestly in the UI as "Experimental:".

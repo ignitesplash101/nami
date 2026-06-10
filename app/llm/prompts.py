@@ -36,7 +36,17 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 # v8 - Shock extraction is framed explicitly as hypothetical stress construction,
 #      factor universe payloads include human-readable labels, and ScenarioResult
 #      gained warning-only risk_diagnostics.
-PROMPT_VERSION = "v8"
+# v8 -> v9: Shock-semantics contract. The extraction prompt defines shock units and
+#      horizon (cumulative episode total return, not weekly); rule 4 now states the
+#      validator's actual blocking behavior (the reasoning-based escape hatch never
+#      existed in code); factor descriptions are horizon-neutral; the extraction
+#      payload gains per-event factor returns + window lengths; analog selection is
+#      enforced to 2-5 unique events post-hoc (422); periphery shocks gain a hard
+#      ±0.75 band; ScenarioResult gained regression_quality + analog_event_returns;
+#      .T-suffix ticker returns are converted to USD before beta estimation.
+#      NOTE: engine-math changes (estimator/alpha/lookback) are keyed separately
+#      via `regression_spec` in the cache key — they do NOT require a bump here.
+PROMPT_VERSION = "v9"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
@@ -112,16 +122,39 @@ as a conditional stress test, not as a forecast of expected returns.
 
 The narrative was generated upstream with Google Search grounding. Your job is purely
 to translate that narrative into a coherent numeric stress vector using the empirical
-envelope, factor universe, and portfolio holdings provided by the user message.
+envelope, per-event returns, factor universe, and portfolio holdings provided by the
+user message.
+
+SHOCK UNITS AND HORIZON
+- A factor shock is the CUMULATIVE TOTAL move of that factor over the entire
+  hypothetical stress episode, expressed as a decimal (-0.12 means -12% in total).
+  It is NOT a weekly or daily return.
+- The episode horizon is implied by the selected analog events: every envelope
+  statistic and every per-event figure in the user message is the factor's total
+  move from the first to the last day of that analog's window (windows range from
+  about a week to several months). Propose magnitudes consistent with an episode
+  of similar duration to the analogs shown.
+- Macro factors (VIX, TNX, DXY, OIL) are decimal changes in the LEVEL of the index
+  over the episode (e.g. VIX 15 -> 22.5 is +0.50). The same decimal move implies
+  different absolute levels depending on the starting level.
+- A periphery shock is the additional idiosyncratic total return for one held
+  ticker over the same episode, on top of its factor-driven move.
 
 RULES
 1. Output JSON matching the ShockProposalOutput schema. No extra fields.
 2. Copy the grounded narrative into the `narrative` field exactly as provided.
 3. Do not introduce new current-market claims beyond the narrative.
-4. Factor shocks should stay inside [p10, p90] for each factor unless the reasoning
-   explicitly explains why the scenario is outside the analog envelope.
-5. Down-weight factors with count < 3.
-6. Periphery shocks may only reference tickers in the provided portfolio holdings.
+4. For any factor whose envelope row has count >= 3, the shock MUST lie inside
+   [p10, p90]. This is mechanically enforced: an out-of-band shock is rejected and
+   re-asked once, then the run fails. If the narrative implies a move beyond the
+   band, set the shock at the nearer band edge and say so in the reasoning. The
+   reasoning text is for human review only - it cannot authorize an out-of-band
+   shock.
+5. Down-weight factors with count < 3 (their band is not enforced, but the
+   per-event returns show how thin the evidence is).
+6. Periphery shocks may only reference tickers in the provided portfolio holdings,
+   must be within [-0.75, +0.75] (mechanically enforced), and should stay modest
+   relative to the factor-driven move.
 7. When overlapping factors materially diverge (for example US large-cap equities
    (SPY), Global equities (ACWI), US technology (XLK), Momentum stocks (MTUM), and
    Quality stocks (QUAL)), the reasoning must explain the rotation rather than
@@ -160,6 +193,8 @@ Write a concise 3-5 sentence narrative that:
   "risk-off on credit contagion") consistent with those analogs.
 - Quotes a few rough magnitudes from the envelope to give the reader a sense
   of scale (e.g. "in 2018-2019, SPY moved -X% across this style of event").
+  The envelope statistics are TOTAL returns over each analog's full event
+  window, not weekly returns; quote them as episode moves.
 
 Plain text only — no JSON, no headers, no bullets. No URLs or citations
 beyond the analog event names themselves.
@@ -199,6 +234,8 @@ RULES FOR `edits`
    factor is `rerun_required`.
 2. Each edit's `new_shock` MUST be inside the envelope `[p10, p90]` for that
    factor, OR exactly 0.0 (which means "remove this factor from the scenario").
+   Shocks are cumulative total moves over the stress episode (decimals),
+   matching the envelope's units — not weekly returns.
 3. Each edit's `reasoning` is ONE concise sentence explaining the magnitude.
 4. Do NOT propose changes to factors the user did not ask about. Edits are
    surgical, not a re-derivation.
@@ -259,20 +296,33 @@ def format_shock_extraction_user_message(
     factor_universe_descriptions: list[dict[str, Any]],
     portfolio_holdings: dict[str, float],
     prior_errors: list[str] | None = None,
+    per_event_returns: list[dict[str, Any]] | None = None,
 ) -> str:
     sections = [
         "GROUNDED NARRATIVE",
         narrative.strip(),
         "",
-        "EMPIRICAL ENVELOPE (per factor, across selected analogs)",
+        "EMPIRICAL ENVELOPE (total event-window returns per factor, across selected analogs)",
         json.dumps(_envelope_records(envelope), indent=2),
-        "",
-        "FACTOR UNIVERSE",
-        json.dumps(factor_universe_descriptions, indent=2),
-        "",
-        "PORTFOLIO HOLDINGS (ticker -> weight)",
-        json.dumps(_rounded_holdings(portfolio_holdings), indent=2),
     ]
+    if per_event_returns:
+        sections.extend(
+            [
+                "",
+                "PER-EVENT FACTOR RETURNS (total return over each analog's full window)",
+                json.dumps(per_event_returns, indent=2),
+            ]
+        )
+    sections.extend(
+        [
+            "",
+            "FACTOR UNIVERSE",
+            json.dumps(factor_universe_descriptions, indent=2),
+            "",
+            "PORTFOLIO HOLDINGS (ticker -> weight)",
+            json.dumps(_rounded_holdings(portfolio_holdings), indent=2),
+        ]
+    )
     if prior_errors:
         sections.extend(
             [

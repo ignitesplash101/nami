@@ -144,6 +144,53 @@ def test_manual_out_of_envelope_nonzero_rejected(monkeypatch):
         )
 
 
+@pytest.mark.parametrize("count", [0, 1, 2])
+def test_manual_low_evidence_factor_is_keep_or_remove(monkeypatch, count):
+    """When a factor's envelope count < 3 the band is interpolation-shaped (a
+    count=0 row is even serialized as 0/0/0), so re-tuning against it is
+    meaningless: the only valid overrides are the canonical shock (keep) or
+    0.0 (remove) — mirroring the proposal-side count gate."""
+    canonical, cache, gemini, key, config = _canonical_run(monkeypatch)
+
+    target = canonical.factor_shocks[0]
+    envelope_copy = {k: dict(v) for k, v in canonical.factor_envelope.items()}
+    if count == 0:
+        envelope_copy[target.factor] = {"mean": 0.0, "p10": 0.0, "p90": 0.0, "count": 0}
+    else:
+        envelope_copy[target.factor] = {
+            "mean": target.shock,
+            "p10": target.shock,
+            "p90": target.shock + 0.02,
+            "count": count,
+        }
+    canonical_low = canonical.model_copy(update={"factor_envelope": envelope_copy})
+    cache.put_json(key, canonical_low.model_dump(mode="json"))
+
+    base_overrides = {fs.factor: fs.shock for fs in canonical.factor_shocks}
+
+    # Keep (echo the canonical value) — accepted.
+    kept = adjust_scenario_shocks(
+        key, overrides=dict(base_overrides), config=config, gemini=gemini, cache=cache
+    )
+    assert kept.factor_shocks[0].shock == target.shock
+
+    # Remove — accepted (0.0 sentinel works regardless of envelope).
+    removed_overrides = dict(base_overrides)
+    removed_overrides[target.factor] = 0.0
+    removed = adjust_scenario_shocks(
+        key, overrides=removed_overrides, config=config, gemini=gemini, cache=cache
+    )
+    assert removed.portfolio_pnl.by_factor_naive[target.factor] == 0.0
+
+    # Re-tune — rejected with the keep-or-remove message.
+    retuned_overrides = dict(base_overrides)
+    retuned_overrides[target.factor] = target.shock + 0.01
+    with pytest.raises(ValueError, match="analog observation"):
+        adjust_scenario_shocks(
+            key, overrides=retuned_overrides, config=config, gemini=gemini, cache=cache
+        )
+
+
 def test_manual_missing_factor_key_rejected(monkeypatch):
     canonical, cache, gemini, key, config = _canonical_run(monkeypatch)
 
