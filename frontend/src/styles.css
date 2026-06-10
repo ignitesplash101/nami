@@ -1767,6 +1767,57 @@ a {
   color: var(--ink);
 }
 
+/* --- Operations console drawer (admin) -------------------------------------- */
+.ops-drawer {
+  width: min(640px, 100vw);
+}
+.ops-section {
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+.ops-section:last-child {
+  border-bottom: none;
+}
+.ops-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  margin: var(--space-2) 0 var(--space-1);
+}
+.ops-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+.ops-meter-fill {
+  height: 100%;
+  background: var(--accent-2);
+}
+.ops-meter-fill.warn {
+  background: var(--warn);
+}
+.ops-meter-fill.over {
+  background: var(--down);
+}
+.ops-status-line {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+}
+.ops-audit table {
+  font-size: 0.78rem;
+}
+.ops-danger {
+  border: 1px solid rgba(232, 97, 90, 0.45);
+  border-radius: var(--radius);
+  background: var(--down-soft);
+  padding: var(--space-3);
+  margin-top: var(--space-4);
+}
+
 /* ============================================================================
  * Mobile + tablet responsive overrides.
  *

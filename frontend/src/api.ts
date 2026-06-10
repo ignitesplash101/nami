@@ -1,8 +1,10 @@
 import type {
   AccessResponse,
+  AuditEntry,
   FactorMetadata,
   PortfolioSnapshotRecord,
   PortfolioValidationResponse,
+  PurgeCounts,
   SamplePortfolio,
   SampleScenario,
   SavedPortfolioRecord,
@@ -13,7 +15,9 @@ import type {
   ScenarioResult,
   ScenarioRunResponse,
   SseProgressEvent,
-  TickerMetadata
+  StatusResponse,
+  TickerMetadata,
+  UsageSummary
 } from "./types";
 
 // --- Typed API errors -------------------------------------------------------
@@ -558,4 +562,41 @@ export async function getMethodology(): Promise<string> {
     throw await ApiError.fromResponse(response);
   }
   return response.text();
+}
+
+// --- Operations console (admin) ---
+
+export function getStatus(): Promise<StatusResponse> {
+  return requestJson<StatusResponse>("/api/status");
+}
+
+export function getUsage(): Promise<UsageSummary> {
+  return requestJson<UsageSummary>("/api/usage");
+}
+
+export function getAuditLog(limit = 100): Promise<AuditEntry[]> {
+  return requestJson<AuditEntry[]>(`/api/audit?limit=${limit}`);
+}
+
+/** Destructive: deletes all saved scenarios/portfolios/snapshots (audit log
+ * survives). `confirm` must be the literal backend token — the UI only reaches
+ * this through the type-to-confirm dialog. */
+export function purgeAllData(confirm: string): Promise<PurgeCounts> {
+  return requestJson<PurgeCounts>("/api/admin/purge", {
+    method: "POST",
+    body: JSON.stringify({ confirm })
+  });
+}
+
+export async function downloadExport(): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch("/api/export", { credentials: "same-origin" });
+  } catch (exc) {
+    throw ApiError.network(exc);
+  }
+  if (!response.ok) {
+    throw await ApiError.fromResponse(response);
+  }
+  return response.blob();
 }

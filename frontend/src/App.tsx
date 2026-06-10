@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import Plot from "react-plotly.js";
 import {
+  Activity,
   ArrowRight,
   BarChart3,
   BookOpen,
@@ -28,12 +29,15 @@ import {
   getSampleScenarios,
   getTickerMetadata,
   lock,
+  purgeAllData,
   runScenarioStream,
   toApiError,
   unlock,
   validatePortfolio
 } from "./api";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorNotice } from "./ErrorNotice";
+import { OpsDrawer } from "./OpsDrawer";
 import { scrollBehavior } from "./motion";
 import { createRunLifecycle } from "./runLifecycle";
 import { useToasts } from "./toast";
@@ -220,18 +224,61 @@ export default function App() {
   const methodologyDrawer = useMethodologyDrawer();
   const railDrawer = useOverlay();
   const commandPalette = useOverlay();
+  const opsDrawer = useOverlay();
+  const purgeConfirm = useOverlay();
+  const [purgeBusy, setPurgeBusy] = useState(false);
+  // Bumped on purge success and passed as `key` to the saved-scenarios +
+  // portfolio-history panels: the backend purge deletes portfolios/snapshots
+  // too, and those panels fetch on mount/selection only — a remount resets
+  // their local state instead of leaving deleted records on screen.
+  const [adminDataEpoch, setAdminDataEpoch] = useState(0);
   const isMobileOrTablet = useMediaQuery("(max-width: 1079.98px)");
 
   function openMethodology(section?: string) {
     railDrawer.close();
     commandPalette.close();
+    opsDrawer.close();
     methodologyDrawer.open(section);
   }
 
   function openRailDrawer() {
     methodologyDrawer.close();
     commandPalette.close();
+    opsDrawer.close();
     railDrawer.open();
+  }
+
+  function openOpsDrawer() {
+    methodologyDrawer.close();
+    railDrawer.close();
+    commandPalette.close();
+    opsDrawer.open();
+  }
+
+  // Purge flow: the ops drawer CLOSES before the confirm dialog opens — two
+  // useOverlay overlays must never be open at once (window-level Esc would
+  // close both together).
+  function requestPurge() {
+    opsDrawer.close();
+    purgeConfirm.open();
+  }
+
+  async function handlePurgeConfirmed() {
+    setPurgeBusy(true);
+    try {
+      const counts = await purgeAllData("DELETE");
+      pushToast({
+        variant: "success",
+        message: `Purged ${counts.scenarios} scenarios, ${counts.portfolios} portfolios, ${counts.snapshots} snapshots.`
+      });
+      setAdminDataEpoch((epoch) => epoch + 1);
+      purgeConfirm.close();
+    } catch (exc) {
+      purgeConfirm.close();
+      reportError(exc);
+    } finally {
+      setPurgeBusy(false);
+    }
   }
 
   // ⌘K / Ctrl+K opens the command palette (accelerator only — every command it
@@ -242,12 +289,13 @@ export default function App() {
         event.preventDefault();
         methodologyDrawer.close();
         railDrawer.close();
+        opsDrawer.close();
         commandPalette.open();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [commandPalette.open, methodologyDrawer.close, railDrawer.close]);
+  }, [commandPalette.open, methodologyDrawer.close, opsDrawer.close, railDrawer.close]);
 
   useEffect(() => {
     async function boot() {
@@ -535,6 +583,11 @@ export default function App() {
   }
   if (isAdmin) {
     commandActions.push({
+      id: "ops",
+      label: "Open operations console",
+      run: openOpsDrawer
+    });
+    commandActions.push({
       id: "lock",
       label: "Lock (return to visitor mode)",
       run: () => {
@@ -595,6 +648,16 @@ export default function App() {
             <span className="status-chip portfolio-name" title={selectedPortfolio?.name}>
               {selectedPortfolio?.name ?? "No portfolio"}
             </span>
+            {isAdmin ? (
+              <button
+                className="methodology-btn"
+                onClick={openOpsDrawer}
+                title="Operations console"
+                aria-label="Open operations console"
+              >
+                <Activity size={16} />
+              </button>
+            ) : null}
             <button
               className="methodology-btn"
               onClick={commandPalette.open}
@@ -710,6 +773,7 @@ export default function App() {
 
         {isAdmin ? (
           <SavedScenariosPanel
+            key={`saved-${adminDataEpoch}`}
             reloadKey={savedReloadKey}
             onOpen={(env) => {
               setResultEnvelope(env);
@@ -722,6 +786,7 @@ export default function App() {
 
         {isAdmin ? (
           <PortfolioHistoryPanel
+            key={`portfolio-history-${adminDataEpoch}`}
             onForbidden={() => void refreshAccess().catch(() => {})}
             currentHoldings={
               portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
@@ -765,6 +830,32 @@ export default function App() {
       <RailDrawer isOpen={railDrawer.isOpen} onClose={railDrawer.close}>
         {railContent}
       </RailDrawer>
+
+      {isAdmin ? (
+        <OpsDrawer
+          isOpen={opsDrawer.isOpen}
+          onClose={opsDrawer.close}
+          onRequestPurge={requestPurge}
+          onForbidden={() => void refreshAccess().catch(() => {})}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        isOpen={purgeConfirm.isOpen}
+        onClose={purgeConfirm.close}
+        onConfirm={handlePurgeConfirmed}
+        title="Purge all saved data"
+        body={
+          <p>
+            This permanently deletes <strong>all</strong> saved scenarios, portfolios, and
+            snapshots. The audit log is preserved. This cannot be undone.
+          </p>
+        }
+        confirmLabel="Purge everything"
+        danger
+        typeToConfirm="DELETE"
+        busy={purgeBusy}
+      />
 
       <MethodologyDrawer
         markdown={methodology}

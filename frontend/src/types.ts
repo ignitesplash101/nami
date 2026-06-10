@@ -311,6 +311,51 @@ export interface PortfolioValidationResponse {
   total_weight: number;
 }
 
+// --- Operations console (admin) — mirrors app/api/schemas.py ---
+
+export interface StatusResponse {
+  service: string;
+  nami_engine_version: string;
+  prompt_version: string;
+  model_id: string;
+  environment: string;
+  ready: boolean;
+  disclaimer: string;
+  rate_limits: Record<string, string>;
+  daily_cost_cap_usd: number;
+  daily_run_cap: number;
+  runs_today: number;
+  // Admin-only; null for visitors so spend is not exposed publicly.
+  est_cost_today_usd: number | null;
+}
+
+export interface UsageSummary {
+  day: string;
+  runs: number;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  spent_usd: number;
+  reserved_usd: number;
+  cost_cap_usd: number;
+  run_cap: number;
+}
+
+export interface AuditEntry {
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  request_id: string | null;
+  ip_hash: string | null;
+  at: string;
+}
+
+export interface PurgeCounts {
+  scenarios: number;
+  portfolios: number;
+  snapshots: number;
+}
+
 export type AttributionMethod =
   | "naive"
   | "conditional"
