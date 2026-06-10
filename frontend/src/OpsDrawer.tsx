@@ -6,6 +6,7 @@ import { ErrorNotice } from "./ErrorNotice";
 import { formatCurrency } from "./charts";
 import { relativeTime } from "./format";
 import { OverlayShell } from "./OverlayShell";
+import { TableScroll } from "./TableScroll";
 import { useToasts } from "./toast";
 import type { AuditEntry, StatusResponse, UsageSummary } from "./types";
 
@@ -174,48 +175,46 @@ export function OpsDrawer({ isOpen, onClose, onRequestPurge, onForbidden }: OpsD
           {audit.length === 0 ? (
             <p className="muted">No audit entries yet.</p>
           ) : (
-            <div className="table-wrap">
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Action</th>
-                      <th>Target</th>
-                      <th>Request</th>
+            <TableScroll>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Request</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audit.map((entry, index) => (
+                    <tr key={`${entry.at}-${index}`}>
+                      <td title={entry.at}>{relativeTime(entry.at)}</td>
+                      <td>{entry.action}</td>
+                      <td>
+                        {entry.target_type}
+                        {entry.target_id ? ` · ${entry.target_id.slice(0, 8)}` : ""}
+                      </td>
+                      <td>
+                        {entry.request_id ? (
+                          <span className="error-ref">
+                            <code>{entry.request_id.slice(0, 8)}</code>
+                            <button
+                              type="button"
+                              aria-label={`Copy request id for ${entry.action}`}
+                              onClick={() => void copyRequestId(entry.request_id ?? "")}
+                            >
+                              <Copy size={12} />
+                            </button>
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {audit.map((entry, index) => (
-                      <tr key={`${entry.at}-${index}`}>
-                        <td title={entry.at}>{relativeTime(entry.at)}</td>
-                        <td>{entry.action}</td>
-                        <td>
-                          {entry.target_type}
-                          {entry.target_id ? ` · ${entry.target_id.slice(0, 8)}` : ""}
-                        </td>
-                        <td>
-                          {entry.request_id ? (
-                            <span className="error-ref">
-                              <code>{entry.request_id.slice(0, 8)}</code>
-                              <button
-                                type="button"
-                                aria-label={`Copy request id for ${entry.action}`}
-                                onClick={() => void copyRequestId(entry.request_id ?? "")}
-                              >
-                                <Copy size={12} />
-                              </button>
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  ))}
+                </tbody>
+              </table>
+            </TableScroll>
           )}
         </section>
 

@@ -75,8 +75,10 @@
   --z-overlay: 101;
   --z-toast: 120;
 
-  /* Workbench content measure: 1280px content + 2x28px padding. */
-  --workbench-max: 1336px;
+  /* Workbench upper bound: fills 1920px screens completely (1560px track);
+     only ultrawides center with gutters. Width is USED via the >=1440px
+     results grid below, not wasted on stretched single columns. */
+  --workbench-max: 1800px;
 
   /* Chart-only alpha tints — read by charts.ts::chartTheme(); keep in sync
      with --text / --accent if those ever change. */
@@ -781,10 +783,19 @@ td.num {
     transparent,
     color-mix(in srgb, var(--surface) 60%, transparent)
   );
+  /* Hidden until useScrollFade flags real hidden content to the right; fades
+     out again when the user reaches the end of the row. */
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.table-wrap.has-overflow::after {
+  opacity: 1;
 }
 
 .narrative p {
   color: var(--text);
+  /* Prose readability cap — narrative columns get wide on big screens. */
+  max-width: 75ch;
 }
 
 .citation-list {
@@ -2038,6 +2049,34 @@ a {
     padding: var(--space-2);
     margin-inline: calc(-1 * var(--space-2));
     border-radius: var(--radius-sm);
+  }
+}
+
+/* Wide screens USE the width: the results stack becomes a 2-track grid and the
+   waterfall + exposure cards share a row (3fr/2fr) instead of each stretching
+   to ~1500px alone. Children keep their DOM order, so the one-shot nami-rise
+   stagger is unaffected; everything else spans the full row. */
+@media (min-width: 1440px) {
+  .workbench {
+    padding: var(--space-7) 40px 56px;
+  }
+  .results-stack {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-5);
+  }
+  .results-stack > * {
+    grid-column: 1 / -1;
+  }
+  .results-stack > .waterfall-card {
+    grid-column: 1;
+  }
+  .results-stack > .exposure-card {
+    grid-column: 2;
+  }
+  /* If the exposure card didn't render (empty breakdown), let the waterfall
+     reclaim the full row rather than leave a hole. */
+  .results-stack:not(:has(> .exposure-card)) > .waterfall-card {
+    grid-column: 1 / -1;
   }
 }
 .results-toolbar-left {

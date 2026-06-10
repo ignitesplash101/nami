@@ -60,6 +60,7 @@ import {
 import { csvFilename, downloadCsv } from "./csv";
 import { factorDescription, factorDisplayName, factorMap } from "./factors";
 import { formatEvidence, formatFxRate, formatMarkPrice, formatShares } from "./format";
+import { TableScroll } from "./TableScroll";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
@@ -1294,7 +1295,7 @@ function ExposureBreakdown({ result }: { result: ScenarioResult }) {
   if (!rows.length) return null;
 
   return (
-    <div className="result-card">
+    <div className="result-card exposure-card">
       <div className="card-heading">
         <div>
           <p className="eyebrow">Exposure</p>
@@ -1744,9 +1745,9 @@ export function ResultsPanel({
         </div>
       ) : null}
 
-      <ExposureBreakdown result={result} />
-
-      <div className="result-card">
+      {/* ≥1440px the waterfall and exposure cards share a row (3fr/2fr) so wide
+          screens carry more analytics instead of stretched single columns. */}
+      <div className="result-card waterfall-card">
         <div className="card-heading">
           <div>
             <p className="eyebrow">Attribution</p>
@@ -1841,6 +1842,8 @@ export function ResultsPanel({
           className="plot"
         />
       </div>
+
+      <ExposureBreakdown result={result} />
 
       <div className="two-column">
         <TableCard
@@ -2307,18 +2310,6 @@ function ExportCsvButton({ label, onClick }: { label: string; onClick: () => voi
     >
       <Download size={13} /> CSV
     </button>
-  );
-}
-
-/** Scroll container + the right-edge fade affordance. The fade lives on the
- * NON-scrolling wrapper so it stays anchored to the scrollport (an ::after on
- * .table-scroll itself scrolls away with the content). The inner .table-scroll
- * div is the load-bearing wrapper for wide tables — keep it. */
-function TableScroll({ children }: { children: ReactNode }) {
-  return (
-    <div className="table-wrap">
-      <div className="table-scroll">{children}</div>
-    </div>
   );
 }
 
