@@ -101,10 +101,21 @@ def _fetch_prices(
         closes = raw[["Close"]].rename(columns={"Close": sorted_tickers[0]})
 
     closes = closes.dropna(how="all").sort_index()
+    # A ticker yfinance fails on (rate limit, transient outage) comes back as an
+    # all-NaN COLUMN, which the row-wise dropna above keeps. Drop it so the
+    # documented "failed tickers are dropped" contract holds and downstream
+    # membership checks (estimate_betas_for_portfolio) fail loudly instead of
+    # the regression seeing an n=0 series.
+    closes = closes.dropna(axis=1, how="all")
     closes.columns.name = None
 
-    if cache_instance is not None:
-        # Cache write failure must not break a fetch.
+    if closes.empty:
+        raise RuntimeError(f"yfinance returned no usable data for {sorted_tickers!r}")
+
+    if cache_instance is not None and set(closes.columns) == set(sorted_tickers):
+        # Cache COMPLETE batches only: writing a batch with a flaked ticker
+        # would poison every run on this window for the 24h TTL. Cache write
+        # failure must not break a fetch.
         with contextlib.suppress(Exception):
             cache_instance.put(cache_key, closes)
 

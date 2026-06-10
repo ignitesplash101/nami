@@ -605,6 +605,13 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
     except ValueError as exc:
         # Insufficient analogs / data when backdating; user-facing 422.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # Remaining RuntimeErrors on this path are market-data failures
+        # ("yfinance returned no data for ..."), i.e. transient and retryable —
+        # surface as a coded 503 instead of a bare 500. MUST stay LAST: the
+        # MarkingError / InsufficientHistoryError subclasses above take their
+        # own statuses.
+        raise http_error(503, "unavailable", str(exc)) from exc
     cache_key = compute_scenario_cache_key(
         scenario_text, portfolio, market_date=result.market_date, position_quantities=quantities
     )
@@ -864,11 +871,24 @@ def _require_admin(request: Request, action: str) -> None:
         raise HTTPException(status_code=403, detail=f"{action} requires admin mode.")
 
 
+@contextlib.contextmanager
+def _store_errors() -> Generator[None, None, None]:
+    """Map saved-analytics store failures to a coded 503 whose detail names the
+    real cause. Firestore problems surface as google-cloud exception types (NOT
+    RuntimeError) — missing database, missing permissions, bad local credentials
+    — and would otherwise leak as a bare 500 "Internal Server Error" that hides
+    the actionable message (e.g. the store's composite-index instructions)."""
+    try:
+        yield
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — surfaced with detail, never swallowed
+        raise http_error(503, "unavailable", f"Saved-analytics store unavailable: {exc}") from exc
+
+
 @api.post("/api/saved-scenarios", response_model=SavedScenarioRecord)
 def save_scenario_endpoint(body: SaveScenarioRequest, request: Request) -> SavedScenarioRecord:
     _require_admin(request, "Saving scenarios")
-    store = get_firestore_store()
-    record_id = ""  # filled by store
     full = SavedScenarioRecord(
         id="pending",
         name=body.name,
@@ -885,11 +905,14 @@ def save_scenario_endpoint(body: SaveScenarioRequest, request: Request) -> Saved
         result=body.result,
         reproducibility=body.reproducibility,
     )
-    try:
-        record_id = store.save_scenario(full)
-    except ValueError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
-    _audit(store, "scenario.save", "scenario", record_id)
+    with _store_errors():
+        store = get_firestore_store()
+        try:
+            record_id = store.save_scenario(full)
+        except ValueError as exc:
+            # Firestore doc-size guard — 413, NOT a store-availability failure.
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        _audit(store, "scenario.save", "scenario", record_id)
     return full.model_copy(update={"id": record_id})
 
 
@@ -900,18 +923,17 @@ def list_saved_scenarios_endpoint(
     _require_admin(request, "Listing saved scenarios")
     if limit < 1 or limit > 200:
         raise HTTPException(status_code=400, detail="limit must be in [1, 200].")
-    store = get_firestore_store()
-    try:
+    with _store_errors():
+        store = get_firestore_store()
         return store.list_scenarios(tag=tag, limit=limit)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @api.get("/api/saved-scenarios/{scenario_id}", response_model=SavedScenarioRecord)
 def get_saved_scenario_endpoint(scenario_id: str, request: Request) -> SavedScenarioRecord:
     _require_admin(request, "Reading saved scenarios")
-    store = get_firestore_store()
-    rec = store.get_scenario(scenario_id)
+    with _store_errors():
+        store = get_firestore_store()
+        rec = store.get_scenario(scenario_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"Saved scenario {scenario_id} not found.")
     return rec
@@ -920,8 +942,9 @@ def get_saved_scenario_endpoint(scenario_id: str, request: Request) -> SavedScen
 @api.get("/api/saved-scenarios/{scenario_id}/json")
 def download_saved_scenario_json(scenario_id: str, request: Request) -> Response:
     _require_admin(request, "Downloading saved scenarios")
-    store = get_firestore_store()
-    rec = store.get_scenario(scenario_id)
+    with _store_errors():
+        store = get_firestore_store()
+        rec = store.get_scenario(scenario_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"Saved scenario {scenario_id} not found.")
     body = rec.model_dump_json(indent=2)
@@ -938,16 +961,16 @@ def download_saved_scenario_json(scenario_id: str, request: Request) -> Response
 @api.delete("/api/saved-scenarios/{scenario_id}", status_code=204)
 def delete_saved_scenario_endpoint(scenario_id: str, request: Request) -> Response:
     _require_admin(request, "Deleting saved scenarios")
-    store = get_firestore_store()
-    store.delete_scenario(scenario_id)
-    _audit(store, "scenario.delete", "scenario", scenario_id)
+    with _store_errors():
+        store = get_firestore_store()
+        store.delete_scenario(scenario_id)
+        _audit(store, "scenario.delete", "scenario", scenario_id)
     return Response(status_code=204)
 
 
 @api.post("/api/portfolios", response_model=SavedPortfolioRecord)
 def create_portfolio_endpoint(body: SavePortfolioRequest, request: Request) -> SavedPortfolioRecord:
     _require_admin(request, "Creating portfolios")
-    store = get_firestore_store()
     rec = SavedPortfolioRecord(
         id="pending",
         name=body.name,
@@ -955,16 +978,19 @@ def create_portfolio_endpoint(body: SavePortfolioRequest, request: Request) -> S
         created_at=utcnow(),
         owner_label=body.owner_label,
     )
-    pid = store.save_portfolio(rec)
-    _audit(store, "portfolio.create", "portfolio", pid)
+    with _store_errors():
+        store = get_firestore_store()
+        pid = store.save_portfolio(rec)
+        _audit(store, "portfolio.create", "portfolio", pid)
     return rec.model_copy(update={"id": pid})
 
 
 @api.get("/api/portfolios", response_model=list[SavedPortfolioRecord])
 def list_saved_portfolios_endpoint(request: Request) -> list[SavedPortfolioRecord]:
     _require_admin(request, "Listing saved portfolios")
-    store = get_firestore_store()
-    return store.list_portfolios()
+    with _store_errors():
+        store = get_firestore_store()
+        return store.list_portfolios()
 
 
 @api.post(
@@ -975,8 +1001,10 @@ def create_portfolio_snapshot_endpoint(
     portfolio_id: str, body: PortfolioSnapshotRequest, request: Request
 ) -> PortfolioSnapshotRecord:
     _require_admin(request, "Creating portfolio snapshots")
-    store = get_firestore_store()
-    if store.get_portfolio(portfolio_id) is None:
+    with _store_errors():
+        store = get_firestore_store()
+        portfolio_exists = store.get_portfolio(portfolio_id) is not None
+    if not portfolio_exists:
         raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
     # Validate snapshot is not future-dated relative to the latest NYSE close
     # (the same live anchor used by run_scenario).
@@ -998,8 +1026,9 @@ def create_portfolio_snapshot_endpoint(
         created_at=utcnow(),
         owner_label=body.owner_label,
     )
-    sid = store.save_snapshot(portfolio_id, snap)
-    _audit(store, "snapshot.create", "snapshot", sid)
+    with _store_errors():
+        sid = store.save_snapshot(portfolio_id, snap)
+        _audit(store, "snapshot.create", "snapshot", sid)
     return snap.model_copy(update={"id": sid})
 
 
@@ -1011,10 +1040,11 @@ def list_portfolio_snapshots_endpoint(
     portfolio_id: str, request: Request
 ) -> list[PortfolioSnapshotRecord]:
     _require_admin(request, "Listing portfolio snapshots")
-    store = get_firestore_store()
-    if store.get_portfolio(portfolio_id) is None:
-        raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
-    return store.list_snapshots(portfolio_id)
+    with _store_errors():
+        store = get_firestore_store()
+        if store.get_portfolio(portfolio_id) is None:
+            raise HTTPException(status_code=404, detail=f"Portfolio {portfolio_id} not found.")
+        return store.list_snapshots(portfolio_id)
 
 
 @api.get(
@@ -1025,8 +1055,9 @@ def get_portfolio_snapshot_endpoint(
     portfolio_id: str, snapshot_id: str, request: Request
 ) -> PortfolioSnapshotRecord:
     _require_admin(request, "Reading portfolio snapshots")
-    store = get_firestore_store()
-    snap = store.get_snapshot(portfolio_id, snapshot_id)
+    with _store_errors():
+        store = get_firestore_store()
+        snap = store.get_snapshot(portfolio_id, snapshot_id)
     if snap is None:
         raise HTTPException(
             status_code=404,
@@ -1045,8 +1076,9 @@ def audit_log_endpoint(request: Request, limit: int = 100) -> list[AuditEntry]:
     _require_admin(request, "Reading the audit log")
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=400, detail="limit must be in [1, 500].")
-    store = get_firestore_store()
-    return [AuditEntry.model_validate(entry) for entry in store.list_audit(limit=limit)]
+    with _store_errors():
+        store = get_firestore_store()
+        return [AuditEntry.model_validate(entry) for entry in store.list_audit(limit=limit)]
 
 
 @api.get("/api/export")
@@ -1054,8 +1086,9 @@ def export_all_endpoint(request: Request) -> Response:
     """Admin-only full export of saved analytics (scenarios + portfolios +
     snapshot subcollections) as one downloadable JSON attachment."""
     _require_admin(request, "Exporting data")
-    store = get_firestore_store()
-    payload = store.export_all()
+    with _store_errors():
+        store = get_firestore_store()
+        payload = store.export_all()
     body = json.dumps(payload, indent=2, default=str)
     return Response(
         content=body,
@@ -1074,9 +1107,10 @@ def purge_all_endpoint(body: PurgeRequest, request: Request) -> dict[str, int]:
         raise HTTPException(
             status_code=400, detail='Confirmation required: send {"confirm":"DELETE"}.'
         )
-    store = get_firestore_store()
-    counts = store.purge_all()
-    _audit(store, "admin.purge", "all")
+    with _store_errors():
+        store = get_firestore_store()
+        counts = store.purge_all()
+        _audit(store, "admin.purge", "all")
     return counts
 
 
@@ -1085,13 +1119,18 @@ def status_endpoint(request: Request) -> StatusResponse:
     """Public status + guardrails. Spend (`est_cost_today_usd`) is admin-only."""
     config = load_config()
     is_admin = access_mode_for_request(request) == "admin"
-    store = get_firestore_store()
     usage: dict = {}
-    with contextlib.suppress(Exception):
-        usage = store.usage_daily(today_key())
     ready_flag = True
-    with contextlib.suppress(Exception):
-        get_firestore_store().list_portfolios()
+    # Status must ALWAYS return 200 — store construction itself can raise
+    # (bad local credentials, missing database), and `ready` should honestly
+    # flip false instead of the old no-op suppress that never did.
+    try:
+        store = get_firestore_store()
+        with contextlib.suppress(Exception):
+            usage = store.usage_daily(today_key())
+        store.list_portfolios()
+    except Exception:  # noqa: BLE001 — coarse readiness only
+        ready_flag = False
     return StatusResponse(
         service="nami",
         nami_engine_version=NAMI_ENGINE_VERSION,
@@ -1112,11 +1151,10 @@ def status_endpoint(request: Request) -> StatusResponse:
 def usage_endpoint(request: Request) -> UsageSummary:
     _require_admin(request, "Reading usage")
     config = load_config()
-    store = get_firestore_store()
     day = today_key()
     usage: dict = {}
     with contextlib.suppress(Exception):
-        usage = store.usage_daily(day)
+        usage = get_firestore_store().usage_daily(day)
     return UsageSummary(
         day=day,
         runs=int(usage.get("runs", 0)),

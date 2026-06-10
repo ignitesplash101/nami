@@ -17,8 +17,7 @@ describe("presentApiError", () => {
     ["marking_unavailable", /failed closed/i, "retry"],
     ["forbidden", /requires admin mode/i, "unlock"],
     ["network", /network error/i, "retry"],
-    ["cancelled", /cancelled/i, null],
-    ["unavailable", /temporarily unavailable/i, "retry"]
+    ["cancelled", /cancelled/i, null]
   ];
 
   it.each(cases)("%s renders fixed copy with the %s CTA", (kind, pattern, cta) => {
@@ -57,5 +56,17 @@ describe("presentApiError", () => {
     expect(present("budget_exhausted").ctaLabel).toBeNull();
     expect(present("expired").ctaLabel).toBe("Re-run scenario");
     expect(present("forbidden").ctaLabel).toBe("Unlock");
+  });
+
+  it("unavailable passes actionable server detail through, generic on bare status lines", () => {
+    const detailed = present(
+      "unavailable",
+      "Saved-analytics store unavailable: composite index missing — gcloud firestore indexes ..."
+    );
+    expect(detailed.message).toMatch(/composite index missing/);
+    expect(detailed.cta).toBe("retry");
+
+    const bare = present("unavailable", "503 Service Unavailable");
+    expect(bare.message).toMatch(/temporarily unavailable/i);
   });
 });

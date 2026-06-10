@@ -65,8 +65,13 @@ const PRESENTATIONS: Record<ApiErrorKind, (detail: string) => ErrorPresentation>
   }),
   timeout: (detail) => ({ message: detail, cta: "retry", ctaLabel: "Retry" }),
   cancelled: () => ({ message: "Run cancelled.", cta: null, ctaLabel: null }),
-  unavailable: () => ({
-    message: "Service temporarily unavailable — retry shortly.",
+  // Un-coded 503s carry actionable server detail (e.g. the Firestore
+  // missing-index instructions or "yfinance returned no data for ...") — pass
+  // it through; only a bare status line falls back to generic copy.
+  unavailable: (detail) => ({
+    message: /^\d{3}\s/.test(detail)
+      ? "Service temporarily unavailable — retry shortly."
+      : detail,
     cta: "retry",
     ctaLabel: "Retry"
   }),

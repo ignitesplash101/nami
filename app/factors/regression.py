@@ -220,10 +220,20 @@ def estimate_betas_and_stats(
         f"{ticker} (n={int(n)})" for ticker, n in zip(Y.columns, n_obs, strict=True) if n < min_obs
     ]
     if too_short:
-        raise InsufficientHistoryError(
+        # n=0 is almost never a genuinely short listing — it means the market
+        # data fetch returned no usable prices for the ticker (transient
+        # yfinance failure). Distinguish it so users retry instead of dropping
+        # the holding. The market layer no longer caches such batches.
+        message = (
             f"Insufficient weekly history for beta estimation: {', '.join(too_short)}; "
             f"minimum {min_obs} non-NaN weeks overlapping the factor matrix required"
         )
+        if any(int(n) == 0 for n in n_obs if n < min_obs):
+            message += (
+                ". n=0 usually means the market-data fetch returned no prices for the "
+                "ticker (a transient provider failure) — retry the run"
+            )
+        raise InsufficientHistoryError(message)
 
     betas = np.zeros((n_factors, n_tickers))
     r2_all = np.zeros(n_tickers)

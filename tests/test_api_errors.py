@@ -146,6 +146,50 @@ def test_sse_error_event_carries_code(client, monkeypatch):
     assert error_events[0]["message"] == "FX rate unavailable for JPY."
 
 
+def test_store_failure_lists_are_coded_503_with_detail(admin_client, monkeypatch):
+    # Firestore problems arrive as google-cloud exception types (NOT
+    # RuntimeError) — e.g. missing database, missing permissions. They must
+    # surface as a coded 503 naming the cause, never a bare 500.
+    def _raise_store(*args, **kwargs):
+        raise Exception("The database (default) does not exist for this project.")
+
+    from app.api import main as api_main
+
+    store = api_main.get_firestore_store()
+    monkeypatch.setattr(store, "list_portfolios", _raise_store)
+    monkeypatch.setattr(store, "list_scenarios", _raise_store)
+
+    portfolios = admin_client.get("/api/portfolios")
+    assert portfolios.status_code == 503
+    assert portfolios.headers[ERROR_CODE_HEADER] == "unavailable"
+    assert "does not exist" in portfolios.json()["detail"]
+
+    scenarios = admin_client.get("/api/saved-scenarios")
+    assert scenarios.status_code == 503
+    assert "does not exist" in scenarios.json()["detail"]
+
+
+def test_status_stays_200_with_ready_false_when_store_is_down(client, monkeypatch):
+    def _raise_store():
+        raise Exception("no credentials")
+
+    monkeypatch.setattr("app.api.main.get_firestore_store", _raise_store)
+    response = client.get("/api/status")
+    assert response.status_code == 200
+    assert response.json()["ready"] is False
+
+
+def test_run_market_data_failure_is_coded_503(client, monkeypatch):
+    def _raise_market(*args, **kwargs):
+        raise RuntimeError("yfinance returned no data for these portfolio tickers: ['NVDA']")
+
+    monkeypatch.setattr("app.api.main.run_scenario", _raise_market)
+    response = client.post("/api/scenarios/run", json=_RUN_BODY)
+    assert response.status_code == 503
+    assert response.headers[ERROR_CODE_HEADER] == "unavailable"
+    assert "NVDA" in response.json()["detail"]
+
+
 def test_decompose_budget_exceeded_mid_compute_is_429(admin_client, monkeypatch):
     # The metered client raises DURING the 2^N subset calls — the endpoint must
     # map that to a coded 429, not let it escape as a 500.
