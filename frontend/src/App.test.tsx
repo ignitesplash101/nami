@@ -8,7 +8,7 @@ function AccessSummary({ access }: { access: AccessResponse }) {
       <span>{access.access_mode}</span>
       {access.permissions.free_text_scenario ? <button>Custom scenario</button> : null}
       {access.permissions.custom_portfolio ? <button>Upload portfolio</button> : null}
-      {access.permissions.narrative_decomposition ? <button>Run decomposition</button> : null}
+      {access.permissions.narrative_decomposition ? <button>Run theme sensitivity</button> : null}
     </div>
   );
 }
@@ -32,7 +32,7 @@ describe("access-gated UI controls", () => {
 
     expect(screen.queryByText("Custom scenario")).not.toBeInTheDocument();
     expect(screen.queryByText("Upload portfolio")).not.toBeInTheDocument();
-    expect(screen.queryByText("Run decomposition")).not.toBeInTheDocument();
+    expect(screen.queryByText("Run theme sensitivity")).not.toBeInTheDocument();
   });
 
   it("shows unrestricted controls to admins", () => {
@@ -53,6 +53,6 @@ describe("access-gated UI controls", () => {
 
     expect(screen.getByText("Custom scenario")).toBeInTheDocument();
     expect(screen.getByText("Upload portfolio")).toBeInTheDocument();
-    expect(screen.getByText("Run decomposition")).toBeInTheDocument();
+    expect(screen.getByText("Run theme sensitivity")).toBeInTheDocument();
   });
 });

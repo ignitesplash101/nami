@@ -9,9 +9,9 @@
 
 **[🚀 Live demo →](https://nami-wy4mdlp7hq-an.a.run.app)** · Visitor mode runs sample scenarios against sample portfolios with no signup. Free-text scenarios, custom portfolios, backdating, and saved analytics require an admin passcode.
 
-Describe a hypothetical market stress in natural language; nami grounds it against current news, matches it to historical analogs, derives factor + idiosyncratic shocks, and computes the modeled portfolio P&L impact with cited reasoning, production attribution, advanced diagnostics, and full reproducibility metadata.
+Describe a hypothetical market stress in natural language; nami grounds it against current news, matches it to historical analogs, derives factor + idiosyncratic shocks, and computes the modeled portfolio P&L impact with cited reasoning, production attribution, idiosyncratic concentration flags, advanced diagnostics, and full reproducibility metadata.
 
-The name *nami* (波) is Japanese for "wave" — markets move in waves, factor shocks propagate in waves, and the engine decomposes portfolio impact into its constituent wave components.
+The name *nami* (波) is Japanese for "wave" — markets move in waves, factor shocks propagate in waves, and the workbench separates systematic drivers from idiosyncratic name shocks and scenario-theme sensitivity.
 
 <!-- Replace with actual screenshots/GIF once captured. See docs/img/README.md for capture guidance. -->
 <!-- ![nami scenario run](docs/img/demo.gif) -->
@@ -40,7 +40,7 @@ Given a portfolio (sample or custom) and a natural-language hypothetical stress 
 4. **Extracts structured shocks.** A schema-bound third call translates the narrative into a `FactorShock` list (for the 22-factor universe) and a `PeripheryShock` list (idiosyncratic, ticker-level, hard-banded to ±75%). Shocks are defined as cumulative total moves over the stress episode — the prompt states the units/horizon contract explicitly and shows per-analog returns with window lengths, not just the envelope band.
 5. **Computes portfolio P&L + attribution.** Standardized (unit-variance) ridge OLS estimates the portfolio's factor betas on 3 years of weekly returns (per-ticker NaN masks, 40-week history floor, per-name R²/idio-vol fit stats surfaced on the result; non-USD listings are converted to USD returns first). The main workbench exposes the practical production views:
    - **Scenario shocks**: production risk view restricted to factors explicitly shocked by the scenario; unshocked factors stay at zero.
-   - **Grouped shocks**: risk-committee view that collapses correlated peers into market / sector / style / macro groups before redistribution.
+   - **Group totals**: risk-committee view that renders true market / sector / style / macro waterfall totals, with factor-level detail below.
    - **Advanced diagnostics**: `Naive algebra` and `Full conditional diagnostic` stay available for audit/debug. Full conditional is correlation credit, non-causal, and never drives the headline.
 
 Every saved result carries full reproducibility metadata (model id, prompt version, factor-universe version, events version, ridge α, lookback weeks, selected event ids, exact holdings, both requested and effective as-of dates) so any record can be re-rendered later without consulting live state.
@@ -66,7 +66,7 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 | **Operational guardrails** | Per-IP **rate limiting** on paid endpoints, a transactional **daily cost breaker + run cap** and token metering on the LLM, durable **brute-force lockout** on the passcode, structured **JSON logs + request IDs**, a real `/api/ready` dependency probe, an **audit trail**, and admin **data export / purge** — production hygiene for an educational, single-tenant service (no accounts or billing). |
 | **Enterprise error UX** | A machine-readable error contract (`X-Error-Code` header + SSE error codes) drives **per-cause messages and recovery actions** in the UI — budget exhausted vs rate limited vs expired cache vs marking failure — each with a copyable **request-id reference** for support. Runs are **cancellable**, double-runs can't clobber each other, silent admin-session expiry surfaces an unlock banner, and successful saves/deletes/adjustments confirm via toasts. |
 | **Admin ops console** | A slide-in console shows **today's runs and est. spend vs caps** (with warning meters), token counts, a browsable **audit log** with copyable request ids, one-click **JSON export**, and a type-to-confirm **purge** — the operational endpoints, now with a UI. |
-| **Analyst-grade tables** | Right-aligned **tabular numerals** across every table, sortable headers, per-table **CSV export** (semantic filenames, raw decimals, spreadsheet formula-injection guarded), and an overflow-aware scroll affordance on wide tables. Wide screens stay wide: at ≥1440px the waterfall and exposure cards sit **side by side**, prose keeps a 75ch reading measure, and only ultrawide monitors get a (generous) layout bound. |
+| **Analyst-grade tables** | Right-aligned **tabular numerals** across every table, sortable headers, per-table **CSV export** (semantic filenames, raw decimals, spreadsheet formula-injection guarded), and an overflow-aware scroll affordance on wide tables. The waterfall explodes material gross periphery into top ticker bars plus `Other periphery`, so offsetting idiosyncratic shocks do not disappear behind a net total. Wide screens stay wide: at ≥1440px the waterfall and exposure cards sit **side by side**, prose keeps a 75ch reading measure, and only ultrawide monitors get a (generous) layout bound. |
 
 ## Tech stack
 
@@ -85,7 +85,7 @@ Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast
 
 The deployed app is publicly viewable. Visitor mode allows running curated sample scenarios or custom stress text against sample portfolios only — enough to demo the engine without exposing custom holdings, backdating, MTM, saved analytics, or other admin-only workflows to the open internet.
 
-Admin mode is unlocked by a passcode stored in Secret Manager (`nami-passcode:latest`). Admin enables: custom portfolio uploads, benchmark overrides, slider/prompt shock adjustments, narrative decomposition (experimental 2^N subset Shapley), backdated as-of dates, saved-scenario library, and dated-portfolio snapshots.
+Admin mode is unlocked by a passcode stored in Secret Manager (`nami-passcode:latest`). Admin enables: custom portfolio uploads, benchmark overrides, slider/prompt shock adjustments, fixed-context theme sensitivity (experimental 2^N subset Shapley), backdated as-of dates, saved-scenario library, and dated-portfolio snapshots.
 
 ## Architecture overview
 
@@ -199,7 +199,7 @@ Then push to main and the trigger handles the rest.
 
 ## Design choices worth knowing
 
-- **Attribution has product tiers.** The headline uses **Scenario shocks** when available; **Grouped shocks** is the secondary risk-committee view. `Naive algebra` and `Full conditional diagnostic` are advanced diagnostics only. Full conditional is data-dependent correlation credit under the historical conditional distribution, not causal attribution.
+- **Attribution has product tiers.** The headline uses **Scenario shocks** when available; **Group totals** is the secondary risk-committee view. Periphery is a separate idiosyncratic overlay and material gross periphery is surfaced by ticker in the waterfall. `Naive algebra` and `Full conditional diagnostic` are advanced diagnostics only. Full conditional is data-dependent correlation credit under the historical conditional distribution, not causal attribution.
 - **Backdating is data-vintage-controlled, not model-vintage-controlled.** Events, factor history, and prices are strictly filtered to `≤ as_of`. The LLM's parametric knowledge is NOT — it still "knows" about COVID even when as_of is 2018. The UI banner makes this honest.
 - **`temperature=0` everywhere.** Same scenario + same portfolio + same effective as-of date + same prompt version + same model = same shocks, byte-for-byte cached.
 - **Two cache-invalidation levers.** `PROMPT_VERSION` (currently v9) bumps with any change to prompt semantics OR `ScenarioResult` shape; the `regression_spec` cache-key component (estimator id + lookback + alpha + min_obs) self-invalidates on any engine-math or regression-config change. Post-cache overlays (mark-to-market, benchmark/active return) and display-only fields bump neither — they're attached after retrieval and never persisted.

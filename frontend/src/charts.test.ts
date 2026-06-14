@@ -47,7 +47,9 @@ function fixtureResult(): ScenarioResult {
 
 describe("chart data helpers", () => {
   it("builds a waterfall with periphery and total bars", () => {
-    const data = buildWaterfallData(fixtureResult(), "naive");
+    const result = fixtureResult();
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: -0.0001, MSFT: 0 };
+    const data = buildWaterfallData(result, "naive");
 
     expect(data.x).toContain("US large-cap (SPY)");
     expect(data.x).toContain("Periphery");
@@ -90,6 +92,78 @@ describe("chart data helpers", () => {
     const top = topContributor(fixtureResult(), "conditional_grouped");
     expect(top.factor).toBe("SPY");
     expect(top.contribution).toBe(-0.06);
+  });
+
+  it("grouped waterfall displays group totals instead of redistributed factor bars", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_factor_conditional_shapley_grouped = {
+      SPY: -0.03,
+      ACWI: -0.01,
+      XLK: -0.02,
+      VIX: 0.01
+    };
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
+
+    const data = buildWaterfallData(result, "conditional_grouped");
+
+    expect(data.x).toContain("Market");
+    expect(data.x).toContain("Sector");
+    expect(data.x).toContain("Macro");
+    expect(data.x).not.toContain("US large-cap (SPY)");
+    expect(data.y[data.x.indexOf("Market")]).toBeCloseTo(-0.04);
+    expect(data.y[data.x.indexOf("Sector")]).toBeCloseTo(-0.02);
+    expect(data.y[data.x.indexOf("Macro")]).toBeCloseTo(0.01);
+  });
+
+  it("explodes material periphery into signed ticker bars", () => {
+    const data = buildWaterfallData(fixtureResult(), "naive");
+
+    expect(data.x).toContain("AAPL periphery");
+    expect(data.x).not.toContain("Periphery");
+    expect(data.y[data.x.indexOf("AAPL periphery")]).toBeCloseTo(-0.02);
+  });
+
+  it("does not hide offsetting material periphery behind a zero net bar", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.total_pnl = -0.06;
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0.01, MSFT: -0.01 };
+
+    const data = buildWaterfallData(result, "naive");
+
+    expect(data.x).toContain("AAPL periphery");
+    expect(data.x).toContain("MSFT periphery");
+    expect(data.x).not.toContain("Periphery");
+    expect(data.y[data.x.indexOf("AAPL periphery")]).toBeCloseTo(0.01);
+    expect(data.y[data.x.indexOf("MSFT periphery")]).toBeCloseTo(-0.01);
+  });
+
+  it("keeps the top three periphery names and rolls the rest into other periphery", () => {
+    const result = fixtureResult();
+    result.portfolio_holdings = {
+      AAPL: 0.3,
+      MSFT: 0.25,
+      NVDA: 0.2,
+      AMZN: 0.15,
+      GOOGL: 0.1
+    };
+    result.portfolio_pnl.total_pnl = -0.063;
+    result.portfolio_pnl.by_ticker_periphery = {
+      AAPL: -0.005,
+      MSFT: 0.004,
+      NVDA: -0.003,
+      AMZN: 0.002,
+      GOOGL: -0.001
+    };
+
+    const data = buildWaterfallData(result, "naive");
+
+    expect(data.x).toContain("AAPL periphery");
+    expect(data.x).toContain("MSFT periphery");
+    expect(data.x).toContain("NVDA periphery");
+    expect(data.x).toContain("Other periphery");
+    expect(data.x).not.toContain("AMZN periphery");
+    expect(data.x).not.toContain("GOOGL periphery");
+    expect(data.y[data.x.indexOf("Other periphery")]).toBeCloseTo(0.001);
   });
 
   it("builds an answer-first readout with direction, headline, and evidence", () => {

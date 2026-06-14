@@ -34,7 +34,7 @@ The dev server expects the FastAPI backend at `http://localhost:8080` (see `vite
 - [src/MethodologyDrawer.tsx](src/MethodologyDrawer.tsx) — slide-in drawer that parses `docs/methodology.md` at render time, sections split on `\n---\n`
 - [src/RunProgress.tsx](src/RunProgress.tsx) — the 7-step stepper (cache_check → market → analogs → envelope → narrative → betas → attribution)
 - [src/factors.ts](src/factors.ts) — factor label helpers; render human labels plus transparent tickers throughout the workbench
-- [src/charts.ts](src/charts.ts) — Plotly trace builders for waterfall, factor shocks, attribution comparison, and production-readout defaults
+- [src/charts.ts](src/charts.ts) — Plotly trace builders for the systematic waterfall, group-total attribution view, material periphery expansion, factor shocks, and production-readout defaults
 - [src/App.tsx](src/App.tsx) — first-screen workbench layout; visitor and admin share sample chips plus a Custom state, while visitor custom text stays restricted to sample portfolios
 
 ## Tests
@@ -42,7 +42,7 @@ The dev server expects the FastAPI backend at `http://localhost:8080` (see `vite
 Frontend tests cover the load-bearing UI logic:
 
 - `App.test.tsx` — access-gated rendering (visitor vs admin permissions)
-- `charts.test.ts` — waterfall and attribution-selection chart helpers
+- `charts.test.ts` — waterfall, group-total attribution, material periphery expansion, and attribution-selection chart helpers
 - `useOverlay.test.ts` — overlay primitive (body lock, Esc handling, onClose ordering)
 - `OverlayShell.test.tsx` — shared overlay frame focus/backdrop behavior
 - `uiCleanup.test.tsx` — compact visitor first screen, custom text affordance, and non-duplicated result summary facts

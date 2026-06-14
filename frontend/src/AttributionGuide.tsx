@@ -31,10 +31,10 @@ export function AttributionGuide({
             </div>
 
             <div className="guide-method">
-              <strong>Grouped shocks</strong>
+              <strong>Group totals</strong>
               <span className="guide-formula">Market / sector / style / macro</span>
               <p>Best for: Risk committee summaries</p>
-              <p className="guide-note">Collapses correlated peer leakage</p>
+              <p className="guide-note">Shows true group totals; factor detail stays below</p>
             </div>
 
             <div className="guide-method">

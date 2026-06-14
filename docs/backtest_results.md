@@ -99,5 +99,6 @@ the kind of run-to-run drift the test's `pytest.skip` guard exists for.)
 - **Magnitudes are LLM-proposed within the analog band**, not derived from a structural model.
   Sensible-looking outputs are not proofs of forecasting power.
 - **Periphery shocks are LLM heuristics** about idiosyncratic exposure. They are not derived
-  from named-entity supply-chain data.
+  from named-entity supply-chain data. The UI now surfaces material gross periphery by
+  ticker, but that improves concentration visibility, not statistical calibration.
 - **News-grounded narratives reflect search results at run time**, which can vary by hours.

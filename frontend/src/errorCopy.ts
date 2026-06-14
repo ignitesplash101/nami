@@ -35,7 +35,7 @@ const PRESENTATIONS: Record<ApiErrorKind, (detail: string) => ErrorPresentation>
   }),
   too_large: () => ({
     message:
-      "This scenario is too large to save. Trim notes/tags, or save before running decomposition.",
+      "This scenario is too large to save. Trim notes/tags, or save before running theme sensitivity.",
     cta: "reduce_size",
     ctaLabel: null
   }),

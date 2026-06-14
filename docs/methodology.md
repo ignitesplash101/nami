@@ -326,6 +326,13 @@ The two channels are **orthogonal** under this attribution — factor and periph
 independently to the total. Phase 8 added Conditional Shapley variants; Shapley redistributes credit *within* the factor
 channel only, never across the factor/periphery boundary.
 
+In the waterfall, immaterial periphery remains a single net `Periphery` bridge. When
+gross idiosyncratic contribution is material, the UI shows the largest ticker-level
+periphery contributors as signed bars and rolls the rest into `Other periphery`. This
+prevents offsetting name shocks from disappearing behind a near-zero net bar. The
+name-level table and CSV export always retain the full per-ticker factor / periphery /
+total split.
+
 **Constraint**: periphery shocks may only reference tickers present in the portfolio.
 Enforced at three layers: the shock extraction prompt instructs the LLM to limit periphery
 to held tickers; `validate_shock_proposal` rejects violations; `portfolio_pnl` itself
@@ -344,7 +351,7 @@ equal choices. The main workbench uses the practical hedge-fund split:
 | Surface | Backing field | Purpose |
 |---|---|---|
 | **Scenario shocks** | `by_factor_conditional_shapley_explicit` | Production risk view. Only factors explicitly shocked by the scenario receive factor attribution. |
-| **Grouped shocks** | `by_factor_conditional_shapley_grouped` | Risk-committee view. Market / sector / style / macro groups collapse correlated-peer leakage. |
+| **Group totals** | `by_factor_conditional_shapley_grouped` summed by factor group | Risk-committee view. Waterfall bars show true Market / Sector / Style / Macro totals; the factor table keeps factor-level detail. |
 | **Naive algebra** | `by_factor_naive` | Advanced audit/debug view. Direct formula, assumes factor independence. |
 | **Full conditional diagnostic** | `by_factor_conditional_shapley` | Advanced quant diagnostic. Correlation credit under the full historical joint distribution; non-causal. |
 
@@ -370,11 +377,14 @@ P&L under nami's demeaned-background contract.
 
 ### Grouped risk view
 
-Grouped shocks are the secondary presentation view. The engine first computes the full
+Group totals are the secondary presentation view. The engine first computes the full
 conditional game, sums credit within the four factor groups, then redistributes each
-group's value to members by their within-group naive share. This preserves efficiency
-while avoiding noisy peer leakage such as `US large-cap equities (SPY)` to `Global
-equities (ACWI)` or `Momentum stocks (MTUM)` to `Quality stocks (QUAL)`.
+group's value to members by their within-group naive share. The UI then sums that
+factor-level grouped map back into true `Market`, `Sector`, `Style`, and `Macro`
+waterfall bars, while the factor table keeps the redistributed factor detail for drilldown.
+This preserves efficiency while avoiding noisy peer leakage such as `US large-cap
+equities (SPY)` to `Global equities (ACWI)` or `Momentum stocks (MTUM)` to `Quality
+stocks (QUAL)`.
 
 ### Advanced diagnostics
 
@@ -414,7 +424,7 @@ Two factors, correlation = 0.9, only F0 explicitly shocked:
 
 All maps can sum to the same factor-driven P&L, but they answer different questions.
 For user-facing scenario interpretation, start with **Scenario shocks**, then use
-**Grouped shocks** for committee-style reporting. Use the advanced diagnostics only to
+**Group totals** for committee-style reporting. Use the advanced diagnostics only to
 audit the math or investigate correlation leakage.
 
 ---
@@ -447,9 +457,9 @@ stress text, not an automatic sign hack or post-hoc clamp.
 
 ---
 
-## Fixed-context shock attribution (narrative decomposition)
+## Fixed-context theme sensitivity (narrative Shapley)
 
-The opt-in "Run decomposition" action splits the scenario text into N ∈ {2, 3, 4}
+The opt-in "Run theme sensitivity" action splits the scenario text into N ∈ {2, 3, 4}
 self-contained sub-narratives and assigns each its exact Shapley value over the payoff
 `v(S) = total_pnl(run_scenario(" ".join(S)))`, with `v(∅) := 0`.
 
@@ -459,10 +469,11 @@ across subsets is the shock proposal for that fragment's text. This makes `v(S)`
 deterministic and reproducible (modulo temperature + cache), versus the earlier design
 that re-selected analogs and re-grounded per subset (noisy, news-dependent).
 
-**What it measures — and doesn't.** This is *decomposition sensitivity*: the marginal
+**What it measures — and doesn't.** This is *theme sensitivity*: the marginal
 shock each theme adds **within the original analog context**. It is NOT a causal
-decomposition (a fragment in isolation may still propose different shocks than it does in
-context). The UI and this caption label it "experimental / illustrative" for that reason.
+decomposition or risk-factor attribution (a fragment in isolation may still propose
+different shocks than it does in context). The UI and this caption label it
+"experimental / illustrative" for that reason.
 When a portfolio value is set, each contribution is also shown in dollars
 (`shapley_value · NAV`).
 
@@ -470,9 +481,9 @@ When a portfolio value is set, each contribution is also shown in dollars
 "X / Y subset runs". Cost: `2^N − 1` runs (empty subset is the hardcoded zero) — N=4 is
 15 runs (~30–90s, ≈ $0.015). N is capped at 4 (N=5 = 31 runs, too long for a synchronous UX).
 
-Both Shapley sums (factor-level and narrative-level) satisfy the **efficiency axiom**
+Both Shapley sums (factor-level and theme-level) satisfy the **efficiency axiom**
 exactly (modulo float noise); pinning analogs + skipping re-grounding removes the
-news-drift variance the narrative-level sum previously carried.
+news-drift variance the theme-sensitivity sum previously carried.
 
 ---
 
@@ -491,7 +502,7 @@ news-drift variance the narrative-level sum previously carried.
   + events_version()               # 12-char hash of historical_events.yaml
   + regression_spec                # estimator id|lookback|alpha|min_obs — engine-math lever
   + position_quantities            # only when present (MTM share counts)
-  + pinned_event_ids               # only when present (fixed-context decomposition subsets)
+  + pinned_event_ids               # only when present (fixed-context theme-sensitivity subsets)
   ```
 - TTL = 7 days (`LLM_CACHE_TTL_DAYS`) on cache reads.
 - Cache backend: `CloudStorageCache` (GCS, prefix `scenario_cache/`), JSON serialized via

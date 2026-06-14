@@ -1,4 +1,4 @@
-import { factorDisplayName } from "./factors";
+import { FALLBACK_FACTORS, factorDisplayName } from "./factors";
 import type {
   AttributionMethod,
   FactorMetadataMap,
@@ -24,6 +24,24 @@ export interface FactorReasoningRow {
 }
 
 const NO_EXPLICIT_SHOCK = "Correlation credit; no explicit shock";
+const EPSILON = 1e-6;
+const PERIPHERY_GROSS_THRESHOLD = 0.0025;
+const PERIPHERY_SINGLE_NAME_THRESHOLD = 0.0015;
+const PERIPHERY_TOTAL_SHARE_THRESHOLD = 0.2;
+const PERIPHERY_MAX_VISIBLE_NAMES = 3;
+const GROUP_ORDER = ["market", "sector", "style", "macro"];
+const GROUP_LABELS: Record<string, string> = {
+  market: "Market",
+  sector: "Sector",
+  style: "Style",
+  macro: "Macro"
+};
+
+interface WaterfallBar {
+  label: string;
+  value: number;
+  hoverLabel: string;
+}
 
 // --- Plotly theme from CSS tokens --------------------------------------------
 
@@ -116,31 +134,136 @@ export function buildWaterfallData(
   method: AttributionMethod,
   factors?: FactorMetadataMap
 ): WaterfallData {
-  const byFactor = selectedFactorAttribution(result, method);
-  const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
-    (acc, value) => acc + value,
-    0
-  );
-  const bars = Object.entries(byFactor)
-    .filter(([, value]) => Math.abs(value) > 1e-6)
-    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-    .slice(0, 14);
-  bars.push(["Periphery", peripheryTotal]);
+  const bars = [
+    ...factorWaterfallBars(result, method, factors),
+    ...peripheryWaterfallBars(result)
+  ];
 
-  const x = [...bars.map(([name]) => factorDisplayName(factors, name, "short")), "Total"];
-  const y = [...bars.map(([, value]) => value), result.portfolio_pnl.total_pnl];
+  const x = [...bars.map((bar) => bar.label), "Total"];
+  const y = [...bars.map((bar) => bar.value), result.portfolio_pnl.total_pnl];
   return {
     x,
     y,
     measure: [...bars.map(() => "relative" as const), "total"],
     text: y.map((value) => formatPercent(value)),
     hoverText: [
-      ...bars.map(
-        ([name, value]) => `${factorDisplayName(factors, name)}<br>${formatPercent(value)}`
-      ),
+      ...bars.map((bar) => `${bar.hoverLabel}<br>${formatPercent(bar.value)}`),
       `Total<br>${formatPercent(result.portfolio_pnl.total_pnl)}`
     ]
   };
+}
+
+function factorWaterfallBars(
+  result: ScenarioResult,
+  method: AttributionMethod,
+  factors?: FactorMetadataMap
+): WaterfallBar[] {
+  const byFactor = selectedFactorAttribution(result, method);
+  if (method === "conditional_grouped") {
+    return groupedFactorBars(byFactor, factors);
+  }
+  return Object.entries(byFactor)
+    .filter(([, value]) => Math.abs(value) > EPSILON)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 14)
+    .map(([factor, value]) => ({
+      label: factorDisplayName(factors, factor, "short"),
+      value,
+      hoverLabel: factorDisplayName(factors, factor)
+    }));
+}
+
+function groupedFactorBars(
+  byFactor: Record<string, number>,
+  factors?: FactorMetadataMap
+): WaterfallBar[] {
+  const totals = new Map<string, number>();
+  for (const [factor, value] of Object.entries(byFactor)) {
+    const group = factorGroup(factors, factor);
+    totals.set(group, (totals.get(group) ?? 0) + value);
+  }
+
+  return [...totals.entries()]
+    .filter(([, value]) => Math.abs(value) > EPSILON)
+    .sort(([a], [b]) => groupSortIndex(a) - groupSortIndex(b))
+    .map(([group, value]) => {
+      const label = factorGroupLabel(group);
+      return {
+        label,
+        value,
+        hoverLabel: `${label} factor group`
+      };
+    });
+}
+
+function factorGroup(factors: FactorMetadataMap | undefined, factor: string): string {
+  return factors?.[factor]?.group ?? FALLBACK_FACTORS[factor]?.group ?? "other";
+}
+
+function groupSortIndex(group: string): number {
+  const index = GROUP_ORDER.indexOf(group);
+  return index === -1 ? GROUP_ORDER.length : index;
+}
+
+function factorGroupLabel(group: string): string {
+  if (GROUP_LABELS[group]) return GROUP_LABELS[group];
+  return group
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function peripheryWaterfallBars(result: ScenarioResult): WaterfallBar[] {
+  const entries = Object.entries(result.portfolio_pnl.by_ticker_periphery)
+    .filter(([, value]) => Math.abs(value) > EPSILON)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
+    (acc, value) => acc + value,
+    0
+  );
+
+  if (!shouldExpandPeriphery(entries, result.portfolio_pnl.total_pnl)) {
+    return [
+      {
+        label: "Periphery",
+        value: peripheryTotal,
+        hoverLabel: "Periphery idiosyncratic shocks"
+      }
+    ];
+  }
+
+  const visible = entries.slice(0, PERIPHERY_MAX_VISIBLE_NAMES);
+  const bars = visible.map(([ticker, value]) => ({
+    label: `${ticker} periphery`,
+    value,
+    hoverLabel: `${ticker} idiosyncratic shock`
+  }));
+  const visibleTotal = visible.reduce((acc, [, value]) => acc + value, 0);
+  const other = peripheryTotal - visibleTotal;
+  if (Math.abs(other) > EPSILON) {
+    bars.push({
+      label: "Other periphery",
+      value: other,
+      hoverLabel: "Other idiosyncratic shocks"
+    });
+  }
+  return bars;
+}
+
+function shouldExpandPeriphery(entries: [string, number][], totalPnl: number): boolean {
+  const gross = entries.reduce((acc, [, value]) => acc + Math.abs(value), 0);
+  if (gross <= EPSILON) return false;
+
+  const maxName = Math.max(...entries.map(([, value]) => Math.abs(value)));
+  const totalShareTriggered =
+    Math.abs(totalPnl) > EPSILON &&
+    gross >= PERIPHERY_TOTAL_SHARE_THRESHOLD * Math.abs(totalPnl);
+  return (
+    gross >= PERIPHERY_GROSS_THRESHOLD ||
+    totalShareTriggered ||
+    maxName >= PERIPHERY_SINGLE_NAME_THRESHOLD
+  );
 }
 
 export function factorReasoningRows(

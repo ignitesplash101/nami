@@ -578,7 +578,7 @@ export default function App() {
   if (isAdmin && resultEnvelope) {
     commandActions.push({
       id: "decompose",
-      label: "Decompose narrative",
+      label: "Run theme sensitivity",
       run: () => void handleDecompose()
     });
   }
@@ -1615,9 +1615,9 @@ export function ResultsPanel({
     },
     {
       method: "conditional_grouped",
-      label: "Grouped shocks",
+      label: "Group totals",
       title:
-        "Shapley over factor groups (market / sector / style / macro), redistributed within-group by naive weight. Collapses within-group leakage.",
+        "Waterfall group totals for market / sector / style / macro, with factor-level detail kept in the table.",
       disabled: !hasConditionalGrouped
     }
   ];
@@ -1751,7 +1751,7 @@ export function ResultsPanel({
         <div className="card-heading">
           <div>
             <p className="eyebrow">Attribution</p>
-            <h3>Factor contribution waterfall</h3>
+            <h3>Systematic contribution waterfall</h3>
           </div>
           <div
             className="segmented"
@@ -2018,7 +2018,7 @@ export function ResultsPanel({
         <div className="card-heading">
           <div>
             <p className="eyebrow">Experimental</p>
-            <h3>Fixed-context shock attribution</h3>
+            <h3>Fixed-context theme sensitivity</h3>
           </div>
           <div className="button-row">
             <button
@@ -2028,9 +2028,9 @@ export function ResultsPanel({
             >
               {isDecomposing
                 ? decomposeProgress
-                  ? `Decomposing… ${decomposeProgress.done}/${decomposeProgress.total}`
-                  : "Decomposing…"
-                : "Run decomposition"}
+                  ? `Testing themes… ${decomposeProgress.done}/${decomposeProgress.total}`
+                  : "Testing themes…"
+                : "Run theme sensitivity"}
             </button>
             {isDecomposing && onCancelDecompose ? (
               <button className="ghost-button" onClick={onCancelDecompose}>
@@ -2072,7 +2072,7 @@ export function ResultsPanel({
           <p className="muted">
             Admin-only · ~3–15 pipeline runs (~30–90s). The marginal shock each theme adds
             <em> within the original analog context</em> (analogs pinned, no re-grounding) — a
-            decomposition-sensitivity view, illustrative, not causal. Current periphery total:{" "}
+            theme-sensitivity view, illustrative, not causal. Current periphery total:{" "}
             {formatPercent(peripheryTotal)}.
           </p>
         )}
