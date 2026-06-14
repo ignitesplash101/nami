@@ -58,6 +58,24 @@ describe("chart data helpers", () => {
     expect(data.y[data.y.length - 1]).toBe(-0.08);
   });
 
+  it("omits the periphery waterfall bar when idiosyncratic contribution is zero", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
+    const data = buildWaterfallData(result, "naive");
+
+    expect(data.x).not.toContain("Periphery");
+    expect(data.x[data.x.length - 1]).toBe("Total");
+  });
+
+  it("omits visually zero non-material periphery from the waterfall", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0.000004, MSFT: 0 };
+    const data = buildWaterfallData(result, "naive");
+
+    expect(data.x).not.toContain("Periphery");
+    expect(data.x[data.x.length - 1]).toBe("Total");
+  });
+
   it("switches top contributor under conditional attribution", () => {
     const naive = topContributor(fixtureResult(), "naive");
     const conditional = topContributor(fixtureResult(), "conditional");

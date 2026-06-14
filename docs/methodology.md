@@ -326,12 +326,14 @@ The two channels are **orthogonal** under this attribution — factor and periph
 independently to the total. Phase 8 added Conditional Shapley variants; Shapley redistributes credit *within* the factor
 channel only, never across the factor/periphery boundary.
 
-In the waterfall, immaterial periphery remains a single net `Periphery` bridge. When
-gross idiosyncratic contribution is material, the UI shows the largest ticker-level
-periphery contributors as signed bars and rolls the rest into `Other periphery`. This
-prevents offsetting name shocks from disappearing behind a near-zero net bar. The
-name-level table and CSV export always retain the full per-ticker factor / periphery /
-total split.
+In the waterfall, zero or visually-zero non-material periphery is omitted rather
+than shown as a `0.00%` bridge. Small but visible non-material periphery remains a
+single net `Periphery` bridge. When gross idiosyncratic contribution is material,
+the UI shows the largest ticker-level periphery contributors as signed bars and
+rolls the rest into `Other periphery`, even if offsetting names make the net
+contribution near zero. This prevents offsetting name shocks from disappearing
+behind a near-zero net bar. The name-level table and CSV export always retain the
+full per-ticker factor / periphery / total split.
 
 **Constraint**: periphery shocks may only reference tickers present in the portfolio.
 Enforced at three layers: the shock extraction prompt instructs the LLM to limit periphery

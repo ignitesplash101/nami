@@ -29,6 +29,7 @@ const PERIPHERY_GROSS_THRESHOLD = 0.0025;
 const PERIPHERY_SINGLE_NAME_THRESHOLD = 0.0015;
 const PERIPHERY_TOTAL_SHARE_THRESHOLD = 0.2;
 const PERIPHERY_MAX_VISIBLE_NAMES = 3;
+const PERIPHERY_DISPLAY_THRESHOLD = 0.00005;
 const GROUP_ORDER = ["market", "sector", "style", "macro"];
 const GROUP_LABELS: Record<string, string> = {
   market: "Market",
@@ -222,8 +223,16 @@ function peripheryWaterfallBars(result: ScenarioResult): WaterfallBar[] {
     (acc, value) => acc + value,
     0
   );
+  const gross = entries.reduce((acc, [, value]) => acc + Math.abs(value), 0);
+
+  if (gross <= EPSILON) {
+    return [];
+  }
 
   if (!shouldExpandPeriphery(entries, result.portfolio_pnl.total_pnl)) {
+    if (Math.abs(peripheryTotal) < PERIPHERY_DISPLAY_THRESHOLD) {
+      return [];
+    }
     return [
       {
         label: "Periphery",
