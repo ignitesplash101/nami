@@ -46,7 +46,14 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 #      .T-suffix ticker returns are converted to USD before beta estimation.
 #      NOTE: engine-math changes (estimator/alpha/lookback) are keyed separately
 #      via `regression_spec` in the cache key — they do NOT require a bump here.
-PROMPT_VERSION = "v9"
+# v9 -> v10: Factor-universe breadth. Four new factors enter the LLM payload
+#      (EFA developed ex-US equities; HYG high-yield credit; GLD gold; SHY
+#      short-duration Treasuries — all decimal price returns, horizon-neutral
+#      descriptions), and rule 7's overlap enumeration gains EFA. The event
+#      registry also grew 17 -> 31 with four new tags (technology, volatility,
+#      credit, disaster) — registry changes ride `events_version`, but the new
+#      factor descriptions alone require this bump.
+PROMPT_VERSION = "v10"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
@@ -156,8 +163,9 @@ RULES
    must be within [-0.75, +0.75] (mechanically enforced), and should stay modest
    relative to the factor-driven move.
 7. When overlapping factors materially diverge (for example US large-cap equities
-   (SPY), Global equities (ACWI), US technology (XLK), Momentum stocks (MTUM), and
-   Quality stocks (QUAL)), the reasoning must explain the rotation rather than
+   (SPY), Global equities (ACWI), Developed ex-US equities (EFA), US technology
+   (XLK), Momentum stocks (MTUM), and Quality stocks (QUAL)), the reasoning must
+   explain the rotation rather than
    leaving it implicit.
 8. Outputs are hypothetical stress estimates, not forecasts, investment advice, or
    regulatory stress tests.

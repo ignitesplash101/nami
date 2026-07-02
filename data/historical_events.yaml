@@ -10,7 +10,8 @@
 #       description: |
 #         What happened, key factor moves observed, why this is a useful analog.
 #
-# Valid tags: trade-war, pandemic, inflation, geopolitical, banking, energy, central-bank, currency
+# Valid tags: trade-war, pandemic, inflation, geopolitical, banking, energy, central-bank,
+#             currency, technology, volatility, credit, disaster
 #
 # Minimum window: end_date >= start_date + 3 days (calendar).
 #
@@ -19,6 +20,8 @@
 #   XLRE launched in 2015
 #   XLC launched in 2018
 #   ACWI launched mid-2008
+#   HYG launched Apr 2007; GLD Nov 2004; SHY Jul 2002; EFA Aug 2001
+#   Pre-2001 events (dot-com) cover SPY + the 1998-vintage SPDR sectors only
 events:
   bnp-paribas-credit-2007:
     name: BNP Paribas Funds Suspended / Early Credit Freeze
@@ -183,3 +186,145 @@ events:
       other partners triggered a multi-week equity selloff and yield curve
       moves. Useful as a recent trade-war analog with current factor structure
       (XLC, XLRE, all style ETFs available).
+  dotcom-crash-2000:
+    name: Dot-Com Bubble First Break
+    start_date: 2000-03-10
+    end_date: 2000-05-23
+    tags: [technology]
+    description: |
+      NASDAQ peaked Mar 10 2000 (5,048) and broke ~-35% in ten weeks as
+      profitless-tech valuations unwound. Technology (XLK) led losses while
+      staples and utilities were relatively spared; the rotation out of
+      growth/momentum concentration is the defining mechanism. Only SPY and the
+      1998-vintage SPDR sectors have data — style ETFs and ACWI show NaN.
+  nine-eleven-2001:
+    name: September 11 Attacks
+    start_date: 2001-09-10
+    end_date: 2001-09-21
+    tags: [geopolitical]
+    description: |
+      Markets closed Sep 11-14; on the Sep 17 reopen SPY gapped down ~-5% and
+      slid to the Sep 21 low (~-12% over the window). Airlines/travel and
+      insurers crushed, defense bid; flight-to-quality into Treasuries and
+      gold; oil spiked then faded. The canonical sudden exogenous-attack analog.
+  corporate-scandals-2002:
+    name: Enron/WorldCom Accounting Crisis
+    start_date: 2002-05-17
+    end_date: 2002-07-23
+    tags: [credit]
+    description: |
+      WorldCom's fraud disclosure (Jun 25 2002) atop Enron's collapse destroyed
+      trust in corporate accounts; SPX fell ~-25% to the Jul 23 low. Credit
+      spreads blew out, telecoms/tech led losses, and the episode is the
+      cleanest pre-GFC "corporate credit + governance" stress analog.
+  shanghai-correction-2007:
+    name: Shanghai Correction Spillover
+    start_date: 2007-02-26
+    end_date: 2007-03-14
+    tags: [currency, geopolitical]
+    description: |
+      Shanghai's -8.8% one-day drop (Feb 27 2007) triggered a global risk
+      wobble: Dow -416, VIX +60% in a day, yen-carry positions unwound. Brief
+      and fully retraced — a useful "China-led sentiment shock without a
+      fundamental break" analog.
+  japan-earthquake-2011:
+    name: Tohoku Earthquake / Fukushima
+    start_date: 2011-03-10
+    end_date: 2011-03-22
+    tags: [disaster]
+    description: |
+      The Mar 11 2011 earthquake/tsunami and Fukushima crisis: Nikkei -16% in
+      two sessions, global supply chains (autos, semis) disrupted, yen SURGED
+      on repatriation flows (G7 intervened Mar 18). The canonical natural-
+      disaster / supply-chain analog with an FX twist.
+  swiss-franc-unpeg-2015:
+    name: Swiss Franc Unpeg
+    start_date: 2015-01-14
+    end_date: 2015-01-23
+    tags: [currency, central-bank]
+    description: |
+      The SNB abandoned the EUR/CHF 1.20 floor on Jan 15 2015 without warning;
+      CHF spiked ~20% intraday, FX brokers failed, European equities whipsawed.
+      A pure central-bank-surprise / FX-dislocation analog with limited US
+      equity damage.
+  volmageddon-2018:
+    name: Volmageddon VIX Spike
+    start_date: 2018-01-26
+    end_date: 2018-02-09
+    tags: [volatility]
+    description: |
+      From the Jan 26 2018 melt-up peak, rising yields tipped equities into a
+      -10% air pocket; on Feb 5 the VIX more than doubled in a day and
+      short-vol products (XIV) collapsed. Positioning-driven, fast, and
+      fundamentals-light — the canonical vol-unwind analog.
+  trade-war-reescalation-2019:
+    name: 2019 Trade War Re-escalation
+    start_date: 2019-05-03
+    end_date: 2019-08-23
+    tags: [trade-war, currency]
+    description: |
+      May 2019 tariff re-escalation after talks collapsed, then August's yuan
+      fixing through 7.0 and retaliatory rounds. Choppy -6% to -8% equity
+      swings, 10Y yields plunged toward cycle lows, gold rallied hard. A
+      medium-grade, drawn-out trade-war analog (vs Q4-2018's acute selloff).
+  vaccine-rotation-2020:
+    name: Vaccine Announcement Rotation
+    start_date: 2020-11-06
+    end_date: 2020-12-18
+    tags: [pandemic]
+    description: |
+      Pfizer's Nov 9 2020 efficacy readout triggered one of the sharpest
+      factor rotations on record: momentum crashed, value/small-caps and
+      beaten-down cyclicals ripped, stay-at-home tech lagged a rising market.
+      A RECOVERY/rotation episode — the analog for "the crisis ends suddenly".
+  rates-tantrum-2021:
+    name: Feb-Mar 2021 Rates Tantrum
+    start_date: 2021-02-10
+    end_date: 2021-03-08
+    tags: [inflation, central-bank]
+    description: |
+      Reflation bets drove the 10Y from ~1.1% to ~1.6% in four weeks; long-
+      duration growth (NDX -11%) and momentum de-rated while value and banks
+      held up. The cleanest modern "real-yield shock hits growth equities"
+      analog at moderate magnitude.
+  evergrande-2021:
+    name: Evergrande Contagion Scare
+    start_date: 2021-09-13
+    end_date: 2021-10-04
+    tags: [credit, geopolitical]
+    description: |
+      China Evergrande's default spiral raised systemic-contagion fears:
+      global equities -5%, high-yield credit widened, industrial metals and
+      China-exposed names hit. Faded without a global credit event — a useful
+      "credit scare that stays contained" analog.
+  higher-for-longer-2023:
+    name: Higher-for-Longer Rates Selloff
+    start_date: 2023-07-31
+    end_date: 2023-10-27
+    tags: [inflation, central-bank]
+    description: |
+      The 10Y ground from ~4.0% to 5.0% (Oct 2023) on supply and "higher for
+      longer" repricing; SPX fell ~-10% over three months with rate-sensitive
+      sectors (utilities, real estate) worst. A slow-burn duration-led
+      de-rating analog, distinct from 2022's inflation shock.
+  fed-pivot-rally-2023:
+    name: Fed Pivot Everything Rally
+    start_date: 2023-10-27
+    end_date: 2023-12-27
+    tags: [central-bank]
+    description: |
+      From the late-Oct 2023 trough, cooling inflation and the December FOMC
+      pivot drove yields down ~100bp and SPX +16% in nine weeks; small caps
+      and rate-sensitive laggards squeezed hardest. A RECOVERY analog for
+      "the central bank blinks".
+  ai-capex-shock-2025:
+    name: DeepSeek AI Capex Scare
+    start_date: 2025-01-24
+    end_date: 2025-02-07
+    tags: [technology]
+    description: |
+      DeepSeek's cheap-model release (Jan 27 2025) cracked the AI-capex
+      narrative: NVDA -17% in a day (largest single-stock value loss on
+      record), semis and AI-infrastructure names slumped while the broad
+      market barely moved. A concentration/theme-unwind analog for
+      AI-supply-chain scenarios.

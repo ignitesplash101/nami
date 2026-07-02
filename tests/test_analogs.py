@@ -229,3 +229,22 @@ def test_fetch_event_returns_matrix_preserves_order_and_matches_envelope(monkeyp
         fetch_event_returns_matrix(["e1", "e1"], registry=fake_registry)
     with pytest.raises(KeyError, match="unknown"):
         fetch_event_returns_matrix(["ghost"], registry=fake_registry)
+
+
+def test_registry_has_31_events_with_extended_tags():
+    events = analogs.load_events()
+    assert len(events) == 31
+    for eid in (
+        "dotcom-crash-2000",
+        "nine-eleven-2001",
+        "volmageddon-2018",
+        "vaccine-rotation-2020",
+        "evergrande-2021",
+        "higher-for-longer-2023",
+        "ai-capex-shock-2025",
+    ):
+        assert eid in events, eid
+    assert "technology" in events["dotcom-crash-2000"].tags
+    assert "volatility" in events["volmageddon-2018"].tags
+    assert "credit" in events["evergrande-2021"].tags
+    assert "disaster" in events["japan-earthquake-2011"].tags

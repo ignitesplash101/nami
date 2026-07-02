@@ -69,7 +69,7 @@ require paid data or accounting machinery beyond an equity scenario explorer.
 
 ---
 
-## Factor universe (22 factors)
+## Factor universe (26 factors)
 
 All factors are tickers fetched via yfinance; each weekly "return" is the percent change in
 the factor's adjusted-close price. These are **tradeable-ETF proxies** for systematic risk
@@ -81,18 +81,23 @@ construction at the ETF level).
 
 | group | factors |
 |---|---|
-| **Market** (2) | US large-cap equities (`SPY`), Global equities (`ACWI`) |
+| **Market** (3) | US large-cap equities (`SPY`), Global equities (`ACWI`), Developed ex-US equities (`EFA`) |
 | **Sectors** (11 GICS) | US technology (`XLK`), US financials (`XLF`), US energy (`XLE`), US health care (`XLV`), US industrials (`XLI`), US consumer discretionary (`XLY`), US consumer staples (`XLP`), US utilities (`XLU`), US materials (`XLB`), US real estate (`XLRE`), US communication services (`XLC`) |
 | **Styles** (5 MSCI) | Momentum stocks (`MTUM`), Quality stocks (`QUAL`), Value stocks (`VLUE`), Small-cap tilt (`SIZE`), Low-volatility stocks (`USMV`) |
-| **Macro** (4) | US 10Y yield (`TNX`, yfinance `^TNX`), US dollar (`DXY`, yfinance `DX-Y.NYB`), Equity volatility (`VIX`, yfinance `^VIX`), Oil price (`OIL`, yfinance `CL=F`) |
+| **Macro** (7) | US 10Y yield (`TNX`, yfinance `^TNX`), US dollar (`DXY`, yfinance `DX-Y.NYB`), Equity volatility (`VIX`, yfinance `^VIX`), Oil price (`OIL`, yfinance `CL=F`), High-yield credit (`HYG`), Gold (`GLD`), Short-duration Treasuries (`SHY`) |
 
 The app renders factors as `Human label (TICKER)` wherever space allows, while the
 internal keys and model math stay ticker-based. Unit convention: decimal price returns
-for equity factors; decimal change in the *level* for macro indices (so a VIX shock of
-`+0.50` = the VIX index spiking by 50%, e.g. 15 → 22.5). Betas are estimated on weekly
-returns while shocks are episode total moves — see the "Shock horizon and units" section
-for the full contract. The full description per factor is in
-[`app/factors/universe.py`](../app/factors/universe.py).
+for equity factors and for the ETF-based macro factors (`HYG`/`GLD`/`SHY`); decimal
+change in the *level* for the index-based macro factors (`TNX`/`DXY`/`VIX`/`OIL` — so a
+VIX shock of `+0.50` = the VIX index spiking by 50%, e.g. 15 → 22.5). Betas are estimated
+on weekly returns while shocks are episode total moves — see the "Shock horizon and
+units" section for the full contract. The full description per factor is in
+[`app/factors/universe.py`](../app/factors/universe.py). The Phase-22 additions close
+the review's coverage gaps: `HYG` is the credit-stress lever (the registry is
+banking/credit-heavy), `GLD` the flight-to-quality leg, `SHY` the front-end-rates lever,
+and `EFA` gives non-US developed equities their own dimension — on the replay harness,
+adding `EFA` cut the Japan book's bias from +2.2% to +0.7% and its MAE from 5.9% to 5.1%.
 
 **Pre-launch dates** matter for the analog matcher — events before a factor's ETF launch
 return NaN for that factor and are excluded from its envelope count:
@@ -103,6 +108,10 @@ return NaN for that factor and are excluded from its envelope count:
 | XLRE | 2015 |
 | XLC | 2018 |
 | ACWI | mid-2008 |
+| HYG | Apr 2007 |
+| GLD | Nov 2004 |
+| SHY | Jul 2002 |
+| EFA | Aug 2001 |
 
 ---
 
@@ -148,7 +157,7 @@ X̃ = X − mean(X, axis=0)             # T × F factor returns, centered
   mask), and `idio_vol_weekly` (ddof=1 weekly residual vol, not annualized). Names with
   `r2 < 0.30` get a warning diagnostic — the factor model explains little of their
   variance, so factor-implied scenario P&L likely understates their true risk.
-- **Effective dof, adjusted R², and beta SEs (Phase 21).** With 22 regressors on as few
+- **Effective dof, adjusted R², and beta SEs (Phase 21).** With 26 regressors on as few
   as 40 weeks, in-sample R² is flattered exactly where the fit is weakest. The solver
   therefore also reports the ridge **effective degrees of freedom**
   `p_eff = Σ s/(s+α)` over the standardized Gram's eigenvalues, a **dof-honest
@@ -185,13 +194,13 @@ standardize-then-rescale property.
 
 ## Historical analog matcher
 
-`app/factors/analogs.py` loads a curated registry of 17 historical market-stress events
+`app/factors/analogs.py` loads a curated registry of 31 historical market-stress events
 from [`data/historical_events.yaml`](../data/historical_events.yaml), spanning 2007–2025.
 Each event has:
 
 - `id` — stable kebab-case identifier (e.g. `covid-crash-2020`)
 - `start_date`, `end_date` — daily-precision window (inclusive on both ends)
-- `tags` — subset of `{trade-war, pandemic, inflation, geopolitical, banking, energy, central-bank, currency}`
+- `tags` — subset of `{trade-war, pandemic, inflation, geopolitical, banking, energy, central-bank, currency, technology, volatility, credit, disaster}`
 - `description` — what happened and why it's a useful analog
 
 For a given subset of event IDs, `compute_envelope` returns a per-factor DataFrame with
@@ -263,6 +272,16 @@ benchmark compares like with like. Remaining limitation: Tokyo and US weekly bar
 at different times, so cross-market betas are attenuated by non-synchronous trading;
 nami does not apply a lead/lag correction.
 
+**Why no Dimson lag (dated decision record, 2026-07-02).** A lead/lag (Dimson-style
+summed-beta) correction was evaluated against the engine-replay harness before
+implementation. The attenuation hypothesis predicts the Japan book systematically
+UNDERSTATES realized event moves; the harness showed the opposite sign — Japan bias was
+**+2.2%** (overstatement) on the 22-factor baseline while all three US books sat at
+−2.4% to −4.3% — so a correction that raises Japan's betas would have made its error
+worse. Adding the `EFA` factor instead (a proper developed-ex-US dimension) cut Japan's
+bias to +0.7% and its MAE from 5.9% to 5.1%. Revisit only if a future harness snapshot
+shows the attenuation signature.
+
 ---
 
 ## Analog replay
@@ -283,7 +302,7 @@ Three properties make the replay range the honest companion to the headline numb
 - **No zero-holes.** The LLM's scenario shocks cover only the factors it names —
   unshocked factors enter the P&L at exactly zero. A realized event vector has no such
   holes: every factor's actual co-move is included (NaN only where an ETF predates the
-  window; those contribute zero and the per-event coverage count, e.g. `20/22 factors`,
+  window; those contribute zero and the per-event coverage count, e.g. `20/26 factors`,
   discloses it).
 - **No severity cap.** Proposed shocks are validated into the analog envelope's
   `[p10, p90]` band; the replay range shows each analog's FULL realized severity. A
@@ -313,7 +332,7 @@ weeks — the **median selected-analog window length**, so the dispersion is sca
 the same implied horizon as the shocks themselves.
 
 Two independence assumptions do real work here and both bias the band DOWN: residuals
-are treated as uncorrelated across names (sector co-movement the 22-factor model
+are treated as uncorrelated across names (sector co-movement the 26-factor model
 misses is ignored) and across weeks (stress autocorrelation is ignored). Read the band
 as a **floor on dispersion around the point estimate, not a confidence interval on the
 scenario** — the scenario itself (which analogs, which shocks) carries far more
@@ -330,7 +349,7 @@ distribution; the band brackets the total either way.
 `app/llm/scenario.run_scenario` orchestrates two Gemini calls + one structured extraction.
 
 ### Call 1 — Analog selection (`select_analogs`)
-- Input: scenario text + `event_summaries()` (JSON of all 17 events)
+- Input: scenario text + `event_summaries()` (JSON of all 31 events)
 - No grounding tool, structured-output schema `AnalogSelectionOutput`
 - Output: 2–5 event IDs the LLM thinks share the scenario's *mechanism*. The 2–5
   cardinality is enforced post-hoc in `run_scenario` (it also covers the

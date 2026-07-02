@@ -279,9 +279,11 @@ def test_engine_replay_network_subset_semantic():
     computed = [p for p in pairs if p.skipped_reason is None]
     assert len(computed) >= 3  # tolerate one transient-fetch skip
 
+    from app.factors.universe import FACTORS
+
     for pair in computed:
         assert pair.error == pytest.approx(pair.modeled_pnl - pair.realized_pnl)
-        assert 0 < pair.n_factors_covered <= pair.n_factors_used <= 22
+        assert 0 < pair.n_factors_covered <= pair.n_factors_used <= len(FACTORS)
 
     unambiguous = [
         p

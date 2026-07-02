@@ -118,7 +118,8 @@ def test_backdated_too_few_analogs_raises(monkeypatch):
     cache = InMemoryCache()
     gemini = _MockGeminiClient()
 
-    # Date in 2007 — before nearly every event in historical_events.yaml.
+    # Date in early 2000 — before ANY event in historical_events.yaml ends
+    # (the Phase-22 registry reaches back to the dot-com break, ending May 2000).
     with pytest.raises(ValueError, match="eligible historical analogs"):
         run_scenario(
             scenario_text="ancient scenario",
@@ -126,7 +127,7 @@ def test_backdated_too_few_analogs_raises(monkeypatch):
             config=_config(),
             gemini=gemini,
             cache=cache,
-            market_date=date(2006, 1, 1),
+            market_date=date(2000, 1, 3),
         )
 
     assert MIN_ELIGIBLE_ANALOG_EVENTS >= 2  # sanity

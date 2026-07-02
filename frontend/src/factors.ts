@@ -17,6 +17,7 @@ export const FALLBACK_FACTORS: FactorMetadataMap = {
     display_name: "Global equities",
     description: "MSCI All Country World ETF; weekly % return."
   },
+  EFA: label("EFA", "market", "DM ex-US equities", "Developed ex-US equities"),
   XLK: label("XLK", "sector", "US technology", "US technology"),
   XLF: label("XLF", "sector", "US financials", "US financials"),
   XLE: label("XLE", "sector", "US energy", "US energy"),
@@ -36,7 +37,10 @@ export const FALLBACK_FACTORS: FactorMetadataMap = {
   TNX: label("TNX", "macro", "US 10Y yield", "US 10Y yield", "^TNX"),
   DXY: label("DXY", "macro", "US dollar", "US dollar", "DX-Y.NYB"),
   VIX: label("VIX", "macro", "Equity volatility", "Equity volatility", "^VIX"),
-  OIL: label("OIL", "macro", "Oil price", "Oil price", "CL=F")
+  OIL: label("OIL", "macro", "Oil price", "Oil price", "CL=F"),
+  HYG: label("HYG", "macro", "High-yield credit", "High-yield credit"),
+  GLD: label("GLD", "macro", "Gold", "Gold"),
+  SHY: label("SHY", "macro", "Short Treasuries", "Short-duration Treasuries")
 };
 
 function label(

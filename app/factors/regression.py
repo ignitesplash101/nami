@@ -23,9 +23,10 @@ from app.factors.universe import factor_name_by_ticker, factor_tickers
 
 # Minimum non-NaN weekly observations (overlapping the complete-factor rows)
 # required to estimate one ticker's betas. Below ~9 months of weekly data a
-# 22-factor ridge fit is mostly prior, so we raise loudly instead of silently
-# returning noise. 52 would reject names listed 10-12 months ago; the SHAP
-# background's separate 52-row floor governs the factor matrix, not this.
+# 26-factor near-OLS fit is noise (see the low_regression_dof diagnostic), so we
+# raise loudly instead of silently returning it. 52 would reject names listed
+# 10-12 months ago; the SHAP background's separate 52-row floor governs the
+# factor matrix, not this.
 MIN_REGRESSION_WEEKS = 40
 
 # Estimator identity for `regression_spec` — bump when the regression MATH

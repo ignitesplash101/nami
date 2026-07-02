@@ -407,6 +407,19 @@ def test_portfolio_pnl_rejects_periphery_for_unknown_ticker():
         portfolio_pnl(portfolio, betas, {"SPY": -0.05}, periphery_shocks={"GHOST": -0.1})
 
 
+def test_factor_universe_covers_credit_gold_frontend_and_dm_ex_us():
+    from app.factors.universe import FACTORS
+
+    assert len(FACTORS) == 26
+    assert FACTORS["EFA"].group == "market"
+    for key in ("HYG", "GLD", "SHY"):
+        assert FACTORS[key].group == "macro"
+    for key in ("HYG", "GLD", "SHY", "EFA"):
+        assert FACTORS[key].ticker == key
+        # Horizon-neutral price-return units (v9 contract; these feed the LLM).
+        assert "price return" in FACTORS[key].description
+
+
 def test_portfolio_idio_band_exact_math():
     from app.factors.regression import TickerRegressionStats
     from app.factors.shocks import portfolio_idio_band

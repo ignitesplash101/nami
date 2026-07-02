@@ -33,6 +33,11 @@ VALID_TAGS = frozenset(
         "energy",
         "central-bank",
         "currency",
+        # Phase-22 registry expansion
+        "technology",
+        "volatility",
+        "credit",
+        "disaster",
     }
 )
 

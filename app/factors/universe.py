@@ -42,6 +42,15 @@ FACTORS: dict[str, Factor] = {
         "Global equities",
         "MSCI All Country World ETF; decimal price return.",
     ),
+    "EFA": Factor(
+        "EFA",
+        "EFA",
+        "market",
+        "DM ex-US equities",
+        "Developed ex-US equities",
+        "MSCI EAFE ETF (developed Europe, Japan, Australasia — no US); decimal price "
+        "return. The lever for non-US developed stress diverging from US equities.",
+    ),
     # Sectors
     "XLK": Factor(
         "XLK",
@@ -208,6 +217,34 @@ FACTORS: dict[str, Factor] = {
         "Oil price",
         "Oil price",
         "WTI Crude Oil front-month futures; decimal change in the futures price.",
+    ),
+    "HYG": Factor(
+        "HYG",
+        "HYG",
+        "macro",
+        "High-yield credit",
+        "High-yield credit",
+        "iBoxx USD High Yield Corporate Bond ETF; decimal price return. Falls when "
+        "credit spreads widen — the credit-stress lever for default/banking scenarios.",
+    ),
+    "GLD": Factor(
+        "GLD",
+        "GLD",
+        "macro",
+        "Gold",
+        "Gold",
+        "SPDR Gold Shares; decimal price return. Flight-to-quality and inflation-fear "
+        "hedge; often rallies when risk assets fall.",
+    ),
+    "SHY": Factor(
+        "SHY",
+        "SHY",
+        "macro",
+        "Short Treasuries",
+        "Short-duration Treasuries",
+        "1-3 Year Treasury Bond ETF; decimal price return (small magnitudes — duration "
+        "is short). Rallies on flight-to-quality and rate-cut expectations; the "
+        "front-end-rates lever.",
     ),
 }
 
