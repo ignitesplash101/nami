@@ -176,7 +176,32 @@ X̃ = X − mean(X, axis=0)             # T × F factor returns, centered
   betas — the exact bias a stress engine must avoid. Under-determined fits are
   handled by *disclosure* (adjusted R², `p_eff`, the low-dof diagnostic) rather than
   by blanket shrinkage; shrinkage toward informative targets (market/sector priors,
-  not zero) is future work.
+  not zero) was subsequently evaluated and rejected — see the stressed-beta record
+  below (2026-07-03).
+- **Why betas stay unconditional — no downside weighting, no informative-target
+  shrinkage (dated decision record, 2026-07-03).** The stressed-beta experiment ran
+  both proposed variants against the engine-replay harness (124 pairs, 85 computed,
+  identical pair set across every run; see
+  [Calibration evidence](#calibration-evidence)), with the production estimator
+  re-run the same day as the baseline (MAE 3.25%, bias −1.40%, sign 92.9%,
+  r 0.976). **Downside-weighted WLS** (stress week = bottom-decile SPY week within
+  the vintage window; stress rows weighted k×) degraded every aggregate
+  monotonically in k: MAE 3.39% / 3.50% / 3.66% / 4.18% and bias −1.55% / −1.64% /
+  −1.76% / −2.11% at k = 2 / 3 / 5 / 25, with r falling 0.976 → 0.955. Per book it
+  traded a small Japan bias gain (+0.73% → −0.12% at k = 3) for degradation
+  everywhere else (Japan MAE 5.14% → 5.86%; both US-heavy books worse on bias AND
+  MAE) — the "betas blow up in stress" hypothesis does not survive contact with
+  realized event returns through this estimator. **Informative-target ridge**
+  (prior β = 1 on SPY — EFA for `.T` listings — via `min ‖y−Xb‖² + α‖b−b0‖²`) is a
+  no-op at the production α = 0.1 and a noise-level wash at α = 2 (overall MAE
+  3.23%, but three of four books worse on MAE, Japan bias worse at +0.83%, sign
+  and r both slightly down); from α = 8 it degrades outright — informative targets
+  do not rescue heavier shrinkage. No cell met the standing adoption bar
+  (bias/MAE improvement without correlation degradation, robust per book), so the
+  estimator stays `ridge-std-v2`, α = 0.1, unconditionally weighted and
+  zero-targeted. Analog-window-only estimation was not separately implemented: it
+  is the k→∞ limit of the WLS family, whose gradient is monotonically harmful.
+  Revisit only with new harness evidence.
 - **Currency:** non-USD listings (e.g. the Japan book's `.T` tickers) have their weekly
   returns converted to USD (`(1 + r_local)(1 + r_FX) − 1`, vintage-correct FX series)
   *before* the regression, so betas absorb FX exposure and active return vs a USD-quoted
