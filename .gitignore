@@ -125,3 +125,10 @@ ehthumbs.db
 *.log
 .local/
 scratch/
+
+# ─────────────────────────────────────────────
+# AI-agent tooling scratch (worktrees are full checkouts —
+# without this they flood `git status` and risk `git add .`)
+# ─────────────────────────────────────────────
+.claude/worktrees/
+.codex-remote-attachments/

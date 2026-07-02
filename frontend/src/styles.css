@@ -1517,6 +1517,69 @@ a {
   color: var(--down);
 }
 
+/* Analog replay range — evidence strip under the Impact summary. Deliberately
+ * quieter than .scenario-readout: it contextualizes the headline, not replaces it. */
+.analog-replay {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+}
+.replay-range {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.replay-range strong {
+  font-variant-numeric: tabular-nums;
+}
+.replay-range .up,
+.replay-events .up {
+  color: var(--up);
+}
+.replay-range .down,
+.replay-events .down {
+  color: var(--down);
+}
+.replay-events {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+}
+.replay-events li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.replay-event-name {
+  color: var(--text);
+}
+.replay-event-pnl {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.replay-coverage {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.replay-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  max-width: 75ch;
+}
+@media (max-width: 640px) {
+  .replay-events {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
 /* ============================================================================
  * Command palette (⌘K accelerator)
  * ========================================================================== */

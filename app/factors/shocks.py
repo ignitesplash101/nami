@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -37,6 +38,31 @@ def apply_shocks(betas: pd.DataFrame, shocks: dict[str, float]) -> pd.Series:
 
     shock_vec = np.array([shocks.get(col, 0.0) for col in betas.columns])
     return pd.Series(betas.to_numpy() @ shock_vec, index=betas.index, name="expected_return")
+
+
+def analog_replay_pnl(
+    portfolio: Portfolio,
+    betas: pd.DataFrame,
+    event_factor_returns: Mapping[str, float | None],
+) -> tuple[float, int]:
+    """Factor-only portfolio P&L if a historical event's realized factor moves replayed.
+
+    Pushes an analog event's TOTAL window factor returns through the book's betas:
+    `Σ_t w_t · Σ_f β_{t,f} · r_f`. None/NaN returns (an ETF that predates the event
+    window) contribute exactly 0 and are excluded from the coverage count; keys not
+    in `betas.columns` are ignored (vintage-subset betas in the replay harness).
+    No periphery, no idiosyncratic term — replay is deliberately factor-only.
+
+    Returns `(replay_pnl, n_factors_covered)`.
+    """
+    shocks = {
+        factor: float(value)
+        for factor, value in event_factor_returns.items()
+        if factor in betas.columns and pd.notna(value)
+    }
+    weights = pd.Series(portfolio.holdings, name="weight").reindex(betas.index).fillna(0.0)
+    per_ticker = apply_shocks(betas, shocks)
+    return float((weights * per_ticker).sum()), len(shocks)
 
 
 def portfolio_pnl(

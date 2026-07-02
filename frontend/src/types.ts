@@ -135,6 +135,22 @@ export interface AnalogEventReturns {
   factor_returns: Record<string, number | null>;
 }
 
+// Factor-only replay of one selected analog's realized factor moves through the
+// run's betas — no periphery, no idiosyncratic term.
+export interface AnalogReplayEntry {
+  event_id: string;
+  replay_pnl: number;
+  n_factors_covered: number;
+  n_factors_total: number;
+}
+
+export interface AnalogReplay {
+  per_event: AnalogReplayEntry[];
+  min_pnl: number;
+  median_pnl: number;
+  max_pnl: number;
+}
+
 export interface ScenarioResult {
   scenario_text: string;
   market_date: string;  // effective NYSE trading-day as-of date (YYYY-MM-DD)
@@ -155,6 +171,9 @@ export interface ScenarioResult {
   // Null/absent on pre-Phase-18 payloads.
   regression_quality?: RegressionQuality | null;
   analog_event_returns?: AnalogEventReturns[] | null;
+  // Per-analog replay range (Phase 20). Null/absent on older cached/saved
+  // payloads — render as "not computed", never as zero.
+  analog_replay?: AnalogReplay | null;
   // Backdating metadata (added Phase 11). Defaults match live runs so older
   // cached payloads deserialize cleanly.
   requested_as_of_date: string | null;

@@ -16,7 +16,7 @@
 | field | value |
 |---|---|
 | as-of date (requested / effective NYSE) | 2020-02-26 / 2020-02-26 |
-| portfolio | `msci_world` (50 global large caps, equal-weighted) |
+| portfolio | `msci_world` (50 global large caps, frozen cap-weight snapshot) |
 | narrative mode | `analog_only` (Google Search disabled; correctly enforced) |
 | eligible analogs at as-of | 10 (`bnp-paribas-credit-2007`, `brexit-2016`, `china-deval-2015`, `euro-crisis-2010`, `gfc-trough-recovery-2009`, `lehman-gfc-2008`, `oil-crash-2014`, `q4-trade-war-2018`, `taper-tantrum-2013`, `us-downgrade-2011`) |
 | analogs selected by LLM | `china-deval-2015`, `q4-trade-war-2018` |
@@ -42,7 +42,7 @@
 | field | value |
 |---|---|
 | as-of date (requested / effective NYSE) | 2021-12-31 / 2021-12-31 |
-| portfolio | `us_tech_growth` (FAANG + semis, equal-weighted) |
+| portfolio | `us_tech_growth` (FAANG + semis, frozen cap-weight snapshot) |
 | narrative mode | `analog_only` |
 | eligible analogs at as-of | 12 (above 10 plus `covid-crash-2020`, `covid-liquidity-2020`) |
 | analogs selected by LLM | `taper-tantrum-2013`, `q4-trade-war-2018` |
@@ -68,7 +68,7 @@
 | field | value |
 |---|---|
 | as-of date (requested / effective NYSE) | 2023-03-08 / 2023-03-08 |
-| portfolio | `defensive_mix` (staples, utilities, healthcare, equal-weighted) |
+| portfolio | `defensive_mix` (staples, utilities, healthcare, frozen cap-weight snapshot) |
 | narrative mode | `analog_only` |
 | eligible analogs at as-of | 14 (above 12 plus `inflation-ukraine-2022`, `uk-gilt-crisis-2022`) |
 | analogs selected by LLM | `bnp-paribas-credit-2007`, `lehman-gfc-2008` |
@@ -109,3 +109,15 @@
 - **Walk-forward evaluation** rather than single-window comparisons, with portfolio holdings re-derived at each as-of from contemporaneous index constituents (the 2026 `us_tech_growth` portfolio over-weights post-2020 winners).
 
 For now these are honest reproducibility receipts, not capability claims.
+
+## Decomposing the magnitude gap
+
+The understatement documented above has two candidate sources: the linear factor engine
+itself, and the severity of the LLM-proposed, envelope-banded shocks. The LLM-free
+engine-replay harness ([`docs/engine-replay-validation.md`](engine-replay-validation.md),
+regenerated via `scripts/run_engine_replay.py`) isolates the first layer by pushing each
+event's REALIZED factor returns through vintage betas across every (registry event ×
+sample book) pair. Where the engine tracks realized returns closely on that harness, the
+full-run gap seen in these case studies localizes to the shock-severity layer — the
+selected analogs and the `[p10, p90]` band, not the beta transfer. The per-scenario
+"analog replay range" strip in the results UI surfaces the same decomposition to users.

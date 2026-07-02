@@ -96,6 +96,27 @@ def test_manual_only_changed_factors_differ(monkeypatch):
     assert entry.changed_factors[target.factor] == [target.shock, new_value]
 
 
+def test_manual_adjustment_preserves_analog_replay(monkeypatch):
+    # Replay is shock-independent analog evidence: adjustments must carry the
+    # canonical's block through unchanged, like analogs/envelope/narrative.
+    canonical, cache, gemini, key, config = _canonical_run(monkeypatch)
+
+    overrides = {fs.factor: fs.shock for fs in canonical.factor_shocks}
+    target = canonical.factor_shocks[0]
+    overrides[target.factor] = target.shock + 0.01
+
+    result = adjust_scenario_shocks(
+        key,
+        overrides=overrides,
+        config=config,
+        gemini=gemini,
+        cache=cache,
+    )
+
+    assert canonical.analog_replay is not None
+    assert result.analog_replay == canonical.analog_replay
+
+
 def test_manual_zero_removal_accepted_even_outside_envelope(monkeypatch):
     """0.0 is always allowed as the removal sentinel, even if outside [p10, p90]."""
     canonical, cache, gemini, key, config = _canonical_run(monkeypatch)

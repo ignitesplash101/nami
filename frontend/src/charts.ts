@@ -1,5 +1,6 @@
 import { FALLBACK_FACTORS, factorDisplayName } from "./factors";
 import type {
+  AnalogEvent,
   AttributionMethod,
   FactorMetadataMap,
   ScenarioResult,
@@ -321,6 +322,35 @@ export function topContributor(
 
 export function formatPercent(value: number, digits = 2): string {
   return `${(value * 100).toFixed(digits)}%`;
+}
+
+export interface AnalogReplayRow {
+  eventId: string;
+  name: string;
+  pnl: number;
+  covered: number;
+  total: number;
+}
+
+/**
+ * Rows for the analog-replay strip, in selection order. Null when the result
+ * carries no replay block (older cached/saved payloads — "not computed", never
+ * zero). Event names come from the run's analog-events map when available and
+ * fall back to the raw event id.
+ */
+export function buildAnalogReplayRows(
+  result: ScenarioResult,
+  analogEvents: Record<string, AnalogEvent> | null
+): AnalogReplayRow[] | null {
+  const replay = result.analog_replay;
+  if (!replay || replay.per_event.length === 0) return null;
+  return replay.per_event.map((entry) => ({
+    eventId: entry.event_id,
+    name: analogEvents?.[entry.event_id]?.name ?? entry.event_id,
+    pnl: entry.replay_pnl,
+    covered: entry.n_factors_covered,
+    total: entry.n_factors_total
+  }));
 }
 
 export interface ScenarioReadout {

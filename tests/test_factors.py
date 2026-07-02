@@ -13,7 +13,7 @@ from app.factors.regression import (
     estimate_betas_and_stats,
     regression_spec,
 )
-from app.factors.shocks import apply_shocks, portfolio_pnl
+from app.factors.shocks import analog_replay_pnl, apply_shocks, portfolio_pnl
 
 
 def _make_factor_returns(
@@ -322,3 +322,59 @@ def test_portfolio_pnl_rejects_periphery_for_unknown_ticker():
     portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 1.0})
     with pytest.raises(ValueError, match="Periphery shocks for tickers not in portfolio"):
         portfolio_pnl(portfolio, betas, {"SPY": -0.05}, periphery_shocks={"GHOST": -0.1})
+
+
+def test_analog_replay_pnl_exact_linear_algebra():
+    betas = pd.DataFrame(
+        [[1.0, 0.5], [0.2, -0.3]],
+        index=["AAPL", "MSFT"],
+        columns=["SPY", "VIX"],
+    )
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 0.5, "MSFT": 0.5})
+    event_returns = {"SPY": -0.20, "VIX": 0.80}
+
+    pnl, covered = analog_replay_pnl(portfolio, betas, event_returns)
+
+    # AAPL: 1.0*-0.20 + 0.5*0.80 = 0.20; MSFT: 0.2*-0.20 + -0.3*0.80 = -0.28
+    np.testing.assert_allclose(pnl, 0.5 * 0.20 + 0.5 * -0.28, atol=1e-12)
+    assert covered == 2
+
+
+def test_analog_replay_pnl_nan_and_none_returns_contribute_zero():
+    betas = pd.DataFrame(
+        [[1.0, 0.5], [0.2, -0.3]],
+        index=["AAPL", "MSFT"],
+        columns=["SPY", "VIX"],
+    )
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 0.5, "MSFT": 0.5})
+
+    for missing in (float("nan"), None):
+        pnl, covered = analog_replay_pnl(portfolio, betas, {"SPY": -0.10, "VIX": missing})
+        np.testing.assert_allclose(pnl, 0.5 * -0.10 + 0.5 * -0.02, atol=1e-12)
+        assert covered == 1
+
+
+def test_analog_replay_pnl_ignores_factor_keys_missing_from_betas():
+    # Vintage-subset betas in the replay harness: the event vector still carries
+    # all universe factors, but dropped columns must not raise or count as covered.
+    betas = pd.DataFrame([[1.0]], index=["AAPL"], columns=["SPY"])
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 1.0})
+
+    pnl, covered = analog_replay_pnl(portfolio, betas, {"SPY": -0.10, "XLC": 0.50})
+
+    np.testing.assert_allclose(pnl, -0.10, atol=1e-12)
+    assert covered == 1
+
+
+def test_analog_replay_pnl_cash_zero_beta_row_dilutes():
+    betas = pd.DataFrame(
+        [[1.0], [0.0]],
+        index=["AAPL", "CASH"],
+        columns=["SPY"],
+    )
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 0.6, "CASH": 0.4})
+
+    pnl, covered = analog_replay_pnl(portfolio, betas, {"SPY": -0.25})
+
+    np.testing.assert_allclose(pnl, 0.6 * -0.25, atol=1e-12)
+    assert covered == 1

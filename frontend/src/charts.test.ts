@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  buildAnalogReplayRows,
   buildPositionValuations,
   buildReadout,
   buildWaterfallData,
@@ -200,6 +201,63 @@ describe("chart data helpers", () => {
     const readout = buildReadout(result, "naive");
     expect(readout.direction).toBe("flat");
     expect(readout.headline).toContain("flat");
+  });
+});
+
+describe("buildAnalogReplayRows", () => {
+  it("returns null when the result carries no replay block (old payloads)", () => {
+    expect(buildAnalogReplayRows(fixtureResult(), {})).toBeNull();
+  });
+
+  it("maps replay entries to rows in selection order, naming events when known", () => {
+    const result = fixtureResult();
+    result.analog_replay = {
+      per_event: [
+        {
+          event_id: "covid-crash-2020",
+          replay_pnl: -0.21,
+          n_factors_covered: 22,
+          n_factors_total: 22
+        },
+        {
+          event_id: "lehman-gfc-2008",
+          replay_pnl: -0.34,
+          n_factors_covered: 17,
+          n_factors_total: 22
+        }
+      ],
+      min_pnl: -0.34,
+      median_pnl: -0.275,
+      max_pnl: -0.21
+    };
+
+    const rows = buildAnalogReplayRows(result, {
+      "covid-crash-2020": {
+        event_id: "covid-crash-2020",
+        name: "COVID-19 crash",
+        start_date: "2020-02-19",
+        end_date: "2020-03-23",
+        tags: ["pandemic"],
+        description: ""
+      }
+    });
+
+    expect(rows).not.toBeNull();
+    expect(rows![0]).toEqual({
+      eventId: "covid-crash-2020",
+      name: "COVID-19 crash",
+      pnl: -0.21,
+      covered: 22,
+      total: 22
+    });
+    // Unknown event ids fall back to the raw id (saved payloads without a snapshot).
+    expect(rows![1].name).toBe("lehman-gfc-2008");
+  });
+
+  it("returns null for an empty per_event list and tolerates a null events map", () => {
+    const result = fixtureResult();
+    result.analog_replay = { per_event: [], min_pnl: 0, median_pnl: 0, max_pnl: 0 };
+    expect(buildAnalogReplayRows(result, null)).toBeNull();
   });
 });
 

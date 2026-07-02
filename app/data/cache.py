@@ -23,11 +23,9 @@ class CacheProtocol(Protocol):
     Protocol instead of constructing a real `storage.Client()`.
     """
 
-    def get_json(self, key: str, ttl_hours: int = ...) -> dict[str, Any] | None:
-        ...
+    def get_json(self, key: str, ttl_hours: int = ...) -> dict[str, Any] | None: ...
 
-    def put_json(self, key: str, data: dict[str, Any]) -> None:
-        ...
+    def put_json(self, key: str, data: dict[str, Any]) -> None: ...
 
 
 class CloudStorageCache:

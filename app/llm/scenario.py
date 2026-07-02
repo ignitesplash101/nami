@@ -9,6 +9,7 @@ analogs / periphery but recomputed factor shocks and P&L.
 from __future__ import annotations
 
 import logging
+import statistics
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
@@ -39,7 +40,7 @@ from app.factors.regression import (
     fetch_factor_returns_with_history,
     regression_spec,
 )
-from app.factors.shocks import portfolio_pnl
+from app.factors.shocks import analog_replay_pnl, portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
 from app.factors.warm_cache import get_factor_returns_with_history
 from app.llm.adjust_validation import validate_factor_overrides
@@ -48,6 +49,8 @@ from app.llm.prompts import PROMPT_VERSION
 from app.llm.risk_diagnostics import generate_risk_diagnostics
 from app.llm.schemas import (
     AnalogEventReturns,
+    AnalogReplay,
+    AnalogReplayEntry,
     AnalogSelection,
     FactorShock,
     PortfolioPnL,
@@ -258,6 +261,37 @@ def _per_event_records(
             }
         )
     return records
+
+
+def _analog_replay_block(
+    portfolio: Portfolio,
+    betas: pd.DataFrame,
+    returns_matrix: pd.DataFrame,
+) -> AnalogReplay:
+    """Factor-only replay of each selected analog through the run's betas.
+
+    Rows arrive (and leave) in selection order. Deterministic post-processing of
+    the same keyed inputs as the betas and the envelope — no LLM involvement —
+    so the block is cached with the canonical result like `regression_quality`.
+    """
+    entries: list[AnalogReplayEntry] = []
+    for event_id, row in returns_matrix.iterrows():
+        replay_pnl, covered = analog_replay_pnl(portfolio, betas, row.to_dict())
+        entries.append(
+            AnalogReplayEntry(
+                event_id=str(event_id),
+                replay_pnl=replay_pnl,
+                n_factors_covered=covered,
+                n_factors_total=len(row),
+            )
+        )
+    pnls = [e.replay_pnl for e in entries]
+    return AnalogReplay(
+        per_event=entries,
+        min_pnl=min(pnls),
+        median_pnl=float(statistics.median(pnls)),
+        max_pnl=max(pnls),
+    )
 
 
 def _regression_quality_block(
@@ -655,6 +689,7 @@ def run_scenario(
         factor_returns=factor_returns,
         ticker_returns=ticker_returns,
     )
+    analog_replay = _analog_replay_block(portfolio_obj, betas, returns_matrix)
     progress("betas", "done")
 
     progress("attribution", "start")
@@ -707,6 +742,7 @@ def run_scenario(
         risk_diagnostics=risk_diagnostics,
         regression_quality=regression_quality,
         analog_event_returns=[AnalogEventReturns.model_validate(rec) for rec in per_event_returns],
+        analog_replay=analog_replay,
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,

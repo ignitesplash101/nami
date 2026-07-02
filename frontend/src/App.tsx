@@ -43,6 +43,7 @@ import { createRunLifecycle } from "./runLifecycle";
 import { useToasts } from "./toast";
 import { nextSessionExpired, useAccessWatch } from "./useAccessWatch";
 import {
+  buildAnalogReplayRows,
   buildPositionValuations,
   buildReadout,
   buildWaterfallData,
@@ -79,6 +80,7 @@ import { useMethodologyDrawer } from "./useMethodologyDrawer";
 import { useOverlay } from "./useOverlay";
 import type {
   AccessResponse,
+  AnalogEvent,
   AttributionMethod,
   FactorMetadataMap,
   PortfolioSnapshotRecord,
@@ -1665,6 +1667,13 @@ export function ResultsPanel({
         nav={nav}
         currency={currency}
       />
+      <AnalogReplayStrip
+        result={result}
+        analogEvents={analog_events}
+        showDollars={showDollars}
+        nav={nav}
+        currency={currency}
+      />
       <div className="results-toolbar">
         <div className="results-toolbar-left">
           {canSave ? (
@@ -2237,6 +2246,63 @@ function ScenarioReadout({
           </span>
         </div>
       </div>
+    </section>
+  );
+}
+
+function AnalogReplayStrip({
+  result,
+  analogEvents,
+  showDollars,
+  nav,
+  currency
+}: {
+  result: ScenarioResult;
+  analogEvents: Record<string, AnalogEvent>;
+  showDollars: boolean;
+  nav: number | null;
+  currency: string;
+}) {
+  const rows = buildAnalogReplayRows(result, analogEvents);
+  const replay = result.analog_replay;
+  // Older cached/saved payloads carry no replay block — "not computed", never zero.
+  if (!rows || !replay) return null;
+  const fmt = (value: number) =>
+    showDollars && nav != null
+      ? formatSignedCurrency(nav * value, currency)
+      : formatPercent(value);
+  const tone = (value: number) => (value < 0 ? "down" : value > 0 ? "up" : "");
+  return (
+    <section className="analog-replay" aria-label="Analog replay range">
+      <p className="readout-eyebrow">Analog replay range</p>
+      <p className="replay-range">
+        If this scenario plays out like the selected analogs did, this book's modeled move spans{" "}
+        <strong className={tone(replay.min_pnl)}>{fmt(replay.min_pnl)}</strong> to{" "}
+        <strong className={tone(replay.max_pnl)}>{fmt(replay.max_pnl)}</strong>
+        {rows.length > 2 ? (
+          <>
+            {" "}
+            (median <strong className={tone(replay.median_pnl)}>{fmt(replay.median_pnl)}</strong>)
+          </>
+        ) : null}
+        .
+      </p>
+      <ul className="replay-events">
+        {rows.map((row) => (
+          <li key={row.eventId}>
+            <span className="replay-event-name">{row.name}</span>
+            <span className={`replay-event-pnl ${tone(row.pnl)}`}>{fmt(row.pnl)}</span>
+            <span className="replay-coverage">
+              {row.covered}/{row.total} factors
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="replay-caption">
+        Each analog's realized factor moves pushed through this book's current betas. Factor-model
+        only — excludes single-name (periphery) and idiosyncratic effects. Historical replay, not a
+        forecast.
+      </p>
     </section>
   );
 }

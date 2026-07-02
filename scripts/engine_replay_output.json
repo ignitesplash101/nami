@@ -1,0 +1,1074 @@
+{
+  "summary": {
+    "n_pairs": 68,
+    "n_computed": 48,
+    "n_skipped": 20,
+    "mae": 0.03971136701380525,
+    "bias": -0.021261191564560952,
+    "sign_hit_rate": 0.8958333333333334,
+    "pearson_r": 0.983151497135114,
+    "regression_spec": "ridge-std-v2|lookback=156|alpha=0.1|min_obs=40",
+    "events_version": "c29595fc29c4",
+    "factor_universe_version": "2907552c12a7",
+    "weights_as_of": "2026-05-30",
+    "generated_at": "2026-07-02T11:48:50+00:00"
+  },
+  "pairs": [
+    {
+      "event_id": "bnp-paribas-credit-2007",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 14,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['ABBV', 'AVGO', 'META', 'TSLA', 'V']"
+    },
+    {
+      "event_id": "bnp-paribas-credit-2007",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 14,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['AVGO', 'META', 'TSLA']"
+    },
+    {
+      "event_id": "bnp-paribas-credit-2007",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.03776272044171328,
+      "realized_pnl": 0.033899893699864986,
+      "error": 0.003862826741848291,
+      "n_factors_used": 14,
+      "n_factors_covered": 14,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "bnp-paribas-credit-2007",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 14,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "lehman-gfc-2008",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 14,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "InsufficientHistoryError: Insufficient weekly history for beta estimation: V (n=25); minimum 40 non-NaN weeks overlapping the factor matrix required"
+    },
+    {
+      "event_id": "lehman-gfc-2008",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 14,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['AVGO', 'META', 'TSLA']"
+    },
+    {
+      "event_id": "lehman-gfc-2008",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.14289455504309018,
+      "realized_pnl": -0.14722740880851273,
+      "error": 0.004332853765422556,
+      "n_factors_used": 14,
+      "n_factors_covered": 14,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 155,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "lehman-gfc-2008",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 14,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "ACWI",
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "gfc-trough-recovery-2009",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['ABBV', 'AVGO', 'META', 'TSLA']"
+    },
+    {
+      "event_id": "gfc-trough-recovery-2009",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['AVGO', 'META', 'TSLA']"
+    },
+    {
+      "event_id": "gfc-trough-recovery-2009",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.13326410668175254,
+      "realized_pnl": 0.1861246927598506,
+      "error": -0.05286058607809807,
+      "n_factors_used": 15,
+      "n_factors_covered": 15,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 48,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "gfc-trough-recovery-2009",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "euro-crisis-2010",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "InsufficientHistoryError: Insufficient weekly history for beta estimation: AVGO (n=37); minimum 40 non-NaN weeks overlapping the factor matrix required"
+    },
+    {
+      "event_id": "euro-crisis-2010",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "InsufficientHistoryError: Insufficient weekly history for beta estimation: AVGO (n=37); minimum 40 non-NaN weeks overlapping the factor matrix required"
+    },
+    {
+      "event_id": "euro-crisis-2010",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.05211489158721753,
+      "realized_pnl": -0.02236175980099577,
+      "error": -0.029753131786221756,
+      "n_factors_used": 15,
+      "n_factors_covered": 15,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 108,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "euro-crisis-2010",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "us-downgrade-2011",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['ABBV', 'META']"
+    },
+    {
+      "event_id": "us-downgrade-2011",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['META']"
+    },
+    {
+      "event_id": "us-downgrade-2011",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.04253758539416623,
+      "realized_pnl": -0.03682758184279502,
+      "error": -0.005710003551371211,
+      "n_factors_used": 15,
+      "n_factors_covered": 15,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "us-downgrade-2011",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 15,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "USMV",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "taper-tantrum-2013",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 16,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "InsufficientHistoryError: Insufficient weekly history for beta estimation: ABBV (n=0), META (n=33); minimum 40 non-NaN weeks overlapping the factor matrix required. n=0 usually means the market-data fetch returned no prices for the ticker (a transient provider failure) \u2014 retry the run"
+    },
+    {
+      "event_id": "taper-tantrum-2013",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": 0.044582113913368075,
+      "realized_pnl": 0.1257039962379721,
+      "error": -0.08112188232460402,
+      "n_factors_used": 16,
+      "n_factors_covered": 16,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 53,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "taper-tantrum-2013",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.03244037915327089,
+      "realized_pnl": -0.017856494904365354,
+      "error": -0.014583884248905533,
+      "n_factors_used": 16,
+      "n_factors_covered": 16,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 83,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "taper-tantrum-2013",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 16,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "MTUM",
+        "QUAL",
+        "SIZE",
+        "VLUE",
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "oil-crash-2014",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 20,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: All overlapping rows contained NaN factors; nothing to regress"
+    },
+    {
+      "event_id": "oil-crash-2014",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": 0.04100244193942174,
+      "realized_pnl": 0.07468714039111593,
+      "error": -0.03368469845169419,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 47,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "oil-crash-2014",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.1093299676609786,
+      "realized_pnl": 0.14751864749240823,
+      "error": -0.03818867983142962,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 47,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "oil-crash-2014",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 20,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: yfinance returned no data for these portfolio tickers: ['6098.T']"
+    },
+    {
+      "event_id": "china-deval-2015",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": null,
+      "realized_pnl": null,
+      "error": null,
+      "n_factors_used": 20,
+      "n_factors_covered": 0,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": null,
+      "skipped_reason": "RuntimeError: All overlapping rows contained NaN factors; nothing to regress"
+    },
+    {
+      "event_id": "china-deval-2015",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": -0.05206509211327992,
+      "realized_pnl": -0.03321690525179603,
+      "error": -0.018848186861483887,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 107,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "china-deval-2015",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.08247100074386973,
+      "realized_pnl": -0.05435930566369072,
+      "error": -0.028111695080179015,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 107,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "china-deval-2015",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.08528639540097674,
+      "realized_pnl": -0.14886721427738925,
+      "error": 0.06358081887641251,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 42,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "brexit-2016",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": 0.040450982684767926,
+      "realized_pnl": 0.05331420392300257,
+      "error": -0.012863221238234641,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 153,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "brexit-2016",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": 0.050261696556649776,
+      "realized_pnl": 0.06581634701598783,
+      "error": -0.015554650459338057,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 153,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "brexit-2016",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.03999775237157317,
+      "realized_pnl": 0.05217715631511044,
+      "error": -0.012179403943537268,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 153,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "brexit-2016",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.005872270915759429,
+      "realized_pnl": 0.002796263141245571,
+      "error": -0.008668534057005,
+      "n_factors_used": 20,
+      "n_factors_covered": 20,
+      "factors_dropped": [
+        "XLC",
+        "XLRE"
+      ],
+      "min_ticker_n_obs": 88,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "q4-trade-war-2018",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": -0.1964203147757661,
+      "realized_pnl": -0.18195063307320672,
+      "error": -0.014469681702559384,
+      "n_factors_used": 21,
+      "n_factors_covered": 21,
+      "factors_dropped": [
+        "XLC"
+      ],
+      "min_ticker_n_obs": 155,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "q4-trade-war-2018",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": -0.236767488269769,
+      "realized_pnl": -0.22600402244007972,
+      "error": -0.01076346582968929,
+      "n_factors_used": 21,
+      "n_factors_covered": 21,
+      "factors_dropped": [
+        "XLC"
+      ],
+      "min_ticker_n_obs": 155,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "q4-trade-war-2018",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.06186063563324827,
+      "realized_pnl": 0.0064865463389313935,
+      "error": -0.06834718197217966,
+      "n_factors_used": 21,
+      "n_factors_covered": 21,
+      "factors_dropped": [
+        "XLC"
+      ],
+      "min_ticker_n_obs": 155,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "q4-trade-war-2018",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.0964827357134808,
+      "realized_pnl": -0.1854382130813439,
+      "error": 0.08895547736786309,
+      "n_factors_used": 21,
+      "n_factors_covered": 21,
+      "factors_dropped": [
+        "XLC"
+      ],
+      "min_ticker_n_obs": 155,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": -0.3055455752929467,
+      "realized_pnl": -0.2950027699282036,
+      "error": -0.010542805364743058,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 87,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": -0.31264795664835215,
+      "realized_pnl": -0.29893745949308853,
+      "error": -0.013710497155263623,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 87,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.1932909005612745,
+      "realized_pnl": -0.20053507383112185,
+      "error": 0.007244173269847359,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 87,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.29164030877191477,
+      "realized_pnl": -0.275534778304838,
+      "error": -0.016105530467076745,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 87,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": 0.7078138848020706,
+      "realized_pnl": 0.9280414158547531,
+      "error": -0.22022753105268245,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 91,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": 0.8382687213838927,
+      "realized_pnl": 1.1409435347575427,
+      "error": -0.30267481337365,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 91,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.2624689101660793,
+      "realized_pnl": 0.3367088565827911,
+      "error": -0.07423994641671178,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 91,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": 0.3381579566433872,
+      "realized_pnl": 0.4601940475113959,
+      "error": -0.1220360908680087,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 91,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": -0.2946755009081667,
+      "realized_pnl": -0.252942526867604,
+      "error": -0.0417329740405627,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": -0.3783796273428393,
+      "realized_pnl": -0.34258314697917763,
+      "error": -0.035796480363661676,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.03718281362620798,
+      "realized_pnl": 0.004019932708958653,
+      "error": -0.041202746335166636,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.14835422509006868,
+      "realized_pnl": -0.21388005451815312,
+      "error": 0.06552582942808444,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": -0.006812104959408678,
+      "realized_pnl": -0.011195091699387037,
+      "error": 0.004382986739978359,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": -0.03301998077771146,
+      "realized_pnl": -0.05131317638246371,
+      "error": 0.018293195604752246,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.06438124896539163,
+      "realized_pnl": 0.07214100581789479,
+      "error": -0.007759756852503158,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.004062519203976716,
+      "realized_pnl": 0.013741406250153718,
+      "error": -0.017803925454130433,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": 0.0756218355172701,
+      "realized_pnl": 0.08161647773638223,
+      "error": -0.005994642219112126,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": 0.09432275547119534,
+      "realized_pnl": 0.10100106135717647,
+      "error": -0.006678305885981131,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": 0.07390444004593344,
+      "realized_pnl": 0.09051712058828672,
+      "error": -0.016612680542353278,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": 0.011371030926723657,
+      "realized_pnl": -0.004059189815626805,
+      "error": 0.015430220742350462,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": -0.07917131663880628,
+      "realized_pnl": -0.074693322927693,
+      "error": -0.004477993711113279,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": -0.09746489596619579,
+      "realized_pnl": -0.09614553452601624,
+      "error": -0.0013193614401795506,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.011101489620839476,
+      "realized_pnl": -0.0042893192201226915,
+      "error": -0.006812170400716785,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": -0.022066653106066786,
+      "realized_pnl": -0.1932624813513706,
+      "error": 0.17119582824530383,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "msci_world",
+      "modeled_pnl": 0.07672277156027628,
+      "realized_pnl": 0.09384398065169056,
+      "error": -0.017121209091414277,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "us_tech_growth",
+      "modeled_pnl": 0.11733257908919338,
+      "realized_pnl": 0.12849620685240432,
+      "error": -0.011163627763210934,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "defensive_mix",
+      "modeled_pnl": -0.053138453922861775,
+      "realized_pnl": -0.025669654417245415,
+      "error": -0.02746879950561636,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 156,
+      "skipped_reason": null
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "japan_equity",
+      "modeled_pnl": 0.0946761100238544,
+      "realized_pnl": 0.11082674018425404,
+      "error": -0.016150630160399637,
+      "n_factors_used": 22,
+      "n_factors_covered": 22,
+      "factors_dropped": [],
+      "min_ticker_n_obs": 155,
+      "skipped_reason": null
+    }
+  ]
+}

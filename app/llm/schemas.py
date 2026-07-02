@@ -227,6 +227,37 @@ class AnalogEventReturns(BaseModel):
     factor_returns: dict[str, float | None]
 
 
+class AnalogReplayEntry(BaseModel):
+    """Factor-only replay of ONE selected analog through the run's betas.
+
+    `replay_pnl` is `Σ_t w_t · Σ_f β_{t,f} · r_{e,f}` — the modeled portfolio
+    return if that analog's realized factor moves replayed today. No periphery,
+    no idiosyncratic term. `n_factors_covered` counts the non-NaN factor returns
+    that entered the dot product (ETFs may predate old event windows).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    event_id: str
+    replay_pnl: float
+    n_factors_covered: int
+    n_factors_total: int
+
+
+class AnalogReplay(BaseModel):
+    """Per-analog replay P&L range for the selected analog set (selection order).
+
+    Deterministic post-processing of the same keyed inputs as the betas and the
+    envelope (no LLM involvement), so like `regression_quality` it IS cached with
+    the canonical result and preserved untouched by shock adjustments.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    per_event: list[AnalogReplayEntry]
+    min_pnl: float
+    median_pnl: float
+    max_pnl: float
+
+
 class ScenarioResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_text: str
@@ -250,6 +281,10 @@ class ScenarioResult(BaseModel):
     # Per-analog factor returns + window lengths backing the envelope (Phase 18).
     # Same payload the shock-extraction call sees; None on older payloads.
     analog_event_returns: list[AnalogEventReturns] | None = None
+    # Factor-only per-analog replay range (Phase 20). Cached with the canonical
+    # (deterministic from the keyed vintage, like regression_quality); None on
+    # older cached/saved payloads — render as "not computed", never as zero.
+    analog_replay: AnalogReplay | None = None
     # Backdating metadata (added Phase 11). All default-defaulted so cached v5
     # entries deserialize cleanly under v6 lazy re-derivation.
     # `market_date` is the *effective* as-of date (last NYSE trading day on or

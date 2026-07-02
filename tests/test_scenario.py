@@ -215,6 +215,60 @@ def test_run_scenario_calls_gemini_and_assembles_result(monkeypatch):
     assert len(cache.store) == 1
 
 
+def test_run_scenario_attaches_analog_replay(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    result = run_scenario(
+        scenario_text="A pandemic-like risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+
+    replay = result.analog_replay
+    assert replay is not None
+    assert [e.event_id for e in replay.per_event] == result.selected_event_ids
+    # Mock layer: betas are 1.0 on the first factor only and every event factor
+    # return is -0.05, so each analog replays to exactly -0.05 with full coverage.
+    for entry in replay.per_event:
+        assert entry.replay_pnl == pytest.approx(-0.05)
+        assert entry.n_factors_covered == len(FACTORS)
+        assert entry.n_factors_total == len(FACTORS)
+    assert replay.min_pnl == pytest.approx(-0.05)
+    assert replay.median_pnl == pytest.approx(-0.05)
+    assert replay.max_pnl == pytest.approx(-0.05)
+
+
+def test_run_scenario_cache_hit_round_trips_analog_replay(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    first = run_scenario(
+        scenario_text="Same scenario",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+    second = run_scenario(
+        scenario_text="Same scenario",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+
+    assert first.analog_replay is not None
+    assert second.analog_replay == first.analog_replay
+
+
 def test_run_scenario_cache_hit_skips_gemini(monkeypatch):
     _patch_market_layer(monkeypatch)
     cache = InMemoryCache()

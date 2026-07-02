@@ -245,6 +245,40 @@ nami does not apply a lead/lag correction.
 
 ---
 
+## Analog replay
+
+Every scenario result carries a per-analog **replay range**: each selected analog
+event's REALIZED factor returns (the same per-event rows that build the envelope) are
+pushed through the run's betas —
+
+    replay_pnl(e) = Σ_t w_t · Σ_f β_{t,f} · r_{e,f}
+
+— answering *"if this scenario plays out like that analog did, what does this book's
+factor model say?"* (`app/factors/shocks.py::analog_replay_pnl`, surfaced as
+`ScenarioResult.analog_replay` and rendered directly under the Impact summary as
+min / median / max plus one row per analog).
+
+Three properties make the replay range the honest companion to the headline number:
+
+- **No zero-holes.** The LLM's scenario shocks cover only the factors it names —
+  unshocked factors enter the P&L at exactly zero. A realized event vector has no such
+  holes: every factor's actual co-move is included (NaN only where an ETF predates the
+  window; those contribute zero and the per-event coverage count, e.g. `20/22 factors`,
+  discloses it).
+- **No severity cap.** Proposed shocks are validated into the analog envelope's
+  `[p10, p90]` band; the replay range shows each analog's FULL realized severity. A
+  scenario whose banded shocks sit well inside its own replay range is visibly milder
+  than its own evidence base.
+- **Deterministic and LLM-free.** Replay is linear algebra over already-fetched data.
+  It is cached with the canonical result (like `regression_quality`) and preserved
+  byte-for-byte through shock adjustments; older cached/saved results simply omit it.
+
+Replay is **factor-only**: it excludes periphery (single-name) shocks and idiosyncratic
+effects, and it applies the run's current-vintage betas to a historical episode (beta
+drift is part of the message, not a bug). It is a historical replay, not a forecast.
+
+---
+
 ## LLM pipeline
 
 `app/llm/scenario.run_scenario` orchestrates two Gemini calls + one structured extraction.
@@ -564,6 +598,18 @@ guarantees factor shocks stay inside the empirical envelope **for factors with e
 shocks to ±0.75; the live evals add mechanism-level smoke checks (pandemic →
 pandemic-tagged analog selected; banking crisis → XLF beats SPY to the downside; Taiwan
 scenario → semis appear in periphery).
+
+**Engine-level tracking** is measured separately by the LLM-free replay harness
+(`app/factors/engine_replay.py`): for every (registry event × sample book) pair it
+estimates vintage betas as of the event start, pushes the event's realized factor
+returns through them, and compares against the book's realized buy-and-hold USD return
+over the same window. The regenerated snapshot — summary MAE / bias / sign hit-rate /
+Pearson r plus every per-pair row and skip reason — lives in
+[`docs/engine-replay-validation.md`](engine-replay-validation.md)
+(`uv run python scripts/run_engine_replay.py` to refresh). Read together with
+[`docs/backdated-case-studies.md`](backdated-case-studies.md), it decomposes full-run
+error into its two layers: how much comes from the linear engine itself versus from the
+severity of the LLM-proposed, envelope-banded shocks.
 
 ---
 

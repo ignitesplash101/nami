@@ -5,8 +5,45 @@ substitutions:
   _RUNTIME_SA: nami-sa@${PROJECT_ID}.iam.gserviceaccount.com
 
 steps:
+  # Deploy gate: a push to main must not ship unless the test suite is green.
+  # GitHub Actions CI runs the same checks but is a PARALLEL pipeline — it
+  # cannot block this trigger, so the gate lives here. Both gate steps start
+  # immediately (waitFor: ['-']) and `build` waits on both.
+  - id: backend-tests
+    name: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    waitFor: ['-']
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        set -e
+        uv sync --frozen --extra dev
+        uv run ruff check .
+        uv run black --check .
+        uv run pytest tests/ -q --ignore=tests/test_live_evals.py
+    env:
+      # Dummy values so app.config.load_config() doesn't raise on import.
+      # Tests inject in-memory cache/Firestore/Gemini doubles — no GCP calls.
+      - GOOGLE_CLOUD_PROJECT=ci-dummy-project
+      - VERTEX_AI_LOCATION=global
+      - GCS_BUCKET=ci-dummy-bucket
+
+  - id: frontend-tests
+    name: node:22-slim
+    waitFor: ['-']
+    entrypoint: sh
+    dir: frontend
+    args:
+      - -c
+      - |
+        set -e
+        npm ci --no-audit --no-fund
+        npm run typecheck
+        npm test
+
   - id: build
     name: gcr.io/cloud-builders/docker
+    waitFor: ['backend-tests', 'frontend-tests']
     args:
       - build
       - -t
@@ -48,6 +85,9 @@ images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:latest
 
+# Test gates + docker build exceed the 10-minute default on the default machine.
+timeout: 1800s
+
 options:
   # Required so _RUNTIME_SA expands the nested ${PROJECT_ID} during manual
   # `gcloud builds submit`. Trigger builds get dynamicSubstitutions by default,
@@ -55,3 +95,6 @@ options:
   # https://cloud.google.com/build/docs/configuring-builds/substitute-variable-values
   dynamicSubstitutions: true
   logging: CLOUD_LOGGING_ONLY
+  # The pytest suite is CPU-bound (numpy/shap); the default 1-vCPU machine
+  # would roughly triple the gate time for ~$0.10/build of savings.
+  machineType: E2_HIGHCPU_8
