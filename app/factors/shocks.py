@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -17,6 +18,7 @@ from app.factors.attribution import (
     conditional_shapley_attribution_grouped,
     naive_attribution,
 )
+from app.factors.regression import TickerRegressionStats
 from app.factors.universe import FACTORS
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,31 @@ def analog_replay_pnl(
     weights = pd.Series(portfolio.holdings, name="weight").reindex(betas.index).fillna(0.0)
     per_ticker = apply_shocks(betas, shocks)
     return float((weights * per_ticker).sum()), len(shocks)
+
+
+def portfolio_idio_band(
+    stats: Mapping[str, TickerRegressionStats],
+    holdings: Mapping[str, float],
+    horizon_weeks: float,
+) -> tuple[float, float]:
+    """(weekly portfolio idio vol, ±1σ episode band) from per-name residual vols.
+
+    `Var_weekly = Σ_i (w_i · σ_i,idio)²` under cross-name independence; the
+    episode band scales by `√horizon_weeks` (independence across weeks). Both
+    assumptions UNDERSTATE true dispersion (residual co-movement within sectors,
+    autocorrelation under stress), so the band is a floor on idiosyncratic
+    dispersion around the factor-driven point estimate — dispersion, not a
+    confidence interval on the scenario. Names without a stats entry (the CASH
+    sleeve — no regression runs for it) contribute zero.
+    """
+    variance = 0.0
+    for ticker, weight in holdings.items():
+        ticker_stats = stats.get(ticker)
+        if ticker_stats is None:
+            continue
+        variance += (weight * ticker_stats.idio_vol_weekly) ** 2
+    weekly = math.sqrt(variance)
+    return weekly, weekly * math.sqrt(max(horizon_weeks, 0.0))
 
 
 def portfolio_pnl(

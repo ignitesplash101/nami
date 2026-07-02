@@ -148,6 +148,26 @@ X̃ = X − mean(X, axis=0)             # T × F factor returns, centered
   mask), and `idio_vol_weekly` (ddof=1 weekly residual vol, not annualized). Names with
   `r2 < 0.30` get a warning diagnostic — the factor model explains little of their
   variance, so factor-implied scenario P&L likely understates their true risk.
+- **Effective dof, adjusted R², and beta SEs (Phase 21).** With 22 regressors on as few
+  as 40 weeks, in-sample R² is flattered exactly where the fit is weakest. The solver
+  therefore also reports the ridge **effective degrees of freedom**
+  `p_eff = Σ s/(s+α)` over the standardized Gram's eigenvalues, a **dof-honest
+  adjusted R²** `1 − (1−R²)(n−1)/(n−p_eff−1)` (can be negative — worse than the mean),
+  and per-factor **standard errors** from the ridge sandwich
+  `σ̂²·A⁻¹GA⁻¹` on `n − p_eff − 1` residual dof (matching OLS-with-intercept SEs
+  exactly as α → 0; verified against statsmodels). `r2_adj` and `p_eff` are persisted
+  with the result; names with fewer than **3 observations per effective parameter**
+  get a `low_regression_dof` warning.
+- **Why α stays 0.1 (dated decision record, 2026-07-02).** A sweep of
+  `α ∈ {0.1, 2, 8, 32}` over the LLM-free engine-replay harness (48 event×book pairs;
+  see [Calibration evidence](#calibration-evidence)) showed tracking error is flat
+  between 0.1 and 2 (MAE 3.97% vs 3.90%) and degrades monotonically beyond
+  (MAE 4.26% at α=8, 5.03% at α=32, with bias worsening from −2.1% to −2.8%): this
+  ridge shrinks toward **zero**, so heavier shrinkage systematically understates
+  betas — the exact bias a stress engine must avoid. Under-determined fits are
+  handled by *disclosure* (adjusted R², `p_eff`, the low-dof diagnostic) rather than
+  by blanket shrinkage; shrinkage toward informative targets (market/sector priors,
+  not zero) is future work.
 - **Currency:** non-USD listings (e.g. the Japan book's `.T` tickers) have their weekly
   returns converted to USD (`(1 + r_local)(1 + r_FX) − 1`, vintage-correct FX series)
   *before* the regression, so betas absorb FX exposure and active return vs a USD-quoted
@@ -276,6 +296,32 @@ Three properties make the replay range the honest companion to the headline numb
 Replay is **factor-only**: it excludes periphery (single-name) shocks and idiosyncratic
 effects, and it applies the run's current-vintage betas to a historical episode (beta
 drift is part of the message, not a bug). It is a historical replay, not a forecast.
+
+---
+
+## Idiosyncratic dispersion band
+
+The headline P&L is a factor-driven point estimate; the same regression that produces
+the betas also measures what the factor model does NOT explain — each name's weekly
+residual vol. Every result now carries a **±1σ idiosyncratic dispersion band**
+(`ScenarioResult.pnl_uncertainty`, rendered next to the Portfolio P&L metric):
+
+    band = √( Σᵢ (wᵢ · σᵢ,idio)² ) · √h
+
+where `σᵢ,idio` is the per-name weekly residual vol and `h` is the episode horizon in
+weeks — the **median selected-analog window length**, so the dispersion is scaled to
+the same implied horizon as the shocks themselves.
+
+Two independence assumptions do real work here and both bias the band DOWN: residuals
+are treated as uncorrelated across names (sector co-movement the 22-factor model
+misses is ignored) and across weeks (stress autocorrelation is ignored). Read the band
+as a **floor on dispersion around the point estimate, not a confidence interval on the
+scenario** — the scenario itself (which analogs, which shocks) carries far more
+uncertainty than the residual term, which is why the analog replay range above sits
+next to it. The band is shock-independent (residual vols + analog windows only), is
+cached with the canonical result, and is recomputed to the identical value on shock
+adjustments. Periphery shocks are deterministic inputs, not draws from this residual
+distribution; the band brackets the total either way.
 
 ---
 
@@ -486,6 +532,15 @@ Diagnostics flag review points when:
   the validator, not here).
 - A name's modeled P&L is dominated by its periphery shock rather than the factor
   model (the factor attribution views do not explain that name's result).
+- **(Phase 21) Band coverage** — K of the N material factor shocks have NO enforced
+  evidence band (envelope `count < 3`), so their magnitudes are LLM judgment rather
+  than analog-anchored (info when a minority, warning when more than half).
+- **(Phase 21) Scenario vs replay** — the scenario's total P&L lands OUTSIDE the
+  selected analogs' replayed severity range (milder than every analog, or harsher
+  than every analog). Threshold-free: the bounds are the scenario's own evidence base.
+- **(Phase 21) Low regression dof** — a name has fewer than ~3 observations per ridge
+  effective parameter (`(n−1)/(p_eff+1) < 3`); its betas are weakly determined and its
+  in-sample R² flattered.
 
 Each warning includes the relevant tickers/factors, the statistic that fired, and a
 short review message. The correct response is human review or a rerun with clearer

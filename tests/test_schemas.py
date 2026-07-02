@@ -82,10 +82,12 @@ def test_pre_phase18_payload_validates_with_new_fields_defaulted():
     dumped.pop("regression_quality", None)
     dumped.pop("analog_event_returns", None)
     dumped.pop("analog_replay", None)
+    dumped.pop("pnl_uncertainty", None)
     rehydrated = ScenarioResult.model_validate(dumped)
     assert rehydrated.regression_quality is None
     assert rehydrated.analog_event_returns is None
     assert rehydrated.analog_replay is None
+    assert rehydrated.pnl_uncertainty is None
 
 
 def test_portfolio_pnl_model_from_portfolio_pnl_dict():

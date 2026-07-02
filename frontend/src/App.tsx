@@ -2226,6 +2226,18 @@ function ScenarioReadout({
         <div>
           <span className="readout-metric-label">Portfolio P&amp;L</span>
           <span className={`readout-metric-value ${toneClass}`}>{pnlText}</span>
+          {readout.idioBand != null ? (
+            <span
+              className="readout-idio-band"
+              title="±1σ idiosyncratic dispersion around the factor-driven point estimate, scaled to the median selected-analog horizon. A dispersion floor under independence assumptions — not a confidence interval on the scenario."
+            >
+              ±{" "}
+              {showDollars && nav != null
+                ? formatCurrency(nav * readout.idioBand, currency)
+                : formatPercent(readout.idioBand)}{" "}
+              idio (1σ)
+            </span>
+          ) : null}
         </div>
         <div>
           <span className="readout-metric-label">Top driver</span>

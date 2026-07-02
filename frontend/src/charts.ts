@@ -363,6 +363,8 @@ export interface ScenarioReadout {
   benchmarkTicker: string | null;
   analogCount: number;
   citationCount: number;
+  // ±1σ idio dispersion half-width (decimal); null on older payloads.
+  idioBand: number | null;
 }
 
 /**
@@ -392,7 +394,8 @@ export function buildReadout(
     activeReturn: result.active_return ?? null,
     benchmarkTicker: result.benchmark_ticker ?? null,
     analogCount: result.analogs_selected.length,
-    citationCount: result.citations.length
+    citationCount: result.citations.length,
+    idioBand: result.pnl_uncertainty?.band_1sigma ?? null
   };
 }
 

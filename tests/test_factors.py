@@ -224,6 +224,89 @@ def test_regression_spec_format():
     )
 
 
+def test_effective_dof_shrinks_with_alpha():
+    factors = _make_factor_returns(n_weeks=200, n_factors=3, mean=0.0)
+    true_betas = np.array([[1.2], [0.4], [-0.3]])
+    tickers = _synth_ticker_returns(factors, true_betas, noise=1e-4)
+
+    _, stats_ols = estimate_betas_and_stats(tickers, factors, alpha=1e-9)
+    _, stats_mid = estimate_betas_and_stats(tickers, factors, alpha=50.0)
+    _, stats_big = estimate_betas_and_stats(tickers, factors, alpha=500.0)
+
+    np.testing.assert_allclose(stats_ols["T0"].p_eff, 3.0, atol=1e-6)
+    assert stats_big["T0"].p_eff < stats_mid["T0"].p_eff < 3.0
+    assert stats_big["T0"].p_eff > 0.0
+
+
+def test_adjusted_r2_penalizes_overfitting_and_never_exceeds_r2():
+    rng = np.random.default_rng(5)
+    n_weeks, n_factors = 45, 20
+    idx = pd.date_range("2020-01-06", periods=n_weeks, freq="W")
+    factors = pd.DataFrame(
+        rng.standard_normal((n_weeks, n_factors)) * 0.02,
+        index=idx,
+        columns=[f"F{i}" for i in range(n_factors)],
+    )
+    # Pure noise: 20 regressors on 45 obs inflate in-sample R² badly.
+    noise = pd.DataFrame({"NOISE": rng.standard_normal(n_weeks) * 0.03}, index=idx)
+
+    _, stats = estimate_betas_and_stats(noise, factors, alpha=1e-9, min_obs=30)
+
+    s = stats["NOISE"]
+    assert s.r2 > 0.25  # in-sample flattery on pure noise
+    assert s.r2_adj is not None
+    assert s.r2_adj < s.r2 - 0.15  # the dof penalty bites hard
+    # Well-determined case: penalty is negligible and never flips the order.
+    clean_factors = _make_factor_returns(n_weeks=200, n_factors=3)
+    clean = _synth_ticker_returns(clean_factors, np.array([[1.2], [0.4], [-0.3]]), noise=1e-4)
+    _, clean_stats = estimate_betas_and_stats(clean, clean_factors, alpha=0.1)
+    cs = clean_stats["T0"]
+    assert cs.r2_adj is not None
+    assert cs.r2 - 0.01 < cs.r2_adj <= cs.r2
+
+
+def test_beta_se_matches_ols_at_tiny_alpha():
+    sm = pytest.importorskip("statsmodels.api")
+    factors = _make_factor_returns(n_weeks=200, n_factors=3, mean=0.0)
+    true_betas = np.array([[1.2], [0.4], [-0.3]])
+    tickers = _synth_ticker_returns(factors, true_betas, noise=0.01, seed=3)
+
+    _, stats = estimate_betas_and_stats(tickers, factors, alpha=1e-9)
+
+    fit = sm.OLS(tickers["T0"].to_numpy(), sm.add_constant(factors.to_numpy())).fit()
+    se = stats["T0"].beta_se
+    assert se is not None and set(se) == {"F0", "F1", "F2"}
+    np.testing.assert_allclose([se["F0"], se["F1"], se["F2"]], fit.bse[1:], rtol=1e-4)
+
+
+def test_beta_se_rescales_with_factor_column_scale():
+    factors = _make_factor_returns(n_weeks=200, n_factors=2, mean=0.0)
+    true_betas = np.array([[1.0], [0.5]])
+    tickers = _synth_ticker_returns(factors, true_betas, noise=0.01)
+
+    _, base = estimate_betas_and_stats(tickers, factors, alpha=0.1)
+    scaled_factors = factors.copy()
+    scaled_factors["F1"] = scaled_factors["F1"] * 100.0
+    _, scaled = estimate_betas_and_stats(tickers, scaled_factors, alpha=0.1)
+
+    # SEs live in raw units like the betas: scaling a column by 100 divides
+    # both its beta and its SE by 100, leaving t-stats invariant.
+    np.testing.assert_allclose(
+        scaled["T0"].beta_se["F1"], base["T0"].beta_se["F1"] / 100.0, rtol=1e-9
+    )
+    np.testing.assert_allclose(scaled["T0"].beta_se["F0"], base["T0"].beta_se["F0"], rtol=1e-9)
+
+
+def test_ticker_regression_stats_new_fields_default():
+    # Existing mocks construct with the original three fields only.
+    from app.factors.regression import TickerRegressionStats
+
+    s = TickerRegressionStats(r2=0.9, n_obs=104, idio_vol_weekly=0.01)
+    assert s.r2_adj is None
+    assert s.p_eff is None
+    assert s.beta_se is None
+
+
 def test_apply_shocks_dot_product():
     betas = pd.DataFrame(
         [[1.0, 0.5], [0.2, -0.3]],
@@ -322,6 +405,36 @@ def test_portfolio_pnl_rejects_periphery_for_unknown_ticker():
     portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 1.0})
     with pytest.raises(ValueError, match="Periphery shocks for tickers not in portfolio"):
         portfolio_pnl(portfolio, betas, {"SPY": -0.05}, periphery_shocks={"GHOST": -0.1})
+
+
+def test_portfolio_idio_band_exact_math():
+    from app.factors.regression import TickerRegressionStats
+    from app.factors.shocks import portfolio_idio_band
+
+    stats = {
+        "AAPL": TickerRegressionStats(r2=0.9, n_obs=104, idio_vol_weekly=0.02),
+        "MSFT": TickerRegressionStats(r2=0.8, n_obs=104, idio_vol_weekly=0.03),
+    }
+    holdings = {"AAPL": 0.6, "MSFT": 0.4}
+
+    weekly_vol, band = portfolio_idio_band(stats, holdings, horizon_weeks=4.0)
+
+    expected_weekly = np.sqrt((0.6 * 0.02) ** 2 + (0.4 * 0.03) ** 2)
+    np.testing.assert_allclose(weekly_vol, expected_weekly, atol=1e-12)
+    np.testing.assert_allclose(band, expected_weekly * 2.0, atol=1e-12)  # √4 = 2
+
+
+def test_portfolio_idio_band_skips_cash_and_missing_stats():
+    from app.factors.regression import TickerRegressionStats
+    from app.factors.shocks import portfolio_idio_band
+
+    stats = {"AAPL": TickerRegressionStats(r2=0.9, n_obs=104, idio_vol_weekly=0.02)}
+    holdings = {"AAPL": 0.5, "CASH": 0.5}
+
+    weekly_vol, band = portfolio_idio_band(stats, holdings, horizon_weeks=1.0)
+
+    np.testing.assert_allclose(weekly_vol, 0.5 * 0.02, atol=1e-12)
+    np.testing.assert_allclose(band, weekly_vol, atol=1e-12)
 
 
 def test_analog_replay_pnl_exact_linear_algebra():

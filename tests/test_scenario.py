@@ -243,6 +243,33 @@ def test_run_scenario_attaches_analog_replay(monkeypatch):
     assert replay.max_pnl == pytest.approx(-0.05)
 
 
+def test_run_scenario_attaches_pnl_uncertainty(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    result = run_scenario(
+        scenario_text="A pandemic-like risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+
+    unc = result.pnl_uncertainty
+    assert unc is not None
+    # Mock stats give every ticker idio_vol_weekly = 0.01; the mock selector
+    # picks covid-crash-2020 (33 calendar days) + lehman-gfc-2008 (46 days),
+    # so the horizon is the median window: 39.5 / 7 weeks.
+    weights = result.portfolio_holdings
+    expected_weekly = float(np.sqrt(sum((w * 0.01) ** 2 for w in weights.values())))
+    expected_h = 39.5 / 7.0
+    assert unc.portfolio_idio_vol_weekly == pytest.approx(expected_weekly)
+    assert unc.horizon_weeks == pytest.approx(expected_h)
+    assert unc.band_1sigma == pytest.approx(expected_weekly * expected_h**0.5)
+
+
 def test_run_scenario_cache_hit_round_trips_analog_replay(monkeypatch):
     _patch_market_layer(monkeypatch)
     cache = InMemoryCache()

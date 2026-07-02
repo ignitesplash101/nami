@@ -204,6 +204,22 @@ describe("chart data helpers", () => {
   });
 });
 
+describe("buildReadout idio band", () => {
+  it("is null when the result carries no uncertainty block (old payloads)", () => {
+    expect(buildReadout(fixtureResult(), "naive").idioBand).toBeNull();
+  });
+
+  it("carries the ±1σ band when present", () => {
+    const result = fixtureResult();
+    result.pnl_uncertainty = {
+      band_1sigma: 0.021,
+      portfolio_idio_vol_weekly: 0.0089,
+      horizon_weeks: 5.64
+    };
+    expect(buildReadout(result, "naive").idioBand).toBeCloseTo(0.021, 10);
+  });
+});
+
 describe("buildAnalogReplayRows", () => {
   it("returns null when the result carries no replay block (old payloads)", () => {
     expect(buildAnalogReplayRows(fixtureResult(), {})).toBeNull();

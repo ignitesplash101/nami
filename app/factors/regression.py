@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -43,11 +44,25 @@ class TickerRegressionStats:
     `r2` is in-sample on the centered ridge fit, clipped to [0, 1] (0.0 when the
     ticker's centered variance is zero). `idio_vol_weekly` is the ddof=1 standard
     deviation of the weekly residuals, NOT annualized.
+
+    Phase-21 additions (default None so pre-existing constructors/mocks and old
+    payloads stay valid):
+      - `r2_adj`: dof-honest R² using the ridge EFFECTIVE dof
+        (`1 − (1−r2)(n−1)/(n−p_eff−1)`); can be negative (worse than the mean);
+        None when `n − p_eff − 1 < 1`.
+      - `p_eff`: ridge effective dof `Σ s/(s+α)` over the standardized Gram's
+        eigenvalues — equals the live-factor count at α→0, shrinks as α grows.
+      - `beta_se`: RAW-unit per-factor standard errors (`σ̂·√diag(A⁻¹GA⁻¹)/σ_f`,
+        σ̂² on n−p_eff−1 dof). In-process only — deliberately NOT persisted in
+        the cached RegressionQuality block.
     """
 
     r2: float
     n_obs: int
     idio_vol_weekly: float
+    r2_adj: float | None = None
+    p_eff: float | None = None
+    beta_se: dict[str, float] | None = None
 
 
 def regression_spec(
@@ -136,22 +151,38 @@ def fetch_factor_returns_with_history(
     return raw, history
 
 
+class _SolveResult(NamedTuple):
+    betas: np.ndarray  # F × N, raw units
+    r2: np.ndarray  # N
+    r2_adj: np.ndarray  # N; NaN when n − p_eff − 1 < 1
+    idio: np.ndarray  # N, weekly residual vol
+    p_eff: float  # ridge effective dof (shared per solve — same X)
+    beta_se: np.ndarray  # F × N, raw units; 0.0 on zero-variance columns
+
+
 def _solve_standardized_ridge(
     X: np.ndarray,
     Y: np.ndarray,
     alpha: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """One centered + standardized ridge solve → (betas F×N, r2 N, idio_vol N).
+) -> _SolveResult:
+    """One centered + standardized ridge solve → betas + fit/uncertainty stats.
 
     Centering both X and Y is equivalent to an unpenalized intercept that is
     estimated and discarded. Columns are scaled to unit variance for the solve
     and the coefficients are rescaled back (`beta_raw = beta_std / sigma_f`) —
     this rescale is load-bearing: it keeps `betas @ raw_decimal_shock`
     dimensionally identical to an unstandardized regression. Zero-variance
-    columns get an exact 0.0 beta.
+    columns get an exact 0.0 beta (and 0.0 SE).
+
+    Effective dof and SEs come from one eigendecomposition of the standardized
+    Gram G = X_stdᵀX_std: `p_eff = Σ s/(s+α)` and
+    `Var(β̂_std) = σ̂² · V diag(s/(s+α)²) Vᵀ` (the ridge sandwich A⁻¹GA⁻¹ with
+    A = G + αI). σ̂² uses `n − p_eff − 1` dof (the −1 is the absorbed
+    intercept), matching OLS-with-constant SEs exactly as α → 0.
     """
     X_centered = X - X.mean(axis=0, keepdims=True)
     Y_centered = Y - Y.mean(axis=0, keepdims=True)
+    n_obs = X.shape[0]
     n_factors = X.shape[1]
     n_tickers = Y.shape[1]
 
@@ -159,11 +190,21 @@ def _solve_standardized_ridge(
     live = np.isfinite(sigma) & (sigma > 0.0)
 
     betas = np.zeros((n_factors, n_tickers))
+    beta_se = np.zeros((n_factors, n_tickers))
+    p_eff = 0.0
+    sandwich_diag: np.ndarray | None = None
     if bool(live.any()):
         X_std = X_centered[:, live] / sigma[live]
-        A = X_std.T @ X_std + alpha * np.eye(int(live.sum()))
+        gram = X_std.T @ X_std
+        A = gram + alpha * np.eye(int(live.sum()))
         b_std = np.linalg.solve(A, X_std.T @ Y_centered)
         betas[live, :] = b_std / sigma[live][:, None]
+
+        eigenvalues, eigenvectors = np.linalg.eigh(gram)
+        eigenvalues = np.clip(eigenvalues, 0.0, None)
+        p_eff = float((eigenvalues / (eigenvalues + alpha)).sum())
+        # diag(A⁻¹ G A⁻¹) = Σ_k V²_{jk} · s_k/(s_k+α)²
+        sandwich_diag = (eigenvectors**2) @ (eigenvalues / (eigenvalues + alpha) ** 2)
 
     resid = Y_centered - X_centered @ betas
     ss_res = (resid**2).sum(axis=0)
@@ -173,7 +214,18 @@ def _solve_standardized_ridge(
     r2 = np.where(ss_tot > 0.0, 1.0 - ss_res / np.where(ss_tot > 0.0, ss_tot, 1.0), 0.0)
     r2 = np.clip(r2, 0.0, 1.0)
     idio = resid.std(axis=0, ddof=1) if resid.shape[0] > 1 else np.zeros(n_tickers)
-    return betas, r2, idio
+
+    resid_dof = n_obs - p_eff - 1.0
+    if resid_dof >= 1.0:
+        r2_adj = 1.0 - (1.0 - r2) * (n_obs - 1.0) / resid_dof
+        if sandwich_diag is not None:
+            sigma2_hat = ss_res / resid_dof  # per-ticker residual variance
+            se_std = np.sqrt(np.outer(sandwich_diag, sigma2_hat))
+            beta_se[live, :] = se_std / sigma[live][:, None]
+    else:
+        r2_adj = np.full(n_tickers, np.nan)
+
+    return _SolveResult(betas, r2, r2_adj, idio, p_eff, beta_se)
 
 
 def estimate_betas_and_stats(
@@ -237,7 +289,10 @@ def estimate_betas_and_stats(
 
     betas = np.zeros((n_factors, n_tickers))
     r2_all = np.zeros(n_tickers)
+    r2_adj_all = np.full(n_tickers, np.nan)
     idio_all = np.zeros(n_tickers)
+    p_eff_all = np.zeros(n_tickers)
+    beta_se_all = np.zeros((n_factors, n_tickers))
 
     # Group tickers by identical NaN-mask pattern; the all-complete common case
     # collapses to a single vectorized solve identical to a joint regression.
@@ -247,18 +302,23 @@ def estimate_betas_and_stats(
 
     for cols in pattern_groups.values():
         rows = valid_mask[:, cols[0]]
-        group_betas, group_r2, group_idio = _solve_standardized_ridge(
-            X_all[rows], Y_all[np.ix_(rows, cols)], alpha
-        )
-        betas[:, cols] = group_betas
-        r2_all[cols] = group_r2
-        idio_all[cols] = group_idio
+        solved = _solve_standardized_ridge(X_all[rows], Y_all[np.ix_(rows, cols)], alpha)
+        betas[:, cols] = solved.betas
+        r2_all[cols] = solved.r2
+        r2_adj_all[cols] = solved.r2_adj
+        idio_all[cols] = solved.idio
+        p_eff_all[cols] = solved.p_eff
+        beta_se_all[:, cols] = solved.beta_se
 
+    factor_names = [str(c) for c in F.columns]
     stats = {
         str(ticker): TickerRegressionStats(
             r2=float(r2_all[j]),
             n_obs=int(n_obs[j]),
             idio_vol_weekly=float(idio_all[j]),
+            r2_adj=(None if np.isnan(r2_adj_all[j]) else float(r2_adj_all[j])),
+            p_eff=float(p_eff_all[j]),
+            beta_se={name: float(beta_se_all[i, j]) for i, name in enumerate(factor_names)},
         )
         for j, ticker in enumerate(Y.columns)
     }

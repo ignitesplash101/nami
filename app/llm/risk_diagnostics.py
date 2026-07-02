@@ -9,6 +9,7 @@ import pandas as pd
 
 from app.factors.universe import FACTORS
 from app.llm.schemas import (
+    AnalogReplay,
     FactorShock,
     PeripheryShock,
     PortfolioPnL,
@@ -32,6 +33,14 @@ MAX_LOW_R2_DIAGNOSTICS = 6
 # Advisory tier for periphery shocks (the hard ±0.75 band lives in
 # app/llm/validation.py — that validator is retry-then-fail, this one warns).
 PERIPHERY_ADVISORY_ABS = 0.35
+
+# Below ~3 observations per ridge EFFECTIVE parameter, betas are mostly noise;
+# the fit's in-sample R² is flattered exactly where it's least trustworthy.
+MIN_OBS_PER_EFFECTIVE_PARAM = 3.0
+MAX_LOW_DOF_DIAGNOSTICS = 6
+
+# Dead zone around the replay range so a scenario 20bps outside it doesn't nag.
+SCENARIO_VS_REPLAY_TOLERANCE = 0.005
 
 
 def _display(factor: str) -> str:
@@ -60,6 +69,7 @@ def generate_risk_diagnostics(
     portfolio_holdings: dict[str, float] | None = None,
     periphery_shocks: list[PeripheryShock] | None = None,
     regression_quality: RegressionQuality | None = None,
+    analog_replay: AnalogReplay | None = None,
 ) -> list[RiskDiagnostic]:
     """Return review warnings without changing shocks or P&L.
 
@@ -72,12 +82,141 @@ def generate_risk_diagnostics(
     explicit = {fs.factor: fs.shock for fs in factor_shocks if abs(fs.shock) >= MIN_MATERIAL_SHOCK}
 
     diagnostics.extend(_envelope_direction_conflicts(explicit, envelope))
+    diagnostics.extend(_band_coverage(explicit, envelope))
     diagnostics.extend(_correlation_conflicts(explicit, factor_returns_history))
     diagnostics.extend(_conditional_cross_credit(explicit, portfolio_pnl))
+    diagnostics.extend(_scenario_vs_replay(portfolio_pnl, analog_replay))
     diagnostics.extend(_low_regression_r2(regression_quality))
+    diagnostics.extend(_low_regression_dof(regression_quality))
     diagnostics.extend(_position_loss_floor(portfolio_pnl, portfolio_holdings))
     diagnostics.extend(_periphery_magnitude(periphery_shocks))
     diagnostics.extend(_periphery_dominance(portfolio_pnl))
+    return diagnostics
+
+
+def _band_coverage(explicit: dict[str, float], envelope: pd.DataFrame) -> list[RiskDiagnostic]:
+    """Disclose which material shocks have NO enforced evidence band.
+
+    The validator's [p10, p90] check binds only at envelope count >= 3; below
+    that a shock's magnitude is pure LLM judgment. One consolidated record
+    (info when a minority of shocks are unbanded, warning when more than half)
+    keeps the evidence base honest without nagging per factor.
+    """
+    if not explicit:
+        return []
+    unbanded: list[str] = []
+    for factor in explicit:
+        banded = False
+        if factor in envelope.index:
+            row = envelope.loc[factor]
+            count = row.get("count")
+            banded = (
+                _finite(count)
+                and int(count) >= 3
+                and _finite(row.get("p10"))
+                and _finite(row.get("p90"))
+            )
+        if not banded:
+            unbanded.append(factor)
+    if not unbanded:
+        return []
+    n_material = len(explicit)
+    n_unbanded = len(unbanded)
+    names = ", ".join(_display(f) for f in sorted(unbanded))
+    return [
+        RiskDiagnostic(
+            kind="band_coverage",
+            severity="warning" if n_unbanded * 2 > n_material else "info",
+            message=(
+                f"{n_unbanded} of {n_material} material factor shocks lie outside any "
+                f"enforced evidence band (envelope count < 3): {names}. Their magnitudes "
+                "are LLM judgment, not analog-anchored."
+            ),
+            factors=sorted(unbanded),
+            evidence={"unbanded": n_unbanded, "material": n_material},
+        )
+    ]
+
+
+def _scenario_vs_replay(
+    portfolio_pnl: PortfolioPnL, analog_replay: AnalogReplay | None
+) -> list[RiskDiagnostic]:
+    """Flag a scenario landing OUTSIDE its own analogs' replayed severity range.
+
+    Threshold-free by design: the bounds are the selected analogs' realized
+    factor moves replayed on this book, so 'milder than every analog' or
+    'harsher than every analog' is a statement about the scenario's own
+    evidence base, not an arbitrary cutoff.
+    """
+    if analog_replay is None or not analog_replay.per_event:
+        return []
+    total = portfolio_pnl.total_pnl
+    lo = analog_replay.min_pnl
+    hi = analog_replay.max_pnl
+    if lo - SCENARIO_VS_REPLAY_TOLERANCE <= total <= hi + SCENARIO_VS_REPLAY_TOLERANCE:
+        return []
+    direction = "milder" if total > hi else "harsher"
+    if direction == "milder":
+        message = (
+            f"Scenario total P&L {total:+.1%} is milder than every selected analog "
+            f"replayed on this book ({lo:+.1%} to {hi:+.1%}). The proposed shocks sit "
+            "below the scenario's own evidence base — consider whether the analogs or "
+            "the magnitudes are the right read."
+        )
+    else:
+        message = (
+            f"Scenario total P&L {total:+.1%} is harsher than every selected analog "
+            f"replayed on this book ({lo:+.1%} to {hi:+.1%}). Review whether the "
+            "narrative justifies beyond-analog severity."
+        )
+    return [
+        RiskDiagnostic(
+            kind="scenario_vs_replay",
+            message=message,
+            evidence={
+                "scenario_total_pnl": float(total),
+                "replay_min_pnl": float(lo),
+                "replay_max_pnl": float(hi),
+                "direction": direction,
+            },
+        )
+    ]
+
+
+def _low_regression_dof(regression_quality: RegressionQuality | None) -> list[RiskDiagnostic]:
+    """Warn on names with too few observations per ridge effective parameter.
+
+    Skips tickers without `p_eff` (older cached payloads). Worst offenders
+    first, capped like the low-R² check.
+    """
+    if regression_quality is None:
+        return []
+    flagged: list[tuple[float, str, int, float]] = []
+    for ticker, quality in regression_quality.by_ticker.items():
+        if quality.p_eff is None or quality.p_eff <= 0:
+            continue
+        obs_per_param = (quality.n_obs - 1) / (quality.p_eff + 1.0)
+        if obs_per_param < MIN_OBS_PER_EFFECTIVE_PARAM:
+            flagged.append((obs_per_param, ticker, quality.n_obs, quality.p_eff))
+    flagged.sort()
+    diagnostics: list[RiskDiagnostic] = []
+    for obs_per_param, ticker, n_obs, p_eff in flagged[:MAX_LOW_DOF_DIAGNOSTICS]:
+        diagnostics.append(
+            RiskDiagnostic(
+                kind="low_regression_dof",
+                message=(
+                    f"{ticker} has {obs_per_param:.1f} observations per effective parameter "
+                    f"(n={n_obs}, p_eff={p_eff:.1f}) — its betas are weakly determined; "
+                    "treat its factor-implied P&L and attribution as low-confidence."
+                ),
+                evidence={
+                    "ticker": ticker,
+                    "n_obs": n_obs,
+                    "p_eff": round(p_eff, 2),
+                    "obs_per_param": round(obs_per_param, 2),
+                },
+            )
+        )
     return diagnostics
 
 

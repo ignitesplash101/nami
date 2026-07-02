@@ -40,7 +40,7 @@ from app.factors.regression import (
     fetch_factor_returns_with_history,
     regression_spec,
 )
-from app.factors.shocks import analog_replay_pnl, portfolio_pnl
+from app.factors.shocks import analog_replay_pnl, portfolio_idio_band, portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
 from app.factors.warm_cache import get_factor_returns_with_history
 from app.llm.adjust_validation import validate_factor_overrides
@@ -53,6 +53,7 @@ from app.llm.schemas import (
     AnalogReplayEntry,
     AnalogSelection,
     FactorShock,
+    PnLUncertainty,
     PortfolioPnL,
     RegressionQuality,
     ScenarioResult,
@@ -294,6 +295,29 @@ def _analog_replay_block(
     )
 
 
+def _pnl_uncertainty_block(
+    stats: dict[str, TickerRegressionStats],
+    holdings: dict[str, float],
+    window_calendar_days: list[int],
+) -> PnLUncertainty | None:
+    """±1σ idio band over the median selected-analog horizon.
+
+    Shock-independent (residual vols + analog windows only) and deterministic
+    from the keyed vintage — cached with the canonical, recomputed on
+    adjustments from the same inputs. None when no analog windows are known
+    (old canonicals without `analog_event_returns`).
+    """
+    if not window_calendar_days:
+        return None
+    horizon_weeks = float(statistics.median(window_calendar_days)) / 7.0
+    weekly, band = portfolio_idio_band(stats, holdings, horizon_weeks)
+    return PnLUncertainty(
+        band_1sigma=band,
+        portfolio_idio_vol_weekly=weekly,
+        horizon_weeks=horizon_weeks,
+    )
+
+
 def _regression_quality_block(
     stats: dict[str, TickerRegressionStats],
     config: Config,
@@ -306,7 +330,11 @@ def _regression_quality_block(
         min_obs=MIN_REGRESSION_WEEKS,
         by_ticker={
             ticker: TickerRegressionQuality(
-                r2=s.r2, n_obs=s.n_obs, idio_vol_weekly=s.idio_vol_weekly
+                r2=s.r2,
+                n_obs=s.n_obs,
+                idio_vol_weekly=s.idio_vol_weekly,
+                r2_adj=s.r2_adj,
+                p_eff=s.p_eff,
             )
             for ticker, s in stats.items()
         },
@@ -716,6 +744,11 @@ def run_scenario(
 
     portfolio_pnl_model = PortfolioPnL(**pnl)
     regression_quality = _regression_quality_block(regression_stats, config)
+    pnl_uncertainty = _pnl_uncertainty_block(
+        regression_stats,
+        portfolio_obj.holdings,
+        [int(rec["window_calendar_days"]) for rec in per_event_returns],
+    )
     risk_diagnostics = generate_risk_diagnostics(
         factor_shocks=shock_out.factor_shocks,
         envelope=envelope,
@@ -724,6 +757,7 @@ def run_scenario(
         portfolio_holdings=portfolio_obj.holdings,
         periphery_shocks=shock_out.periphery_shocks,
         regression_quality=regression_quality,
+        analog_replay=analog_replay,
     )
 
     result = ScenarioResult(
@@ -743,6 +777,7 @@ def run_scenario(
         regression_quality=regression_quality,
         analog_event_returns=[AnalogEventReturns.model_validate(rec) for rec in per_event_returns],
         analog_replay=analog_replay,
+        pnl_uncertainty=pnl_uncertainty,
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,
@@ -976,6 +1011,11 @@ def adjust_scenario_shocks(
 
     portfolio_pnl_model = PortfolioPnL(**pnl)
     regression_quality = _regression_quality_block(regression_stats, config)
+    pnl_uncertainty = _pnl_uncertainty_block(
+        regression_stats,
+        canonical.portfolio_holdings,
+        [rec.window_calendar_days for rec in (canonical.analog_event_returns or [])],
+    )
     risk_diagnostics = generate_risk_diagnostics(
         factor_shocks=new_factor_shocks,
         envelope=_envelope_df_from_canonical(canonical),
@@ -984,6 +1024,7 @@ def adjust_scenario_shocks(
         portfolio_holdings=canonical.portfolio_holdings,
         periphery_shocks=canonical.periphery_shocks,
         regression_quality=regression_quality,
+        analog_replay=canonical.analog_replay,
     )
 
     adjusted = canonical.model_copy(
@@ -993,6 +1034,9 @@ def adjust_scenario_shocks(
             "risk_diagnostics": risk_diagnostics,
             # Freshly recomputed alongside the betas (free — rides the same tuple).
             "regression_quality": regression_quality,
+            # Shock-independent; recomputed from the same vintage stats + the
+            # canonical's analog windows, so it lands byte-identical.
+            "pnl_uncertainty": pnl_uncertainty,
             "adjustment_history": [*canonical.adjustment_history, new_entry],
         }
     )

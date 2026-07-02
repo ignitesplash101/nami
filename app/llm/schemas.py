@@ -175,6 +175,11 @@ class RiskDiagnostic(BaseModel):
         "position_loss_exceeds_100pct",
         "periphery_magnitude",
         "periphery_dominance",
+        # Phase 21 — evidence-coverage tier (additive; old payloads carry only
+        # the kinds above).
+        "band_coverage",
+        "scenario_vs_replay",
+        "low_regression_dof",
     ]
     severity: Literal["info", "warning"] = "warning"
     message: str
@@ -187,12 +192,17 @@ class TickerRegressionQuality(BaseModel):
 
     `r2` is in-sample on the centered standardized-ridge fit, in [0, 1].
     `idio_vol_weekly` is the ddof=1 weekly residual vol, NOT annualized.
+    Phase-21 additions (None on older cached payloads): `r2_adj` is the
+    dof-honest R² over the ridge EFFECTIVE dof `p_eff` and can be negative;
+    per-factor beta SEs are computed in-process but deliberately NOT persisted.
     """
 
     model_config = ConfigDict(extra="forbid")
     r2: float
     n_obs: int
     idio_vol_weekly: float
+    r2_adj: float | None = None
+    p_eff: float | None = None
 
 
 class RegressionQuality(BaseModel):
@@ -225,6 +235,22 @@ class AnalogEventReturns(BaseModel):
     event_id: str
     window_calendar_days: int
     factor_returns: dict[str, float | None]
+
+
+class PnLUncertainty(BaseModel):
+    """±1σ idiosyncratic dispersion around the factor-driven point estimate.
+
+    `band_1sigma = portfolio_idio_vol_weekly · √horizon_weeks`, where the
+    horizon is the median selected-analog window in weeks and the weekly vol is
+    `√Σ(wᵢ·σᵢ,idio)²` from the beta regression's residuals. Cross-name and
+    cross-week independence are assumed, so this is a dispersion FLOOR — never
+    render it as a confidence interval on the scenario itself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    band_1sigma: float
+    portfolio_idio_vol_weekly: float
+    horizon_weeks: float
 
 
 class AnalogReplayEntry(BaseModel):
@@ -285,6 +311,10 @@ class ScenarioResult(BaseModel):
     # (deterministic from the keyed vintage, like regression_quality); None on
     # older cached/saved payloads — render as "not computed", never as zero.
     analog_replay: AnalogReplay | None = None
+    # ±1σ idio dispersion band (Phase 21). Shock-independent (residual vols +
+    # analog windows only); cached with the canonical and recomputed on
+    # adjustments from the same vintage. None on older payloads.
+    pnl_uncertainty: PnLUncertainty | None = None
     # Backdating metadata (added Phase 11). All default-defaulted so cached v5
     # entries deserialize cleanly under v6 lazy re-derivation.
     # `market_date` is the *effective* as-of date (last NYSE trading day on or

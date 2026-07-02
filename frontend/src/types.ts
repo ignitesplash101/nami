@@ -108,7 +108,10 @@ export interface RiskDiagnostic {
     | "low_regression_r2"
     | "position_loss_exceeds_100pct"
     | "periphery_magnitude"
-    | "periphery_dominance";
+    | "periphery_dominance"
+    | "band_coverage"
+    | "scenario_vs_replay"
+    | "low_regression_dof";
   severity: "info" | "warning";
   message: string;
   factors: string[];
@@ -151,6 +154,14 @@ export interface AnalogReplay {
   max_pnl: number;
 }
 
+// ±1σ idiosyncratic dispersion around the factor-driven point estimate —
+// a dispersion floor (independence assumptions), never a confidence interval.
+export interface PnLUncertainty {
+  band_1sigma: number;
+  portfolio_idio_vol_weekly: number;
+  horizon_weeks: number;
+}
+
 export interface ScenarioResult {
   scenario_text: string;
   market_date: string;  // effective NYSE trading-day as-of date (YYYY-MM-DD)
@@ -174,6 +185,8 @@ export interface ScenarioResult {
   // Per-analog replay range (Phase 20). Null/absent on older cached/saved
   // payloads — render as "not computed", never as zero.
   analog_replay?: AnalogReplay | null;
+  // ±1σ idio dispersion band (Phase 21). Null/absent on older payloads.
+  pnl_uncertainty?: PnLUncertainty | null;
   // Backdating metadata (added Phase 11). Defaults match live runs so older
   // cached payloads deserialize cleanly.
   requested_as_of_date: string | null;

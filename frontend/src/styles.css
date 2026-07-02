@@ -1516,6 +1516,12 @@ a {
 .readout-metric-value.down {
   color: var(--down);
 }
+.readout-idio-band {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
 
 /* Analog replay range — evidence strip under the Impact summary. Deliberately
  * quieter than .scenario-readout: it contextualizes the headline, not replaces it. */

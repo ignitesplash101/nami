@@ -117,6 +117,27 @@ def test_manual_adjustment_preserves_analog_replay(monkeypatch):
     assert result.analog_replay == canonical.analog_replay
 
 
+def test_manual_adjustment_recomputes_identical_pnl_uncertainty(monkeypatch):
+    # The band is shock-independent (stats + analog windows only); adjusting on
+    # the same vintage must land on an identical block.
+    canonical, cache, gemini, key, config = _canonical_run(monkeypatch)
+
+    overrides = {fs.factor: fs.shock for fs in canonical.factor_shocks}
+    target = canonical.factor_shocks[0]
+    overrides[target.factor] = target.shock + 0.01
+
+    result = adjust_scenario_shocks(
+        key,
+        overrides=overrides,
+        config=config,
+        gemini=gemini,
+        cache=cache,
+    )
+
+    assert canonical.pnl_uncertainty is not None
+    assert result.pnl_uncertainty == canonical.pnl_uncertainty
+
+
 def test_manual_zero_removal_accepted_even_outside_envelope(monkeypatch):
     """0.0 is always allowed as the removal sentinel, even if outside [p10, p90]."""
     canonical, cache, gemini, key, config = _canonical_run(monkeypatch)
