@@ -2236,6 +2236,7 @@ function ScenarioReadout({
                 ? formatCurrency(nav * readout.idioBand, currency)
                 : formatPercent(readout.idioBand)}{" "}
               idio (1σ)
+              <span className="idio-band-note">dispersion floor — not a confidence interval</span>
             </span>
           ) : null}
         </div>

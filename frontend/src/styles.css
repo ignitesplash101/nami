@@ -549,6 +549,11 @@ input[type="range"]::-moz-range-thumb {
 
 .results-stack {
   display: grid;
+  /* Explicit minmax(0, …) track. Without it the implicit track's `auto`
+     minimum adopts the widest child's min-content — the 480px min-width
+     mobile tables then force the whole workbench wider than a phone
+     viewport (same trap the ≥1440px grid guards with minmax(0, Nfr)). */
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   scroll-margin-top: var(--space-3);
 }
@@ -1213,7 +1218,7 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-2);
 }
 .run-progress li .dot {
@@ -1255,7 +1260,7 @@ a {
   color: var(--accent-2);
   padding: 2px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 @keyframes nami-ripple {
@@ -1294,7 +1299,7 @@ a {
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .adjust-row-controls {
   display: flex;
@@ -1318,7 +1323,7 @@ a {
 }
 .adjust-row-meta {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 .adjust-prompt {
@@ -1328,7 +1333,7 @@ a {
   gap: 8px;
 }
 .adjust-prompt label {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-2);
 }
 .adjust-prompt textarea {
@@ -1349,7 +1354,7 @@ a {
 }
 .adjustment-history h4 {
   margin: 0 0 8px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1363,7 +1368,7 @@ a {
   gap: 8px;
 }
 .adjustment-history li {
-  font-size: 12px;
+  font-size: 0.75rem;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -1377,7 +1382,7 @@ a {
   border-radius: 999px;
   font-weight: 600;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 0.625rem;
   letter-spacing: 0.05em;
 }
 .adjustment-history .time {
@@ -1521,6 +1526,19 @@ a {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   cursor: help;
+}
+/* The band's "dispersion floor, not a CI" framing lives in a title tooltip —
+   unreachable without hover. Surface it as a visible caption on touch devices. */
+.idio-band-note {
+  display: none;
+}
+@media (hover: none) {
+  .idio-band-note {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
 }
 
 /* Analog replay range — evidence strip under the Impact summary. Deliberately
@@ -1910,8 +1928,10 @@ a {
  * ========================================================================== */
 
 @media (max-width: 1079.98px) {
+  /* minmax(0, 1fr), never bare 1fr: a bare track's `auto` minimum lets wide
+     content (min-width tables, long mono strings) force horizontal overflow. */
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .rail-toggle-btn {
     display: inline-flex;
@@ -1922,13 +1942,13 @@ a {
     gap: 8px;
   }
   .scenario-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .scenario-text {
     grid-row: auto;
   }
   .two-column {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1947,6 +1967,28 @@ a {
   .methodology-btn {
     min-height: 44px;
     min-width: 44px;
+    justify-content: center;
+  }
+  .chip {
+    min-height: 44px;
+  }
+  .guide-toggle {
+    min-height: 44px;
+  }
+  .drawer-close {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Secondary inline affordance: 40px keeps it tappable without letting the
+     icon dominate the reproducibility chip it sits in. */
+  .chip-copy-btn {
+    min-height: 40px;
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
   }
   /* Methodology markdown tables: scroll horizontally inside .section-content
@@ -2084,14 +2126,14 @@ a {
 }
 .backdated-banner p {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 .backdated-banner code {
   background: rgba(255, 255, 255, 0.08);
   padding: 1px 6px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* Reproducibility chip + results toolbar */
@@ -2214,6 +2256,13 @@ th.sortable.num button {
   padding: 6px 10px;
   min-height: 34px;
 }
+/* Touch override must sit AFTER the baseline rule: both selectors tie the
+   generic ≤1079.98px input rule on specificity, so source order decides. */
+@media (max-width: 1079.98px) {
+  .nav-knob input {
+    min-height: 44px;
+  }
+}
 .nav-marked {
   font-size: 0.78rem;
 }
@@ -2222,7 +2271,7 @@ th.sortable.num button {
 }
 .reproducibility-chip {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.02em;
 }
 .reproducibility-chip code {
@@ -2259,7 +2308,7 @@ th.sortable.num button {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: 0.75rem;
   border-top: 1px solid var(--line);
   padding-top: 12px;
 }
@@ -2280,7 +2329,7 @@ th.sortable.num button {
   border: 1px solid var(--line);
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
 }
 .saved-tag-filter button.active {
@@ -2313,7 +2362,7 @@ th.sortable.num button {
   border: 0;
   color: var(--accent-2);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   text-align: left;
   padding: 0;
@@ -2321,7 +2370,7 @@ th.sortable.num button {
 .saved-row-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-2);
   margin-bottom: 6px;
 }
@@ -2336,7 +2385,7 @@ th.sortable.num button {
   color: var(--accent-2);
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
 }
 .saved-row-actions {
@@ -2345,7 +2394,7 @@ th.sortable.num button {
 }
 .saved-row-actions a {
   text-decoration: none;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ghost-button.danger {
   color: #f6bdb9;
@@ -2378,7 +2427,7 @@ th.sortable.num button {
 }
 .snap-list h4 {
   margin: 12px 0 8px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
@@ -2396,7 +2445,7 @@ th.sortable.num button {
   gap: 10px;
   align-items: center;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .snap-date code {
   background: rgba(255, 255, 255, 0.06);
@@ -2406,7 +2455,7 @@ th.sortable.num button {
 }
 .snap-notes {
   margin: 4px 0 0 0;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 /* Phase 11 mobile polish — close the gaps the responsive sweep missed. */
