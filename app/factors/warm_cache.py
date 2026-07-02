@@ -9,34 +9,56 @@ Universe-level only — do NOT cache portfolio-keyed fetches here, since the Por
 dataclass + custom holdings would explode the cache key space and risk dataclass-hash
 subtleties.
 
+Degraded results are NOT memoized. `fetch_factor_returns_with_history` returns
+`(raw, None)` when a transient market-data failure (e.g. a provider rate limit
+at instance boot) leaves fewer than the required complete rows for the SHAP
+background. Memoizing that tuple would silently downgrade every subsequent
+scenario in the process to naive-only attribution until the instance recycles —
+so a `(raw, None)` result is returned to the caller but never cached, and the
+next call retries the fetch.
+
 FastAPI integration note: this module exposes functions that can be called from a
-`lifespan` startup hook to warm the cache before the first request. The cache is a
-plain `functools.lru_cache`, not a Streamlit decorator — survives the Streamlit→
-FastAPI migration unchanged.
+`lifespan` startup hook to warm the cache before the first request.
 """
 
 from __future__ import annotations
 
 import contextlib
-import functools
+import threading
 
 import pandas as pd
 
 from app.factors.regression import fetch_factor_returns_with_history
 
+_MAX_ENTRIES = 4  # covers a handful of distinct lookback_weeks values
 
-@functools.lru_cache(maxsize=4)
+_lock = threading.Lock()
+_cache: dict[int, tuple[pd.DataFrame, pd.DataFrame]] = {}
+
+
 def get_factor_returns_with_history(
     lookback_weeks: int = 156,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """Cached `fetch_factor_returns_with_history` — see that function for semantics.
 
-    maxsize=4 covers a handful of distinct `lookback_weeks` values (default 156,
-    plus any one-off variations). Keyed only on `lookback_weeks`; `end` defaults to
-    None (today) in the underlying call. Callers that need an explicit `end` should
-    bypass this cache and call `fetch_factor_returns_with_history` directly.
+    Keyed only on `lookback_weeks`; `end` defaults to None (today) in the
+    underlying call. Callers that need an explicit `end` should bypass this
+    cache and call `fetch_factor_returns_with_history` directly. A degraded
+    `(raw, None)` result (SHAP background unavailable) is passed through but
+    never memoized, so a healthy later fetch can repopulate it.
     """
-    return fetch_factor_returns_with_history(lookback_weeks=lookback_weeks)
+    with _lock:
+        hit = _cache.get(lookback_weeks)
+    if hit is not None:
+        return hit
+
+    result = fetch_factor_returns_with_history(lookback_weeks=lookback_weeks)
+    if result[1] is not None:
+        with _lock:
+            if lookback_weeks not in _cache and len(_cache) >= _MAX_ENTRIES:
+                _cache.pop(next(iter(_cache)))
+            _cache[lookback_weeks] = result
+    return result
 
 
 def warm() -> None:
@@ -56,4 +78,5 @@ def warm() -> None:
 
 def clear() -> None:
     """Test helper — drop the in-process cache."""
-    get_factor_returns_with_history.cache_clear()
+    with _lock:
+        _cache.clear()
