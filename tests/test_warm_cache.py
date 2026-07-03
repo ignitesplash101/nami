@@ -1,6 +1,10 @@
-"""Warm-cache memoization semantics — healthy results cached, degraded never."""
+"""Warm-cache memoization semantics — healthy results cached, degraded never,
+concurrent fetches single-flight."""
 
 from __future__ import annotations
+
+import threading
+import time
 
 import pandas as pd
 import pytest
@@ -124,3 +128,58 @@ def test_event_matrix_with_all_nan_row_is_not_memoized(monkeypatch):
     cached = warm_cache.get_event_returns_matrix()
     assert calls["n"] == 2
     assert cached is healed
+
+
+def test_factor_fetch_is_single_flight_under_concurrency(monkeypatch):
+    """A request racing the background startup warm must WAIT for the in-flight
+    fetch and reuse it — a concurrent duplicate fan-out contends on provider
+    rate limits and made the racing request slower than no warm at all."""
+    calls = {"n": 0}
+
+    def slow_fetch(lookback_weeks=156):
+        calls["n"] += 1
+        time.sleep(0.15)
+        return _frames()
+
+    monkeypatch.setattr(warm_cache, "fetch_factor_returns_with_history", slow_fetch)
+
+    results: list = []
+    threads = [
+        threading.Thread(
+            target=lambda: results.append(warm_cache.get_factor_returns_with_history(156))
+        )
+        for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert calls["n"] == 1
+    assert all(r is results[0] for r in results)
+
+
+def test_event_matrix_fetch_is_single_flight_under_concurrency(monkeypatch):
+    calls = {"n": 0}
+
+    def slow_fetch(event_ids, registry=None):
+        calls["n"] += 1
+        time.sleep(0.15)
+        return _events_matrix()
+
+    monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", slow_fetch)
+    monkeypatch.setattr(warm_cache, "load_events", lambda: {"a": None, "b": None})
+    monkeypatch.setattr(warm_cache, "events_version", lambda: "v-one")
+
+    results: list = []
+    threads = [
+        threading.Thread(target=lambda: results.append(warm_cache.get_event_returns_matrix()))
+        for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert calls["n"] == 1
+    assert all(r is results[0] for r in results)

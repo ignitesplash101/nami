@@ -35,9 +35,16 @@ _MAX_ENTRIES = 4  # covers a handful of distinct lookback_weeks values
 
 _lock = threading.Lock()
 _cache: dict[int, tuple[pd.DataFrame, pd.DataFrame]] = {}
+# Single-flight guard: held across the WHOLE fetch so a request racing the
+# background startup warm (or another request) waits for the in-flight fan-out
+# and reuses its result instead of launching a duplicate ~26-ticker download —
+# concurrent duplicates contend on provider rate limits and made the racing
+# request SLOWER than no warm at all (observed live: 150s events-replay).
+_fetch_lock = threading.Lock()
 
 _events_lock = threading.Lock()
 _events_matrix_cache: dict[str, pd.DataFrame] = {}
+_events_fetch_lock = threading.Lock()
 
 
 def get_event_returns_matrix() -> pd.DataFrame:
@@ -52,7 +59,9 @@ def get_event_returns_matrix() -> pd.DataFrame:
     rule as the factor cache: a row that is ENTIRELY NaN means the provider
     returned nothing for that event (transient failure, e.g. a rate limit) —
     such a matrix is returned to the caller but never memoized. Legitimate
-    pre-launch NaN holes are partial rows and cache fine.
+    pre-launch NaN holes are partial rows and cache fine. Fetches are
+    single-flight (see `_fetch_lock` note); a degraded fetch releases the lock
+    and the next caller retries serially.
     """
     version = events_version()
     with _events_lock:
@@ -60,12 +69,17 @@ def get_event_returns_matrix() -> pd.DataFrame:
     if hit is not None:
         return hit
 
-    matrix = fetch_event_returns_matrix(list(load_events()))
-    if not matrix.isna().all(axis=1).any():
+    with _events_fetch_lock:
         with _events_lock:
-            _events_matrix_cache.clear()  # a registry edit obsoletes prior versions
-            _events_matrix_cache[version] = matrix
-    return matrix
+            hit = _events_matrix_cache.get(version)
+        if hit is not None:
+            return hit
+        matrix = fetch_event_returns_matrix(list(load_events()))
+        if not matrix.isna().all(axis=1).any():
+            with _events_lock:
+                _events_matrix_cache.clear()  # a registry edit obsoletes prior versions
+                _events_matrix_cache[version] = matrix
+        return matrix
 
 
 def get_factor_returns_with_history(
@@ -77,20 +91,26 @@ def get_factor_returns_with_history(
     underlying call. Callers that need an explicit `end` should bypass this
     cache and call `fetch_factor_returns_with_history` directly. A degraded
     `(raw, None)` result (SHAP background unavailable) is passed through but
-    never memoized, so a healthy later fetch can repopulate it.
+    never memoized, so a healthy later fetch can repopulate it. Fetches are
+    single-flight (see `_fetch_lock` note).
     """
     with _lock:
         hit = _cache.get(lookback_weeks)
     if hit is not None:
         return hit
 
-    result = fetch_factor_returns_with_history(lookback_weeks=lookback_weeks)
-    if result[1] is not None:
+    with _fetch_lock:
         with _lock:
-            if lookback_weeks not in _cache and len(_cache) >= _MAX_ENTRIES:
-                _cache.pop(next(iter(_cache)))
-            _cache[lookback_weeks] = result
-    return result
+            hit = _cache.get(lookback_weeks)
+        if hit is not None:
+            return hit
+        result = fetch_factor_returns_with_history(lookback_weeks=lookback_weeks)
+        if result[1] is not None:
+            with _lock:
+                if lookback_weeks not in _cache and len(_cache) >= _MAX_ENTRIES:
+                    _cache.pop(next(iter(_cache)))
+                _cache[lookback_weeks] = result
+        return result
 
 
 def warm() -> None:
