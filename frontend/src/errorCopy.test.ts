@@ -58,6 +58,18 @@ describe("presentApiError", () => {
     expect(present("forbidden").ctaLabel).toBe("Unlock");
   });
 
+  it("network passes the mid-stream drop copy through, generic on raw transport detail", () => {
+    const dropped = present(
+      "network",
+      "Connection dropped mid-run — the server may still finish and warm the cache, so retrying can be instant."
+    );
+    expect(dropped.message).toMatch(/^Connection dropped mid-run/);
+    expect(dropped.cta).toBe("retry");
+
+    const raw = present("network", "Failed to fetch");
+    expect(raw.message).toMatch(/network error — check your connection/i);
+  });
+
   it("unavailable passes actionable server detail through, generic on bare status lines", () => {
     const detailed = present(
       "unavailable",

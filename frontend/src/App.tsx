@@ -239,7 +239,9 @@ export default function App() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [bootSerial, setBootSerial] = useState(0);
   const accessModeRef = useRef<AccessResponse["access_mode"] | null>(null);
-  const lastFailedActionRef = useRef<"run" | "decompose" | "boot" | null>(null);
+  const lastFailedActionRef = useRef<"run" | "decompose" | "boot" | "profile" | "replay" | null>(
+    null
+  );
   const passcodeInputRef = useRef<HTMLInputElement>(null);
   // Guards the boot effect's default-selection seeding (see boot()) so a second
   // async wave can never clobber a selection the user has already made.
@@ -484,7 +486,7 @@ export default function App() {
     try {
       setBookProfile(await profileBook(freeEnginePayload()));
     } catch (exc) {
-      reportError(exc);
+      reportError(exc, "profile");
     } finally {
       setProfileBusy(false);
     }
@@ -496,13 +498,16 @@ export default function App() {
     try {
       setEventsReplay(await replayEvents(freeEnginePayload()));
     } catch (exc) {
-      reportError(exc);
+      reportError(exc, "replay");
     } finally {
       setReplayBusy(false);
     }
   }
 
-  function reportError(exc: unknown, action: "run" | "decompose" | "boot" | null = null) {
+  function reportError(
+    exc: unknown,
+    action: "run" | "decompose" | "boot" | "profile" | "replay" | null = null
+  ) {
     const err = toApiError(exc);
     if (err.kind === "cancelled") return;
     if (err.kind === "forbidden") void refreshAccess().catch(() => {});
@@ -516,6 +521,8 @@ export default function App() {
     if (action === "run") void handleRun();
     else if (action === "decompose") void handleDecompose();
     else if (action === "boot") setBootSerial((serial) => serial + 1);
+    else if (action === "profile") void handleProfileBook();
+    else if (action === "replay") void handleEventsReplay();
   }
 
   function focusUnlock() {

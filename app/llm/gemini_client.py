@@ -41,6 +41,24 @@ from app.llm.schemas import (
 )
 from app.llm.validation import validate_shock_proposal
 
+# Per-call bound on Gemini requests, in MILLISECONDS (the HttpOptions unit).
+# Generous — grounded-narrative calls run 20-60s — but finite: an unbounded hung
+# call used to stall the SSE stream until the client or Cloud Run severed it.
+GEMINI_CALL_TIMEOUT_MS = 120_000
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    """True for request-timeout failures anywhere in the genai/httpx stack."""
+    if isinstance(exc, TimeoutError):
+        return True
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover — httpx ships with google-genai
+        return False
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    return "timeout" in type(exc).__name__.lower()
+
 
 class GeminiClient:
     def __init__(self, config: Config) -> None:
@@ -52,7 +70,7 @@ class GeminiClient:
             vertexai=True,
             project=config.google_cloud_project,
             location=config.vertex_ai_location,
-            http_options=_types.HttpOptions(api_version="v1"),
+            http_options=_types.HttpOptions(api_version="v1", timeout=GEMINI_CALL_TIMEOUT_MS),
         )
         self._model = config.vertex_model_id
         self._temperature = config.llm_temperature
@@ -64,10 +82,22 @@ class GeminiClient:
         (see `app/observability/metering.py`) can reserve budget, count tokens, and
         reconcile actual usage in ONE place — catching internal fan-out (retries,
         decomposition subset reruns) that an outer method wrapper would miss.
+
+        Timeouts re-raise as RuntimeError so the existing endpoint error ladders
+        map them (SSE in-band error / coded 503 on /run / 422 rerun on adjust)
+        instead of leaking an SDK exception as a bare 500.
         """
-        return self._client.models.generate_content(
-            model=self._model, contents=contents, config=config
-        )
+        try:
+            return self._client.models.generate_content(
+                model=self._model, contents=contents, config=config
+            )
+        except Exception as exc:
+            if _is_timeout_error(exc):
+                raise RuntimeError(
+                    "Gemini request timed out after "
+                    f"{GEMINI_CALL_TIMEOUT_MS // 1000}s — the model call was cut off; retry."
+                ) from exc
+            raise
 
     def decompose(self, scenario_text: str) -> DecompositionOutput:
         """Split a scenario into 2-4 self-contained sub-narratives. No grounding.

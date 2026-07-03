@@ -58,8 +58,13 @@ const PRESENTATIONS: Record<ApiErrorKind, (detail: string) => ErrorPresentation>
     cta: "unlock",
     ctaLabel: "Unlock"
   }),
-  network: () => ({
-    message: "Network error — check your connection and retry.",
+  // A mid-stream drop carries purpose-written detail ("Connection dropped
+  // mid-run — …retrying can be instant."); raw transport messages ("Failed to
+  // fetch") fall back to the generic line.
+  network: (detail) => ({
+    message: detail.startsWith("Connection dropped")
+      ? detail
+      : "Network error — check your connection and retry.",
     cta: "retry",
     ctaLabel: "Retry"
   }),

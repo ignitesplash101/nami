@@ -141,10 +141,10 @@ export class ApiError extends Error {
     });
   }
 
-  static network(_cause: unknown): ApiError {
+  static network(_cause: unknown, detail?: string): ApiError {
     return new ApiError({
       status: null,
-      detail: "Network request failed.",
+      detail: detail ?? "Network request failed.",
       kind: "network"
     });
   }
@@ -171,7 +171,24 @@ export function toApiError(exc: unknown): ApiError {
   return new ApiError({ status: null, detail, kind: "unknown" });
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  init?: RequestInit,
+  opts?: { timeoutMs?: number }
+): Promise<T> {
+  // Optional bound on time-to-headers for long compute endpoints (profile,
+  // events-replay, adjust). Expiry surfaces as kind "timeout" with honest copy,
+  // never "network". The timer clears once headers arrive — small JSON bodies
+  // follow immediately, so json() is never aborted mid-read.
+  const timeoutMs = opts?.timeoutMs;
+  let timedOut = false;
+  const controller = timeoutMs ? new AbortController() : undefined;
+  const timer = timeoutMs
+    ? setTimeout(() => {
+        timedOut = true;
+        controller?.abort();
+      }, timeoutMs)
+    : undefined;
   let response: Response;
   try {
     response = await fetch(path, {
@@ -180,16 +197,34 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
         "Content-Type": "application/json",
         ...(init?.headers ?? {})
       },
-      ...init
+      ...init,
+      ...(controller ? { signal: controller.signal } : {})
     });
   } catch (exc) {
+    if (timedOut && timeoutMs) {
+      throw new ApiError({
+        status: null,
+        detail:
+          `Request timed out after ${Math.round(timeoutMs / 1000)}s — the server may ` +
+          "still be working; retrying shortly can succeed.",
+        kind: "timeout"
+      });
+    }
     throw ApiError.network(exc);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
   if (!response.ok) {
     throw await ApiError.fromResponse(response);
   }
   return response.json() as Promise<T>;
 }
+
+// Bound for the three long plain POSTs (book profile, events replay, shock
+// adjustment) — well above their observed worst cases (~120s cold events
+// replay) but finite, so a stalled request gets honest timeout copy instead
+// of hanging until some middlebox severs it as a "network error".
+const LONG_REQUEST_TIMEOUT_MS = 240_000;
 
 export function getAccess(): Promise<AccessResponse> {
   return requestJson<AccessResponse>("/api/access");
@@ -231,10 +266,11 @@ export function profileBook(payload: {
   portfolio_name?: string;
   portfolio_holdings?: Record<string, number>;
 }): Promise<BookProfile> {
-  return requestJson<BookProfile>("/api/portfolios/profile", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
+  return requestJson<BookProfile>(
+    "/api/portfolios/profile",
+    { method: "POST", body: JSON.stringify(payload) },
+    { timeoutMs: LONG_REQUEST_TIMEOUT_MS }
+  );
 }
 
 export function replayEvents(payload: {
@@ -242,10 +278,11 @@ export function replayEvents(payload: {
   portfolio_name?: string;
   portfolio_holdings?: Record<string, number>;
 }): Promise<EventsReplay> {
-  return requestJson<EventsReplay>("/api/portfolios/events-replay", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
+  return requestJson<EventsReplay>(
+    "/api/portfolios/events-replay",
+    { method: "POST", body: JSON.stringify(payload) },
+    { timeoutMs: LONG_REQUEST_TIMEOUT_MS }
+  );
 }
 
 export function validatePortfolio(
@@ -380,9 +417,17 @@ async function streamSse(url: string, body: unknown, opts: StreamSseOptions): Pr
       } catch (exc) {
         if (cancelled) throw cancelledError();
         if (timedOut) throw timeoutError();
-        throw ApiError.network(exc);
+        throw ApiError.network(
+          exc,
+          "Connection dropped mid-run — the server may still finish and warm the cache, " +
+            "so retrying can be instant."
+        );
       }
       if (chunk.done) break;
+      // ANY received bytes reset the idle clock — the server sends `: keepalive`
+      // comment frames (no `data:` line) during silent pipeline stages, and the
+      // parser below deliberately skips them.
+      armIdle();
       buffer += decoder.decode(chunk.value, { stream: true });
 
       let separatorIdx;
@@ -477,10 +522,11 @@ export async function decomposeScenarioStream(
 export function adjustScenarioShocks(
   payload: ScenarioAdjustRequest
 ): Promise<ScenarioRunResponse> {
-  return requestJson<ScenarioRunResponse>("/api/scenarios/adjust-shocks", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
+  return requestJson<ScenarioRunResponse>(
+    "/api/scenarios/adjust-shocks",
+    { method: "POST", body: JSON.stringify(payload) },
+    { timeoutMs: LONG_REQUEST_TIMEOUT_MS }
+  );
 }
 
 // --- Saved analytics (Firestore-backed) ---

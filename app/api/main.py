@@ -111,9 +111,25 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 METHODOLOGY_PATH = ROOT / "docs" / "methodology.md"
 
 
+def _background_warm() -> None:
+    """Pre-populate the in-process caches off the request path.
+
+    Runs on a daemon thread from lifespan: uvicorn binds the port immediately
+    (blocking lifespan on a live yfinance fetch used to delay cold-start
+    first-byte by ~30s) and the full events × factors matrix — otherwise a
+    ~2-minute pay-down on the first cold events-replay request — warms while
+    the instance is already serving. Racing a real request double-fetches
+    harmlessly (lock-guarded caches; GCS market cache dedupes).
+    """
+    with contextlib.suppress(Exception):
+        warm_cache.warm()
+    with contextlib.suppress(Exception):
+        warm_cache.get_event_returns_matrix()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Startup: configure structured logging, optional Sentry, warm the cache."""
+    """Startup: configure structured logging, optional Sentry, warm caches async."""
     with contextlib.suppress(Exception):
         config = load_config()
         configure_logging(config.log_level)
@@ -125,8 +141,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 environment=config.environment,
                 traces_sample_rate=0.0,
             )
-    with contextlib.suppress(Exception):
-        warm_cache.warm()
+    threading.Thread(target=_background_warm, name="nami-warm", daemon=True).start()
     yield
 
 
@@ -231,6 +246,46 @@ def _sse_error_code(exc: Exception) -> str | None:
     if isinstance(exc, ValueError):
         return "validation"
     return None
+
+
+_SSE_HEARTBEAT_SECONDS = 10.0
+
+
+def _sse_stream_response(
+    worker: Callable[[], None], events_q: queue.Queue, sentinel: object
+) -> StreamingResponse:
+    """Run `worker` on a daemon thread and drain its event queue into SSE.
+
+    The queue read uses a timeout so the generator wakes every few seconds and
+    emits an SSE comment frame during silent pipeline stages (the grounded
+    narrative can go 60-90s with no progress event; decompose subsets longer).
+    Without the keepalive, proxies/VPNs/middleboxes sever the silent connection
+    and the client reports a network error while the server finishes anyway.
+    The periodic yield also gives a dead client connection a write to fail on.
+    Contextvars are copied at request time so worker logs correlate with the
+    originating request id.
+    """
+    ctx = contextvars.copy_context()
+
+    def generator() -> Generator[str, None, None]:
+        thread = threading.Thread(target=lambda: ctx.run(worker), daemon=True)
+        thread.start()
+        while True:
+            try:
+                event = events_q.get(timeout=_SSE_HEARTBEAT_SECONDS)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
+            if event is sentinel:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+        thread.join(timeout=1.0)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _audit(
@@ -786,21 +841,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
         finally:
             events_q.put(SENTINEL)
 
-    # Worker threads don't inherit contextvars — copy the request context (request
-    # id, ip hash) so the worker's logs correlate with the originating request.
-    ctx = contextvars.copy_context()
-
-    def generator() -> Generator[str, None, None]:
-        thread = threading.Thread(target=lambda: ctx.run(worker), daemon=True)
-        thread.start()
-        while True:
-            event = events_q.get()
-            if event is SENTINEL:
-                break
-            yield f"data: {json.dumps(event)}\n\n"
-        thread.join(timeout=1.0)
-
-    return StreamingResponse(generator(), media_type="text/event-stream")
+    return _sse_stream_response(worker, events_q, SENTINEL)
 
 
 @api.post("/api/scenarios/adjust-shocks", response_model=ScenarioRunResponse)
@@ -938,19 +979,7 @@ def decompose_stream_endpoint(
         finally:
             events_q.put(SENTINEL)
 
-    ctx = contextvars.copy_context()
-
-    def generator() -> Generator[str, None, None]:
-        thread = threading.Thread(target=lambda: ctx.run(worker), daemon=True)
-        thread.start()
-        while True:
-            event = events_q.get()
-            if event is SENTINEL:
-                break
-            yield f"data: {json.dumps(event)}\n\n"
-        thread.join(timeout=1.0)
-
-    return StreamingResponse(generator(), media_type="text/event-stream")
+    return _sse_stream_response(worker, events_q, SENTINEL)
 
 
 # ============================================================================

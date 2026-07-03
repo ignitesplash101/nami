@@ -72,7 +72,11 @@ steps:
       - --service-account=${_RUNTIME_SA}
       - --memory=2Gi
       - --cpu=1
-      - --timeout=300
+      # 900s: the decompose stream (up to 15 pipeline reruns over 4 workers) can
+      # legitimately exceed the 300s default, which severed it mid-stream as a
+      # client-visible network error. Idle-stream leakage stays bounded by the
+      # client-side SSE idle guards (60s/120s, heartbeat-aware).
+      - --timeout=900
       - --min-instances=0
       - --max-instances=2
       - --concurrency=20

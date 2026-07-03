@@ -4,6 +4,7 @@ import {
   decomposeScenarioStream,
   deriveErrorKind,
   getAccess,
+  profileBook,
   runScenarioStream,
   toApiError
 } from "./api";
@@ -239,5 +240,101 @@ describe("decomposeScenarioStream", () => {
       [2, 3]
     ]);
     expect(final).toEqual(result);
+  });
+});
+
+describe("SSE keepalives and long-request timeouts (Phase 30)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** Reader that delivers each frame 40s (fake time) after the previous read. */
+  function pacedSseResponse(frames: string[], gapMs: number): Response {
+    const encoder = new TextEncoder();
+    let index = 0;
+    const reader = {
+      read: () => {
+        if (index >= frames.length) {
+          return Promise.resolve({ done: true, value: undefined });
+        }
+        const value = encoder.encode(frames[index++]);
+        return new Promise((resolve) => {
+          setTimeout(() => resolve({ done: false, value }), gapMs);
+        });
+      }
+    };
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: new Headers(),
+      body: { getReader: () => reader }
+    } as unknown as Response;
+  }
+
+  it("keepalive comment frames reset the 60s idle clock (bytes, not just data frames)", async () => {
+    const result = { result: { scenario_text: "x" } };
+    // Three 40s gaps = 120s total, twice the idle window. Only the comment
+    // frames' bytes keep it alive — the old parsed-frame-only rearm would have
+    // timed out at t=60s.
+    const frames = [
+      ": keepalive\n\n",
+      ": keepalive\n\n",
+      `data: {"stage": "done", "result": ${JSON.stringify(result)}}\n\n`
+    ];
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(pacedSseResponse(frames, 40_000))));
+    const stages: string[] = [];
+    const promise = runScenarioStream({ scenario_text: "x" }, (event) => stages.push(event.stage));
+    await vi.advanceTimersByTimeAsync(40_000);
+    await vi.advanceTimersByTimeAsync(40_000);
+    await vi.advanceTimersByTimeAsync(40_000);
+    const final = await promise;
+    expect(final).toEqual(result);
+    expect(stages).toEqual(["done"]); // comments are never surfaced as events
+  });
+
+  it("a mid-stream connection drop carries the honest retry copy, kind network", async () => {
+    const reader = {
+      read: () => Promise.reject(new TypeError("network connection was lost"))
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          headers: new Headers(),
+          body: { getReader: () => reader }
+        } as unknown as Response)
+      )
+    );
+    const error = await runScenarioStream({ scenario_text: "x" }, () => {}).catch((exc) => exc);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.kind).toBe("network");
+    expect(error.detail).toMatch(/^Connection dropped mid-run/);
+  });
+
+  it("long plain requests time out with kind timeout, never network", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            const signal = init.signal as AbortSignal;
+            signal.addEventListener("abort", () => {
+              const abort = new Error("The operation was aborted.");
+              abort.name = "AbortError";
+              reject(abort);
+            });
+          })
+      )
+    );
+    const promise = profileBook({ portfolio_key: "us_tech_growth" });
+    const expectation = expect(promise).rejects.toMatchObject({
+      kind: "timeout",
+      detail: expect.stringMatching(/timed out after 240s/)
+    });
+    await vi.advanceTimersByTimeAsync(240_000);
+    await expectation;
   });
 });
