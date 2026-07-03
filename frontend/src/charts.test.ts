@@ -3,10 +3,13 @@ import {
   buildAnalogReplayRows,
   buildBookProfileRows,
   buildComparisonRows,
+  buildEvidenceGauge,
   buildPositionValuations,
   buildTickerDeltas,
   commonAttributionMethod,
   sameScenarioResult,
+  summarizeFactorTable,
+  summarizeNameTable,
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
@@ -437,5 +440,44 @@ describe("comparison builders", () => {
     expect(deltas[0]).toEqual({ ticker: "NVDA", totalA: null, totalB: -0.05, delta: -0.05 });
     expect(deltas[1].delta).toBeCloseTo(0.03);
     expect(deltas[2]).toEqual({ ticker: "MSFT", totalA: -0.02, totalB: null, delta: 0.02 });
+  });
+});
+
+
+describe("evidence gauge + drill summaries", () => {
+  it("positions every layer on a shared padded axis", () => {
+    const result = fixtureResult();
+    result.pnl_uncertainty = { band_1sigma: 0.01, portfolio_idio_vol_weekly: 0.005, horizon_weeks: 4 };
+    result.severity_ladder = { worst_pnl: -0.15, base_pnl: -0.08, best_pnl: -0.02, n_banded: 2, n_held: 0 };
+    result.analog_replay = {
+      per_event: [
+        { event_id: "a", replay_pnl: -0.19, n_factors_covered: 26, n_factors_total: 26 },
+        { event_id: "b", replay_pnl: -0.12, n_factors_covered: 26, n_factors_total: 26 }
+      ],
+      min_pnl: -0.19,
+      median_pnl: -0.155,
+      max_pnl: -0.12
+    };
+    const gauge = buildEvidenceGauge(result);
+    expect(gauge).not.toBeNull();
+    // domain spans [-0.19, -0.02] padded: replay min is leftmost, ladder best rightmost
+    expect(gauge!.replay!.minPct).toBeLessThan(gauge!.ladder!.lowPct + 1e-9);
+    expect(gauge!.ladder!.highPct).toBeGreaterThan(gauge!.base.pct);
+    expect(gauge!.base.pct).toBeGreaterThan(0);
+    expect(gauge!.base.pct).toBeLessThan(100);
+    expect(gauge!.idio!.lowPct).toBeLessThan(gauge!.base.pct);
+    expect(gauge!.idio!.highPct).toBeGreaterThan(gauge!.base.pct);
+  });
+
+  it("returns null when no evidence layer exists (very old payloads)", () => {
+    const result = fixtureResult();
+    expect(buildEvidenceGauge(result)).toBeNull();
+  });
+
+  it("summarizes the factor and name tables", () => {
+    const result = fixtureResult();
+    expect(summarizeFactorTable(result)).toContain("1 factor shocked");
+    expect(summarizeFactorTable(result)).toContain("-10.00%");
+    expect(summarizeNameTable(result)).toBe("2 holdings · worst AAPL -6.00%");
   });
 });

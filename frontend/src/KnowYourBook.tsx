@@ -1,0 +1,223 @@
+import { Download } from "lucide-react";
+import { useState } from "react";
+import { buildBookProfileRows, formatPercent } from "./charts";
+import { csvFilename, downloadCsv } from "./csv";
+import { factorDisplayName } from "./factors";
+import { TableScroll } from "./TableScroll";
+import type { BookProfile, EventsReplay, FactorMetadataMap } from "./types";
+
+/** The pre-run "know this book" card: the free engine-only analytics (book
+ *  profile, all-events replay) behind one segmented control instead of two
+ *  stacked CTAs + cards. Each tab lazy-fetches on first activation; results
+ *  clear on book changes upstream exactly as before. */
+export function KnowYourBook({
+  profile,
+  replay,
+  profileBusy,
+  replayBusy,
+  onProfile,
+  onReplay,
+  unavailableReason,
+  factorMeta
+}: {
+  profile: BookProfile | null;
+  replay: EventsReplay | null;
+  profileBusy: boolean;
+  replayBusy: boolean;
+  onProfile: () => void;
+  onReplay: () => void;
+  unavailableReason: string | null;
+  factorMeta: FactorMetadataMap;
+}) {
+  const [tab, setTab] = useState<"profile" | "events">("profile");
+  const busy = tab === "profile" ? profileBusy : replayBusy;
+  const hasData = tab === "profile" ? profile != null : replay != null;
+  const fetchActive = tab === "profile" ? onProfile : onReplay;
+  const ctaLabel = tab === "profile" ? "Profile this book" : "Replay every historical event";
+
+  return (
+    <section className="result-card know-book" aria-label="Know this book">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Know this book — free, no LLM</p>
+          <h3>Pre-run analytics</h3>
+        </div>
+        <div className="segmented" role="radiogroup" aria-label="Pre-run analytic">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={tab === "profile"}
+            className={tab === "profile" ? "active" : ""}
+            onClick={() => setTab("profile")}
+          >
+            Book profile
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={tab === "events"}
+            className={tab === "events" ? "active" : ""}
+            onClick={() => setTab("events")}
+          >
+            Event replay
+          </button>
+        </div>
+      </div>
+
+      {!hasData ? (
+        <div className="know-book-cta">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={fetchActive}
+            disabled={busy || Boolean(unavailableReason)}
+          >
+            {busy ? "Computing…" : ctaLabel}
+          </button>
+          {unavailableReason ? <span className="field-note">{unavailableReason}</span> : null}
+        </div>
+      ) : null}
+
+      {tab === "profile" && profile ? <ProfileBody profile={profile} factorMeta={factorMeta} /> : null}
+      {tab === "events" && replay ? <EventsBody replay={replay} /> : null}
+    </section>
+  );
+}
+
+function ProfileBody({
+  profile,
+  factorMeta
+}: {
+  profile: BookProfile;
+  factorMeta: FactorMetadataMap;
+}) {
+  const rows = buildBookProfileRows(
+    profile.factor_exposures,
+    (key) => factorDisplayName(factorMeta, key),
+    10
+  );
+  const maxAbs = Math.max(...rows.map((row) => Math.abs(row.exposure)), 1e-9);
+  return (
+    <div className="know-book-body" aria-label="Book profile">
+      <p className="muted book-profile-asof">
+        {profile.portfolio_name} · as of {profile.as_of} · {profile.n_factors} factors
+      </p>
+      <div className="exposure-bars" role="list" aria-label="Portfolio factor exposures">
+        {rows.map((row) => (
+          <div key={row.key} className="exposure-bar-row" role="listitem">
+            <span className="exposure-bar-label">{row.label}</span>
+            <span className="exposure-bar-track" aria-hidden="true">
+              <span
+                className={`exposure-bar-fill ${row.exposure < 0 ? "neg" : "pos"}`}
+                style={{ width: `${(Math.abs(row.exposure) / maxAbs) * 100}%` }}
+              />
+            </span>
+            <span className="exposure-bar-value">{row.exposure.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="hint">
+        Portfolio beta per factor (Σ weight × beta; top {rows.length} of {profile.n_factors} by
+        magnitude). ±{formatPercent(profile.idio_band_weekly)} weekly idio — a dispersion floor,
+        not a confidence interval.
+      </p>
+      <TableScroll>
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th className="num">Weight</th>
+              <th className="num">R² adj</th>
+              <th className="num">Weeks</th>
+              <th className="num">Idio vol (wk)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {profile.per_name.map((row) => (
+              <tr key={row.ticker}>
+                <td>{row.ticker}</td>
+                <td className="num">{formatPercent(row.weight, 1)}</td>
+                <td className="num">{row.r2_adj != null ? row.r2_adj.toFixed(2) : "—"}</td>
+                <td className="num">{row.n_obs ?? "—"}</td>
+                <td className="num">
+                  {row.idio_vol_weekly != null ? formatPercent(row.idio_vol_weekly) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScroll>
+    </div>
+  );
+}
+
+function EventsBody({ replay }: { replay: EventsReplay }) {
+  const exportCsv = () =>
+    downloadCsv(
+      csvFilename(replay.portfolio_name, "all-events", replay.as_of, "events-replay"),
+      ["event", "start", "end", "days", "modeled_pnl", "factors_covered", "tags"],
+      replay.per_event.map((row) => [
+        row.name,
+        row.start_date,
+        row.end_date,
+        row.window_calendar_days,
+        row.replay_pnl,
+        row.n_factors_covered,
+        row.tags.join("|")
+      ])
+    );
+  return (
+    <div className="know-book-body events-replay" aria-label="Historical event replay">
+      <div className="know-book-subhead">
+        <p className="muted book-profile-asof">
+          {replay.per_event.length} historical events × {replay.portfolio_name} · as of{" "}
+          {replay.as_of}, worst first
+        </p>
+        <button
+          type="button"
+          className="ghost-button table-export-btn"
+          onClick={exportCsv}
+          aria-label="Export event replay as CSV"
+          title="Export event replay as CSV"
+        >
+          <Download size={13} /> CSV
+        </button>
+      </div>
+      <TableScroll>
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Window</th>
+              <th className="num">Days</th>
+              <th className="num">Modeled P&L</th>
+              <th className="num">Coverage</th>
+            </tr>
+          </thead>
+          <tbody>
+            {replay.per_event.map((row) => (
+              <tr key={row.event_id}>
+                <td>{row.name}</td>
+                <td className="events-replay-window">
+                  {row.start_date} → {row.end_date}
+                </td>
+                <td className="num">{row.window_calendar_days}</td>
+                <td className={`num ${row.replay_pnl < 0 ? "loss" : "gain"}`}>
+                  {formatPercent(row.replay_pnl)}
+                </td>
+                <td className="num">
+                  {row.n_factors_covered}/{replay.n_factors}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScroll>
+      <p className="hint">
+        Each event's realized factor moves pushed through this book's current betas. Factor-model
+        only — no idiosyncratic or periphery effects, current betas on historical windows. A
+        severity screen, not a backtest and not a forecast.
+      </p>
+    </div>
+  );
+}

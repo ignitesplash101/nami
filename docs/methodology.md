@@ -342,8 +342,9 @@ pushed through the run's betas —
 
 — answering *"if this scenario plays out like that analog did, what does this book's
 factor model say?"* (`app/factors/shocks.py::analog_replay_pnl`, surfaced as
-`ScenarioResult.analog_replay` and rendered directly under the Impact summary as
-min / median / max plus one row per analog).
+`ScenarioResult.analog_replay` and rendered in the **Evidence & bounds** block directly
+under the Impact summary — min / median / max on a shared range gauge with the other
+uncertainty surfaces, with one row per analog behind a disclosure).
 
 Three properties make the replay range the honest companion to the headline number:
 
@@ -420,7 +421,8 @@ The proposed shocks are clamped to the analog envelope's [p10, p90] per factor, 
 headline P&L is capped at the selected analogs' severity **by construction** — a single
 confident number can hide that cap. The severity ladder makes the evidence-base bound
 explicit: the **exact minimum and maximum engine P&L over the per-factor shock box**
-`[p10, p90]^K`, shown as worst / base / best next to the headline.
+`[p10, p90]^K`, shown as worst / base / best in the **Evidence & bounds** block under
+the headline (on the same shared range gauge as the ±1σ band and the analog replay).
 
 Because portfolio P&L is linear in each factor's shock, the extremum over the box is
 attained at a vertex: each **banded** shock (envelope `count ≥ 3` with finite p10/p90 —

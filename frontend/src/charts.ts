@@ -666,3 +666,92 @@ export function buildTickerDeltas(a: ScenarioResult, b: ScenarioResult): TickerD
     })
     .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
 }
+
+export interface EvidenceGaugeLayer {
+  low: number;
+  high: number;
+  lowPct: number;
+  highPct: number;
+}
+
+export interface EvidenceGauge {
+  base: { value: number; pct: number };
+  idio: EvidenceGaugeLayer | null;
+  ladder: (EvidenceGaugeLayer & { worst: number; best: number }) | null;
+  replay: { min: number; median: number; max: number; minPct: number; medianPct: number; maxPct: number } | null;
+}
+
+/** Shared-axis positions (0–100%) for the evidence layers around the base P&L.
+ *  Null when the payload carries no layer beyond the point estimate (very old
+ *  cached results) — the block renders nothing rather than a bare tick. */
+export function buildEvidenceGauge(result: ScenarioResult): EvidenceGauge | null {
+  const base = result.portfolio_pnl.total_pnl;
+  const unc = result.pnl_uncertainty ?? null;
+  const ladder = result.severity_ladder ?? null;
+  const replay = result.analog_replay ?? null;
+  if (!unc && !ladder && !replay) return null;
+
+  const values = [base];
+  if (unc) values.push(base - unc.band_1sigma, base + unc.band_1sigma);
+  if (ladder) values.push(ladder.worst_pnl, ladder.best_pnl);
+  if (replay) values.push(replay.min_pnl, replay.max_pnl);
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
+  const span = Math.max(hi - lo, 1e-9);
+  lo -= span * 0.06;
+  hi += span * 0.06;
+  const pct = (value: number) => ((value - lo) / (hi - lo)) * 100;
+
+  return {
+    base: { value: base, pct: pct(base) },
+    idio: unc
+      ? {
+          low: base - unc.band_1sigma,
+          high: base + unc.band_1sigma,
+          lowPct: pct(base - unc.band_1sigma),
+          highPct: pct(base + unc.band_1sigma)
+        }
+      : null,
+    ladder: ladder
+      ? {
+          low: ladder.worst_pnl,
+          high: ladder.best_pnl,
+          worst: ladder.worst_pnl,
+          best: ladder.best_pnl,
+          lowPct: pct(ladder.worst_pnl),
+          highPct: pct(ladder.best_pnl)
+        }
+      : null,
+    replay: replay
+      ? {
+          min: replay.min_pnl,
+          median: replay.median_pnl,
+          max: replay.max_pnl,
+          minPct: pct(replay.min_pnl),
+          medianPct: pct(replay.median_pnl),
+          maxPct: pct(replay.max_pnl)
+        }
+      : null
+  };
+}
+
+/** Collapsed-state summary for the factor table: "N factors shocked · top {label} {shock}". */
+export function summarizeFactorTable(result: ScenarioResult, factors?: FactorMetadataMap): string {
+  const shocked = result.factor_shocks.filter((fs) => Math.abs(fs.shock) > 1e-9);
+  if (!shocked.length) return "no factor shocks";
+  const top = [...shocked].sort((a, b) => Math.abs(b.shock) - Math.abs(a.shock))[0];
+  return `${shocked.length} factor${shocked.length === 1 ? "" : "s"} shocked · top ${factorDisplayName(
+    factors,
+    top.factor
+  )} ${formatPercent(top.shock)}`;
+}
+
+/** Collapsed-state summary for the name-level table: "N holdings · worst {ticker} {pnl}". */
+export function summarizeNameTable(result: ScenarioResult): string {
+  const entries = Object.entries(result.portfolio_pnl.by_ticker_total);
+  if (!entries.length) return "no holdings";
+  const worst = entries.reduce((acc, cur) => (cur[1] < acc[1] ? cur : acc));
+  return `${entries.length} holding${entries.length === 1 ? "" : "s"} · worst ${worst[0]} ${formatPercent(
+    worst[1]
+  )}`;
+}

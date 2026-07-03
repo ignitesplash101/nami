@@ -48,11 +48,12 @@ import { nextSessionExpired, useAccessWatch } from "./useAccessWatch";
 import {
   buildAnalogReplayRows,
   buildPositionValuations,
-  buildBookProfileRows,
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
   sameScenarioResult,
+  summarizeFactorTable,
+  summarizeNameTable,
   chartTheme,
   factorReasoningRows,
   formatCurrency,
@@ -71,10 +72,12 @@ import { AdjustmentPanel } from "./AdjustmentPanel";
 import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
 import type { CommandAction } from "./CommandPalette";
-import { AttributionGuide } from "./AttributionGuide";
 import { nextEnabledMethod } from "./attributionNav";
 import { getSavedScenario } from "./api";
+import { CollapsibleCard } from "./CollapsibleCard";
 import { ComparisonPanel } from "./ComparisonPanel";
+import { EvidenceBlock } from "./EvidenceBlock";
+import { KnowYourBook } from "./KnowYourBook";
 import { MethodologyDrawer } from "./MethodologyDrawer";
 import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
@@ -731,7 +734,7 @@ export default function App() {
               </button>
             ) : null}
             <button
-              className="methodology-btn"
+              className="methodology-btn cmdk-btn"
               onClick={commandPalette.open}
               title="Command palette (Ctrl/⌘ + K)"
               aria-label="Open command palette"
@@ -866,53 +869,74 @@ export default function App() {
         canonicalSnapshot &&
         access?.permissions.free_text_scenario &&
         resultEnvelope.cache_key ? (
-          <AdjustmentPanel
-            envelope={resultEnvelope}
-            canonicalSnapshot={canonicalSnapshot}
-            factorMeta={factorMeta}
-            onResult={handleAdjustmentResult}
-            prefillRerun={handlePrefillRerun}
-            onForbidden={() => void refreshAccess().catch(() => {})}
-          />
+          <CollapsibleCard
+            className="panel-shell"
+            eyebrow="Iterate"
+            title="Adjust factor shocks"
+            summary={`${resultEnvelope.result.factor_shocks.length} factor sliders + prompt edit`}
+          >
+            <AdjustmentPanel
+              envelope={resultEnvelope}
+              canonicalSnapshot={canonicalSnapshot}
+              factorMeta={factorMeta}
+              onResult={handleAdjustmentResult}
+              prefillRerun={handlePrefillRerun}
+              onForbidden={() => void refreshAccess().catch(() => {})}
+            />
+          </CollapsibleCard>
         ) : null}
 
         {isAdmin ? (
-          <SavedScenariosPanel
-            key={`saved-${adminDataEpoch}`}
-            reloadKey={savedReloadKey}
-            onOpen={(env) => {
-              setResultEnvelope(env);
-              setCanonicalSnapshot(env.result);
-              setAttributionMethod(preferredAttributionMethod(env.result));
-            }}
-            onForbidden={() => void refreshAccess().catch(() => {})}
-          />
+          <CollapsibleCard
+            className="panel-shell"
+            eyebrow="Library"
+            title="Saved scenarios"
+            summary="browse, reopen, tag-filter"
+          >
+            <SavedScenariosPanel
+              key={`saved-${adminDataEpoch}`}
+              reloadKey={savedReloadKey}
+              onOpen={(env) => {
+                setResultEnvelope(env);
+                setCanonicalSnapshot(env.result);
+                setAttributionMethod(preferredAttributionMethod(env.result));
+              }}
+              onForbidden={() => void refreshAccess().catch(() => {})}
+            />
+          </CollapsibleCard>
         ) : null}
 
         {isAdmin ? (
-          <PortfolioHistoryPanel
-            key={`portfolio-history-${adminDataEpoch}`}
-            onForbidden={() => void refreshAccess().catch(() => {})}
-            currentHoldings={
-              portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
-            }
-            snapshotDisabledReason={
-              portfolioMode === "custom" && customUnits === "shares"
-                ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
-                : undefined
-            }
-            onLoadSnapshot={(snap) => {
-              setPortfolioMode("custom");
-              setCustomName(`Snapshot ${snap.as_of_date}`);
-              setCustomRows(
-                Object.entries(snap.holdings).map(([ticker, weight], i) => ({
-                  id: `snap-${snap.id}-${i}`,
-                  ticker,
-                  weight: String(weight)
-                }))
-              );
-            }}
-          />
+          <CollapsibleCard
+            className="panel-shell"
+            eyebrow="Library"
+            title="Saved portfolios & snapshots"
+            summary="named books · dated snapshots"
+          >
+            <PortfolioHistoryPanel
+              key={`portfolio-history-${adminDataEpoch}`}
+              onForbidden={() => void refreshAccess().catch(() => {})}
+              currentHoldings={
+                portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
+              }
+              snapshotDisabledReason={
+                portfolioMode === "custom" && customUnits === "shares"
+                  ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
+                  : undefined
+              }
+              onLoadSnapshot={(snap) => {
+                setPortfolioMode("custom");
+                setCustomName(`Snapshot ${snap.as_of_date}`);
+                setCustomRows(
+                  Object.entries(snap.holdings).map(([ticker, weight], i) => ({
+                    id: `snap-${snap.id}-${i}`,
+                    ticker,
+                    weight: String(weight)
+                  }))
+                );
+              }}
+            />
+          </CollapsibleCard>
         ) : null}
       </section>
 
@@ -1399,12 +1423,14 @@ function ExposureBreakdown({ result }: { result: ScenarioResult }) {
   if (!rows.length) return null;
 
   return (
-    <div className="result-card exposure-card">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Exposure</p>
-          <h3>{dimension === "sector" ? "Sector" : "Country"} breakdown</h3>
-        </div>
+    <CollapsibleCard
+      className="exposure-card"
+      eyebrow="Exposure"
+      title={`${dimension === "sector" ? "Sector" : "Country"} breakdown`}
+      summary={`${rows[0].tag} ${formatPercent(rows[0].weight, 1)} · ${rows.length} ${
+        dimension === "sector" ? "sectors" : "countries"
+      }`}
+      action={
         <div className="segmented" role="radiogroup" aria-label="Exposure dimension">
           <button
             role="radio"
@@ -1423,7 +1449,8 @@ function ExposureBreakdown({ result }: { result: ScenarioResult }) {
             Country
           </button>
         </div>
-      </div>
+      }
+    >
       <TableScroll>
         <table>
           <thead>
@@ -1444,7 +1471,7 @@ function ExposureBreakdown({ result }: { result: ScenarioResult }) {
           </tbody>
         </table>
       </TableScroll>
-    </div>
+    </CollapsibleCard>
   );
 }
 
@@ -1541,55 +1568,22 @@ export function ResultsPanel({
         <BarChart3 size={18} aria-hidden="true" />
         <div>
           <h3>No scenario run yet</h3>
-          <ol className="empty-steps">
-            <li>Pick a portfolio in the rail — sample books work in visitor mode.</li>
-            <li>Describe a hypothetical stress above, or seed an example below.</li>
-            <li>Run it: nami grounds a narrative, derives factor shocks, and attributes modeled P&L.</li>
-          </ol>
-          {sampleScenarios.length && onSeedScenario ? (
-            <div className="scenario-chips empty-chips" role="group" aria-label="Try a sample scenario">
-              {sampleScenarios.slice(0, 3).map((scenario) => (
-                <button
-                  key={scenario.key}
-                  type="button"
-                  className="chip"
-                  onClick={() => onSeedScenario(scenario.key)}
-                  title={scenario.text}
-                >
-                  {scenario.name}
-                </button>
-              ))}
-            </div>
+          <p className="empty-invite">
+            Pick a book in the rail, describe or seed a stress above, and run it — nami grounds a
+            narrative, derives factor shocks, and attributes modeled P&L.
+          </p>
+          {onProfileBook && onEventsReplay ? (
+            <KnowYourBook
+              profile={bookProfile}
+              replay={eventsReplay}
+              profileBusy={profileBusy}
+              replayBusy={replayBusy}
+              onProfile={onProfileBook}
+              onReplay={onEventsReplay}
+              unavailableReason={profileUnavailableReason}
+              factorMeta={factorMeta}
+            />
           ) : null}
-          {onProfileBook || onEventsReplay ? (
-            <div className="book-profile-cta">
-              {onProfileBook ? (
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={onProfileBook}
-                  disabled={profileBusy || Boolean(profileUnavailableReason)}
-                >
-                  {profileBusy ? "Profiling book…" : "Profile this book — free, no LLM"}
-                </button>
-              ) : null}
-              {onEventsReplay ? (
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={onEventsReplay}
-                  disabled={replayBusy || Boolean(profileUnavailableReason)}
-                >
-                  {replayBusy ? "Replaying events…" : "Replay every historical event — free, no LLM"}
-                </button>
-              ) : null}
-              {profileUnavailableReason ? (
-                <span className="field-note">{profileUnavailableReason}</span>
-              ) : null}
-            </div>
-          ) : null}
-          {bookProfile ? <BookProfileCard profile={bookProfile} factorMeta={factorMeta} /> : null}
-          {eventsReplay ? <EventsReplayCard replay={eventsReplay} /> : null}
         </div>
       </section>
     );
@@ -1818,14 +1812,13 @@ export function ResultsPanel({
         nav={nav}
         currency={currency}
       />
-      <AnalogReplayStrip
+      <EvidenceBlock
         result={result}
         analogEvents={analog_events}
         showDollars={showDollars}
         nav={nav}
         currency={currency}
       />
-      <SeverityLadderStrip result={result} showDollars={showDollars} nav={nav} currency={currency} />
       <div className="results-toolbar">
         <div className="results-toolbar-left">
           {canSave ? (
@@ -1955,7 +1948,13 @@ export function ResultsPanel({
             ))}
           </div>
         </div>
-        <AttributionGuide onOpenMethodology={onOpenMethodology} />
+        <button
+          type="button"
+          className="guide-link"
+          onClick={() => onOpenMethodology("factor-attribution")}
+        >
+          Which method should I use? Open the methodology comparison →
+        </button>
         <AdvancedAttributionDiagnostics
           options={diagnosticOptions}
           attributionMethod={attributionMethod}
@@ -2018,10 +2017,13 @@ export function ResultsPanel({
       <ExposureBreakdown result={result} />
 
       <div className="two-column">
-        <TableCard
+        <CollapsibleCard
+          className="table-card"
           title="Factor shocks and attribution"
+          summary={summarizeFactorTable(result, factorMeta)}
           action={<ExportCsvButton label="Export factor shocks as CSV" onClick={exportFactorShocks} />}
         >
+          <TableScroll>
           <table>
             <thead>
               <tr>
@@ -2050,13 +2052,17 @@ export function ResultsPanel({
               ))}
             </tbody>
           </table>
-        </TableCard>
-        <TableCard
+          </TableScroll>
+        </CollapsibleCard>
+        <CollapsibleCard
+          className="table-card"
           title="Name-level contribution"
+          summary={summarizeNameTable(result)}
           action={
             <ExportCsvButton label="Export name-level contribution as CSV" onClick={exportNameLevel} />
           }
         >
+          <TableScroll>
           <table>
             <thead>
               <tr>
@@ -2085,18 +2091,26 @@ export function ResultsPanel({
                 ))}
             </tbody>
           </table>
-        </TableCard>
+          </TableScroll>
+        </CollapsibleCard>
       </div>
 
       {hasNav ? (
-        <section className="result-card">
-          <div className="card-heading">
-            <div>
-              <p className="eyebrow">Valuation</p>
-              <h3>Position valuation — original → stressed</h3>
-            </div>
+        <CollapsibleCard
+          eyebrow="Valuation"
+          title="Position valuation — original → stressed"
+          summary={
+            stressedNav != null
+              ? `NAV ${formatCurrency(nav ?? 0, currency)} → ${formatCurrency(
+                  stressedNav,
+                  currency
+                )} stressed`
+              : undefined
+          }
+          action={
             <ExportCsvButton label="Export position valuation as CSV" onClick={exportValuations} />
-          </div>
+          }
+        >
           <TableScroll>
             <table className="valuation-table">
               <thead>
@@ -2143,55 +2157,72 @@ export function ResultsPanel({
               Notional dollar view — sample weights × the portfolio value (positions are not marked).
             </p>
           )}
-        </section>
+        </CollapsibleCard>
       ) : null}
 
-      <div className="two-column">
-        <section className="result-card narrative">
-          <h3>Grounded narrative</h3>
-          <p>{result.narrative}</p>
-          <div className="citation-list">
-            {result.citations.map((citation) => (
-              <a key={citation.url} href={citation.url} target="_blank" rel="noreferrer">
-                {citation.title ?? citation.url}
-              </a>
-            ))}
+      <CollapsibleCard
+        className="narrative"
+        eyebrow="Narrative"
+        title="Narrative & analog evidence"
+        summary={
+          result.narrative.length > 90 ? `${result.narrative.slice(0, 89)}…` : result.narrative
+        }
+        action={
+          <ExportCsvButton label="Export historical analogs as CSV" onClick={exportAnalogs} />
+        }
+      >
+        <div className="two-column narrative-columns">
+          <div className="narrative-inner">
+            <h4>Grounded narrative</h4>
+            <p>{result.narrative}</p>
+            <div className="citation-list">
+              {result.citations.map((citation) => (
+                <a key={citation.url} href={citation.url} target="_blank" rel="noreferrer">
+                  {citation.title ?? citation.url}
+                </a>
+              ))}
+            </div>
           </div>
-        </section>
-        <TableCard
-          title="Historical analogs"
-          action={<ExportCsvButton label="Export historical analogs as CSV" onClick={exportAnalogs} />}
-        >
-          <table>
-            <thead>
-              <tr>
-                <th>Event</th>
-                <th>Window</th>
-                <th>Why relevant</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.analogs_selected.map((analog) => {
-                const event = analog_events[analog.event_id];
-                return (
-                  <tr key={analog.event_id}>
-                    <td>{event?.name ?? analog.event_id}</td>
-                    <td>{event ? `${event.start_date} -> ${event.end_date}` : "n/a"}</td>
-                    <td>{analog.why_relevant}</td>
+          <div className="analogs-inner">
+            <h4>Historical analogs</h4>
+            <TableScroll>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Window</th>
+                    <th>Why relevant</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </TableCard>
-      </div>
-
-      <section className="result-card">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">Experimental</p>
-            <h3>Fixed-context theme sensitivity</h3>
+                </thead>
+                <tbody>
+                  {result.analogs_selected.map((analog) => {
+                    const event = analog_events[analog.event_id];
+                    return (
+                      <tr key={analog.event_id}>
+                        <td>{event?.name ?? analog.event_id}</td>
+                        <td>{event ? `${event.start_date} -> ${event.end_date}` : "n/a"}</td>
+                        <td>{analog.why_relevant}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableScroll>
           </div>
+        </div>
+      </CollapsibleCard>
+
+      {canDecompose ? (
+      <CollapsibleCard
+        eyebrow="Experimental"
+        title="Fixed-context theme sensitivity"
+        summary={
+          result.narrative_shapley
+            ? `${result.narrative_shapley.contributions.length} themes decomposed`
+            : "admin decomposition — pinned analogs, ~3–15 pipeline runs"
+        }
+        defaultOpen={Boolean(result.narrative_shapley) || isDecomposing}
+        action={
           <div className="button-row">
             <button
               className="ghost-button"
@@ -2210,7 +2241,8 @@ export function ResultsPanel({
               </button>
             ) : null}
           </div>
-        </div>
+        }
+      >
         {result.narrative_shapley ? (
           <TableScroll>
             <table>
@@ -2242,13 +2274,14 @@ export function ResultsPanel({
           </TableScroll>
         ) : (
           <p className="muted">
-            Admin-only · ~3–15 pipeline runs (~30–90s). The marginal shock each theme adds
+            ~3–15 pipeline runs (~30–90s). The marginal shock each theme adds
             <em> within the original analog context</em> (analogs pinned, no re-grounding) — a
             theme-sensitivity view, illustrative, not causal. Current periphery total:{" "}
             {formatPercent(peripheryTotal)}.
           </p>
         )}
-      </section>
+      </CollapsibleCard>
+      ) : null}
     </section>
   );
 }
@@ -2399,7 +2432,6 @@ function ScenarioReadout({
                 ? formatCurrency(nav * readout.idioBand, currency)
                 : formatPercent(readout.idioBand)}{" "}
               idio (1σ)
-              <span className="idio-band-note">dispersion floor — not a confidence interval</span>
             </span>
           ) : null}
         </div>
@@ -2422,243 +2454,6 @@ function ScenarioReadout({
           </span>
         </div>
       </div>
-    </section>
-  );
-}
-
-function BookProfileCard({
-  profile,
-  factorMeta
-}: {
-  profile: BookProfile;
-  factorMeta: FactorMetadataMap;
-}) {
-  const rows = buildBookProfileRows(
-    profile.factor_exposures,
-    (key) => factorDisplayName(factorMeta, key),
-    10
-  );
-  const maxAbs = Math.max(...rows.map((row) => Math.abs(row.exposure)), 1e-9);
-  return (
-    <section className="result-card book-profile" aria-label="Book profile">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Book profile — engine only, no LLM</p>
-          <h3>{profile.portfolio_name}</h3>
-        </div>
-        <span className="muted book-profile-asof">
-          as of {profile.as_of} · {profile.n_factors} factors
-        </span>
-      </div>
-      <div className="exposure-bars" role="list" aria-label="Portfolio factor exposures">
-        {rows.map((row) => (
-          <div key={row.key} className="exposure-bar-row" role="listitem">
-            <span className="exposure-bar-label">{row.label}</span>
-            <span className="exposure-bar-track" aria-hidden="true">
-              <span
-                className={`exposure-bar-fill ${row.exposure < 0 ? "neg" : "pos"}`}
-                style={{ width: `${(Math.abs(row.exposure) / maxAbs) * 100}%` }}
-              />
-            </span>
-            <span className="exposure-bar-value">{row.exposure.toFixed(2)}</span>
-          </div>
-        ))}
-      </div>
-      <p className="hint">
-        Portfolio beta per factor (Σ weight × beta; top {rows.length} of {profile.n_factors} by
-        magnitude). ±{formatPercent(profile.idio_band_weekly)} weekly idio — a dispersion floor,
-        not a confidence interval.
-      </p>
-      <TableScroll>
-        <table>
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th className="num">Weight</th>
-              <th className="num">R² adj</th>
-              <th className="num">Weeks</th>
-              <th className="num">Idio vol (wk)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {profile.per_name.map((row) => (
-              <tr key={row.ticker}>
-                <td>{row.ticker}</td>
-                <td className="num">{formatPercent(row.weight, 1)}</td>
-                <td className="num">{row.r2_adj != null ? row.r2_adj.toFixed(2) : "—"}</td>
-                <td className="num">{row.n_obs ?? "—"}</td>
-                <td className="num">
-                  {row.idio_vol_weekly != null ? formatPercent(row.idio_vol_weekly) : "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableScroll>
-    </section>
-  );
-}
-
-function EventsReplayCard({ replay }: { replay: EventsReplay }) {
-  const exportCsv = () =>
-    downloadCsv(
-      csvFilename(replay.portfolio_name, "all-events", replay.as_of, "events-replay"),
-      ["event", "start", "end", "days", "modeled_pnl", "factors_covered", "tags"],
-      replay.per_event.map((row) => [
-        row.name,
-        row.start_date,
-        row.end_date,
-        row.window_calendar_days,
-        row.replay_pnl,
-        row.n_factors_covered,
-        row.tags.join("|")
-      ])
-    );
-  return (
-    <section className="result-card book-profile events-replay" aria-label="Historical event replay">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Event replay — engine only, no LLM</p>
-          <h3>
-            {replay.per_event.length} historical events × {replay.portfolio_name}
-          </h3>
-        </div>
-        <ExportCsvButton label="Export event replay as CSV" onClick={exportCsv} />
-      </div>
-      <p className="hint">
-        Each event's realized factor moves pushed through this book's current betas (as of{" "}
-        {replay.as_of}), worst first. Factor-model only — no idiosyncratic or periphery effects,
-        current betas on historical windows. A severity screen, not a backtest and not a forecast.
-      </p>
-      <TableScroll>
-        <table>
-          <thead>
-            <tr>
-              <th>Event</th>
-              <th>Window</th>
-              <th className="num">Days</th>
-              <th className="num">Modeled P&L</th>
-              <th className="num">Coverage</th>
-            </tr>
-          </thead>
-          <tbody>
-            {replay.per_event.map((row) => (
-              <tr key={row.event_id}>
-                <td>{row.name}</td>
-                <td className="events-replay-window">
-                  {row.start_date} → {row.end_date}
-                </td>
-                <td className="num">{row.window_calendar_days}</td>
-                <td className={`num ${row.replay_pnl < 0 ? "loss" : "gain"}`}>
-                  {formatPercent(row.replay_pnl)}
-                </td>
-                <td className="num">
-                  {row.n_factors_covered}/{replay.n_factors}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableScroll>
-    </section>
-  );
-}
-
-export function SeverityLadderStrip({
-  result,
-  showDollars,
-  nav,
-  currency
-}: {
-  result: ScenarioResult;
-  showDollars: boolean;
-  nav: number | null;
-  currency: string;
-}) {
-  const ladder = result.severity_ladder;
-  // Older cached/saved payloads carry no ladder — "not computed", never zero.
-  if (!ladder) return null;
-  const fmt = (value: number) =>
-    showDollars && nav != null
-      ? formatSignedCurrency(nav * value, currency)
-      : formatPercent(value);
-  const tone = (value: number) => (value < 0 ? "down" : value > 0 ? "up" : "");
-  return (
-    <section className="analog-replay severity-ladder" aria-label="Severity ladder">
-      <p className="readout-eyebrow">Severity ladder — envelope bounds</p>
-      <p className="replay-range">
-        Within its own analog evidence bands, the engine spans{" "}
-        <strong className={tone(ladder.worst_pnl)}>{fmt(ladder.worst_pnl)}</strong> to{" "}
-        <strong className={tone(ladder.best_pnl)}>{fmt(ladder.best_pnl)}</strong> for this scenario
-        (base <strong className={tone(ladder.base_pnl)}>{fmt(ladder.base_pnl)}</strong>).
-      </p>
-      <p className="replay-caption">
-        {ladder.n_banded} banded factor shock{ladder.n_banded === 1 ? "" : "s"} pushed to whichever
-        analog-envelope edge is adverse (or favorable) for this book
-        {ladder.n_held > 0
-          ? `; ${ladder.n_held} low-evidence shock${
-              ladder.n_held === 1 ? "" : "s"
-            } held at proposed value`
-          : ""}
-        . An evidence-base bound, not a joint scenario — not a forecast.
-      </p>
-    </section>
-  );
-}
-
-function AnalogReplayStrip({
-  result,
-  analogEvents,
-  showDollars,
-  nav,
-  currency
-}: {
-  result: ScenarioResult;
-  analogEvents: Record<string, AnalogEvent>;
-  showDollars: boolean;
-  nav: number | null;
-  currency: string;
-}) {
-  const rows = buildAnalogReplayRows(result, analogEvents);
-  const replay = result.analog_replay;
-  // Older cached/saved payloads carry no replay block — "not computed", never zero.
-  if (!rows || !replay) return null;
-  const fmt = (value: number) =>
-    showDollars && nav != null
-      ? formatSignedCurrency(nav * value, currency)
-      : formatPercent(value);
-  const tone = (value: number) => (value < 0 ? "down" : value > 0 ? "up" : "");
-  return (
-    <section className="analog-replay" aria-label="Analog replay range">
-      <p className="readout-eyebrow">Analog replay range</p>
-      <p className="replay-range">
-        If this scenario plays out like the selected analogs did, this book's modeled move spans{" "}
-        <strong className={tone(replay.min_pnl)}>{fmt(replay.min_pnl)}</strong> to{" "}
-        <strong className={tone(replay.max_pnl)}>{fmt(replay.max_pnl)}</strong>
-        {rows.length > 2 ? (
-          <>
-            {" "}
-            (median <strong className={tone(replay.median_pnl)}>{fmt(replay.median_pnl)}</strong>)
-          </>
-        ) : null}
-        .
-      </p>
-      <ul className="replay-events">
-        {rows.map((row) => (
-          <li key={row.eventId}>
-            <span className="replay-event-name">{row.name}</span>
-            <span className={`replay-event-pnl ${tone(row.pnl)}`}>{fmt(row.pnl)}</span>
-            <span className="replay-coverage">
-              {row.covered}/{row.total} factors
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="replay-caption">
-        Each analog's realized factor moves pushed through this book's current betas. Factor-model
-        only — excludes single-name (periphery) and idiosyncratic effects. Historical replay, not a
-        forecast.
-      </p>
     </section>
   );
 }
@@ -2732,25 +2527,5 @@ function ExportCsvButton({ label, onClick }: { label: string; onClick: () => voi
     >
       <Download size={13} /> CSV
     </button>
-  );
-}
-
-function TableCard({
-  title,
-  action,
-  children
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="result-card table-card">
-      <div className="card-heading">
-        <h3>{title}</h3>
-        {action}
-      </div>
-      <TableScroll>{children}</TableScroll>
-    </section>
   );
 }

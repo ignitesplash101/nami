@@ -83,6 +83,8 @@ function renderResults(
     isRunning?: boolean;
     isStale?: boolean;
     onSeedScenario?: (key: string) => void;
+    onProfileBook?: () => void;
+    onEventsReplay?: () => void;
   } = {}
 ) {
   return render(
@@ -104,6 +106,8 @@ function renderResults(
         { key: "tariffs", name: "China tariff escalation", text: "Tariff shock text" }
       ]}
       onSeedScenario={overrides.onSeedScenario ?? (() => {})}
+      onProfileBook={overrides.onProfileBook}
+      onEventsReplay={overrides.onEventsReplay}
       canDecompose={false}
       isDecomposing={false}
       decomposeProgress={null}
@@ -149,18 +153,23 @@ describe("first-screen UI cleanup", () => {
     expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
   });
 
-  it("renders an onboarding empty state with steps and seed-only sample chips", () => {
-    const onSeedScenario = vi.fn();
-    renderResults(null, { onSeedScenario });
+  it("renders a one-line onboarding empty state with the Know-this-book card", () => {
+    const onProfileBook = vi.fn();
+    const onEventsReplay = vi.fn();
+    renderResults(null, { onProfileBook, onEventsReplay });
 
     expect(screen.getByLabelText("Scenario results")).toHaveClass("onboarding-empty");
     expect(screen.getByText("No scenario run yet")).toBeInTheDocument();
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getByText(/Pick a book in the rail/)).toBeInTheDocument();
+    // the duplicated seed chips are gone — the scenario card above is the selector
+    expect(screen.queryByRole("group", { name: "Try a sample scenario" })).toBeNull();
 
-    const chips = screen.getByRole("group", { name: "Try a sample scenario" });
-    expect(chips).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "China tariff escalation" }));
-    expect(onSeedScenario).toHaveBeenCalledWith("tariffs");
+    // the two free analytics live behind one segmented card
+    expect(screen.getByText(/Know this book — free, no LLM/)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Book profile" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Event replay" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Profile this book" }));
+    expect(onProfileBook).toHaveBeenCalledTimes(1);
   });
 
   it("shows a shimmer skeleton on the first run and a stale dim on re-runs", () => {

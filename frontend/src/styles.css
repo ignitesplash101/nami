@@ -657,32 +657,37 @@ input[type="range"]::-moz-range-thumb {
 .onboarding-empty h3 {
   font-size: 1rem;
 }
-.empty-steps {
+.empty-invite {
   margin: var(--space-2) 0 0;
-  padding-left: 18px;
-  display: grid;
-  gap: var(--space-1);
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.6;
-}
-.empty-chips {
-  margin-top: var(--space-3);
+  max-width: 62ch;
 }
 
-/* Free pre-scenario book profile (empty state only, zero LLM). */
-.book-profile-cta {
+/* "Know this book" — the free pre-run analytics behind one segmented card. */
+.know-book {
   margin-top: var(--space-3);
+}
+.know-book-cta {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+  margin-top: var(--space-2);
 }
-.book-profile {
-  margin-top: var(--space-3);
+.know-book-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.know-book-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 .book-profile-asof {
   font-size: 0.75rem;
@@ -725,6 +730,92 @@ input[type="range"]::-moz-range-thumb {
 .exposure-bar-value {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Drill-layer collapsible sections: desktop opens, compact collapses (decided
+   once at mount). The header button is the whole affordance; the summary line
+   carries information, not decoration. */
+.collapsible-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.collapsible-h {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.collapsible-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  min-height: 44px;
+}
+.collapsible-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.collapsible-chevron.open {
+  transform: rotate(0deg);
+}
+.collapsible-titles {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.collapsible-titles .eyebrow {
+  margin: 0;
+}
+.collapsible-title {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+.collapsible-summary {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46ch;
+}
+.collapsible-body {
+  margin-top: var(--space-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+/* The class display beats the UA's [hidden] rule — re-assert collapse. */
+.collapsible-body[hidden] {
+  display: none;
+}
+/* Wrapped legacy panels keep their own markup; the shell neutralizes their
+   card chrome and duplicate heading (the collapsible header replaces both). */
+.panel-shell .collapsible-body > .result-card {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+.panel-shell .collapsible-body > .result-card > .card-heading {
+  display: none;
+}
+.narrative-columns h4 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
 }
 .events-replay td.loss {
   color: var(--down);
@@ -1113,80 +1204,21 @@ a {
   margin: 8px 0;
 }
 
-/* --- Attribution Guide --- */
-.attribution-guide {
-  margin: 8px 0 4px;
-}
-.guide-toggle {
-  background: none;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.73rem;
-  padding: 5px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: color 0.15s, border-color 0.15s;
-}
-.guide-toggle:hover {
-  color: var(--accent-2);
-  border-color: var(--accent-2);
-}
-.guide-body {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-top: 8px;
-  background: rgba(16, 37, 55, 0.6);
-}
-.guide-methods {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.guide-method {
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.guide-method strong {
-  display: block;
-  font-size: 0.8rem;
-  margin-bottom: 2px;
-}
-.guide-formula {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  color: var(--accent-2);
-  margin-bottom: 4px;
-}
-.guide-method p {
-  font-size: 0.72rem;
-  color: var(--muted);
-  margin: 2px 0 0;
-}
-.guide-note {
-  font-style: italic;
-  color: var(--warn) !important;
-}
-.guide-deeplink {
+/* Attribution method helper: one deep-link line into the methodology drawer
+   (the drawer's factor-attribution section is the single explainer). */
+.guide-link {
   background: none;
   border: none;
-  color: var(--accent-2);
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.73rem;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 10px;
   padding: 0;
+  margin: 8px 0 4px;
+  text-align: left;
 }
-.guide-deeplink:hover {
+.guide-link:hover {
+  color: var(--accent-2);
   text-decoration: underline;
 }
 
@@ -1595,41 +1627,126 @@ a {
   font-variant-numeric: tabular-nums;
   cursor: help;
 }
-/* The band's "dispersion floor, not a CI" framing lives in a title tooltip —
-   unreachable without hover. Surface it as a visible caption on touch devices. */
-.idio-band-note {
-  display: none;
-}
-@media (hover: none) {
-  .idio-band-note {
-    display: block;
-    font-size: 0.7rem;
-    color: var(--muted);
-    margin-top: 2px;
-  }
-}
-
-/* Analog replay range — evidence strip under the Impact summary. Deliberately
- * quieter than .scenario-readout: it contextualizes the headline, not replaces it. */
-.analog-replay {
+/* Evidence & bounds — ONE quiet strip under the Impact summary carrying every
+ * uncertainty/range surface on a shared axis (±1σ idio, envelope bounds,
+ * analog replay). It contextualizes the headline, never replaces it. */
+.evidence-block {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: var(--radius);
   padding: 14px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
 }
-.replay-range {
-  margin: 0 0 10px;
-  font-size: 0.92rem;
-  color: var(--text);
+.evidence-gauge {
+  position: relative;
+  height: 26px;
 }
-.replay-range strong {
+.evidence-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: 2px;
+  background: var(--line);
+}
+.evidence-ladder-bar {
+  position: absolute;
+  top: 9px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-2) 30%, transparent);
+  border: 1px solid var(--accent-2);
+}
+.evidence-idio-whisker {
+  position: absolute;
+  top: 12px;
+  height: 2px;
+  background: var(--warn);
+}
+.evidence-replay-tick {
+  position: absolute;
+  top: 4px;
+  width: 2px;
+  height: 18px;
+  background: var(--muted);
+}
+.evidence-replay-tick.median {
+  background: var(--text);
+}
+.evidence-base-tick {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.evidence-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+.evidence-rows li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+.evidence-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.evidence-row-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.evidence-row-value {
   font-variant-numeric: tabular-nums;
 }
-.replay-range .up,
+.evidence-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.evidence-swatch.base {
+  background: var(--accent);
+}
+.evidence-swatch.idio {
+  background: var(--warn);
+}
+.evidence-swatch.ladder {
+  background: color-mix(in srgb, var(--accent-2) 45%, transparent);
+  border: 1px solid var(--accent-2);
+}
+.evidence-swatch.replay {
+  background: var(--muted);
+}
+.evidence-analogs summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--muted);
+  min-height: 28px;
+}
+.evidence-analogs[open] summary {
+  margin-bottom: 8px;
+}
+.evidence-rows .up,
+.evidence-row-value .up,
 .replay-events .up {
   color: var(--up);
 }
-.replay-range .down,
+.evidence-rows .down,
+.evidence-row-value .down,
 .replay-events .down {
   color: var(--down);
 }
@@ -2108,7 +2225,7 @@ a {
   .chip {
     min-height: 44px;
   }
-  .guide-toggle {
+  .guide-link {
     min-height: 44px;
   }
   .drawer-close {
@@ -2158,9 +2275,10 @@ a {
     width: 100%;
   }
 
-  /* Guide grid: collapse the 2x2 method comparison to a single column on phone. */
-  .guide-methods {
-    grid-template-columns: 1fr;
+  /* The ⌘K palette is a keyboard accelerator — its topbar button earns no
+     space on phones (every command keeps a visible control elsewhere). */
+  .cmdk-btn {
+    display: none;
   }
 
   /* Tables inside .table-scroll: force a min-width so wide tables scroll
