@@ -786,6 +786,28 @@ severity of the LLM-proposed, envelope-banded shocks.
 
 ---
 
+## Scenario comparison (pin & compare)
+
+Any displayed result can be **pinned**; when a different result is shown (a new run, an
+adjusted variant, an opened saved scenario, another book), a comparison panel renders:
+headline P&L for both sides plus the delta, factor shocks and contributions aligned per
+factor with deltas, and the top name-level movers. Everything is display-only arithmetic
+over the two already-computed results — no LLM calls, no server round-trip, nothing cached.
+
+Two honesty rules govern it:
+
+- **One attribution method for both sides.** The panel picks the lowest method BOTH
+  results can serve (explicit Conditional Shapley → grouped → naive algebra) and labels
+  it — a delta must never subtract one methodology's number from another's.
+- **Cross-book comparisons are disclosed.** When the two sides hold different books, the
+  panel warns that the deltas mix portfolio composition and scenario effects; tickers
+  absent from one book render as a dash (their delta treats the absent side as zero).
+  Different as-of dates are disclosed the same way (betas and analog registries differ by
+  vintage). The comparison is percent-only: notional dollar knobs are per-result and
+  would compare unlike NAVs.
+
+---
+
 ## What this is NOT
 
 - **Not a regulatory stress engine.** No Basel SA/IMA, no FRTB, no CCAR/DFAST. The phrase

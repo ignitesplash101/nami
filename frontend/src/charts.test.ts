@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildAnalogReplayRows,
   buildBookProfileRows,
+  buildComparisonRows,
   buildPositionValuations,
+  buildTickerDeltas,
+  commonAttributionMethod,
+  sameScenarioResult,
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
@@ -371,5 +375,67 @@ describe("buildBookProfileRows", () => {
     );
     expect(rows.map((r) => r.key)).toEqual(["GLD", "ACWI", "SPY"]);
     expect(rows[0]).toEqual({ key: "GLD", label: "L:GLD", exposure: -0.9 });
+  });
+});
+
+describe("comparison builders", () => {
+  it("sameScenarioResult distinguishes adjusted variants and different scenarios", () => {
+    const a = fixtureResult();
+    const same = fixtureResult();
+    expect(sameScenarioResult(a, same)).toBe(true);
+
+    const adjusted = fixtureResult();
+    adjusted.portfolio_pnl.total_pnl = -0.05; // same text/date/book, new shocks
+    expect(sameScenarioResult(a, adjusted)).toBe(false);
+
+    const other = fixtureResult();
+    other.scenario_text = "different scenario";
+    expect(sameScenarioResult(a, other)).toBe(false);
+  });
+
+  it("commonAttributionMethod picks the lowest method BOTH sides can serve", () => {
+    const a = fixtureResult();
+    const b = fixtureResult();
+    expect(commonAttributionMethod(a, b)).toBe("conditional_explicit");
+
+    b.portfolio_pnl.by_factor_conditional_shapley_explicit = null;
+    expect(commonAttributionMethod(a, b)).toBe("conditional_grouped");
+
+    b.portfolio_pnl.by_factor_conditional_shapley_grouped = null;
+    expect(commonAttributionMethod(a, b)).toBe("naive");
+  });
+
+  it("buildComparisonRows unions factors, zero-fills absent sides, sorts by |contrib delta|", () => {
+    const a = fixtureResult();
+    const b = fixtureResult();
+    b.factor_shocks = [
+      { factor: "SPY", shock: -0.05, reasoning: "milder" },
+      { factor: "GLD", shock: 0.02, reasoning: "flight to quality" }
+    ];
+    b.portfolio_pnl.by_factor_naive = { SPY: -0.03, GLD: 0.01 };
+
+    const rows = buildComparisonRows(a, b, "naive");
+    expect(rows.map((r) => r.factor)).toEqual(["SPY", "GLD"]); // VIX ~0 both sides filtered
+    const spy = rows[0];
+    expect(spy.shockA).toBeCloseTo(-0.1);
+    expect(spy.shockB).toBeCloseTo(-0.05);
+    expect(spy.shockDelta).toBeCloseTo(0.05);
+    expect(spy.contribDelta).toBeCloseTo(-0.03 - -0.06);
+    const gld = rows[1];
+    expect(gld.shockA).toBe(0);
+    expect(gld.contribA).toBe(0);
+    expect(gld.contribB).toBeCloseTo(0.01);
+  });
+
+  it("buildTickerDeltas nulls absent-side tickers and treats them as 0 in the delta", () => {
+    const a = fixtureResult();
+    const b = fixtureResult();
+    b.portfolio_pnl.by_ticker_total = { AAPL: -0.03, NVDA: -0.05 };
+
+    const deltas = buildTickerDeltas(a, b);
+    expect(deltas.map((d) => d.ticker)).toEqual(["NVDA", "AAPL", "MSFT"]);
+    expect(deltas[0]).toEqual({ ticker: "NVDA", totalA: null, totalB: -0.05, delta: -0.05 });
+    expect(deltas[1].delta).toBeCloseTo(0.03);
+    expect(deltas[2]).toEqual({ ticker: "MSFT", totalA: -0.02, totalB: null, delta: 0.02 });
   });
 });

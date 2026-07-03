@@ -554,3 +554,115 @@ export function buildBookProfileRows(
     .sort((a, b) => Math.abs(b.exposure) - Math.abs(a.exposure))
     .slice(0, limit);
 }
+
+/** True when two envelopes display the same scenario outcome. Keys off
+ *  always-present result fields — cache_key/reproducibility are null on the
+ *  adjust/decompose/saved paths. The total_pnl term makes an adjusted variant
+ *  of the same canonical read as DIFFERENT, so pinned-canonical vs adjusted
+ *  comparisons render. */
+export function sameScenarioResult(a: ScenarioResult, b: ScenarioResult): boolean {
+  return (
+    a.scenario_text === b.scenario_text &&
+    a.market_date === b.market_date &&
+    a.portfolio_key === b.portfolio_key &&
+    a.portfolio_pnl.total_pnl === b.portfolio_pnl.total_pnl
+  );
+}
+
+/** The lowest common attribution method BOTH results can serve — a comparison
+ *  must show both sides under ONE method, never mixing maps across a delta. */
+export function commonAttributionMethod(a: ScenarioResult, b: ScenarioResult): AttributionMethod {
+  if (
+    a.portfolio_pnl.by_factor_conditional_shapley_explicit &&
+    b.portfolio_pnl.by_factor_conditional_shapley_explicit
+  ) {
+    return "conditional_explicit";
+  }
+  if (
+    a.portfolio_pnl.by_factor_conditional_shapley_grouped &&
+    b.portfolio_pnl.by_factor_conditional_shapley_grouped
+  ) {
+    return "conditional_grouped";
+  }
+  return "naive";
+}
+
+export interface ComparisonRow {
+  factor: string;
+  factorLabel: string;
+  shockA: number;
+  shockB: number;
+  shockDelta: number;
+  contribA: number;
+  contribB: number;
+  contribDelta: number;
+}
+
+/** Factor-level A/B/delta rows over the union of both results' shocked or
+ *  attributed factors, under one shared attribution method. A side that does
+ *  not shock a factor contributes 0. Sorted by |contribution delta| desc. */
+export function buildComparisonRows(
+  a: ScenarioResult,
+  b: ScenarioResult,
+  method: AttributionMethod,
+  factors?: FactorMetadataMap
+): ComparisonRow[] {
+  const shocksA = Object.fromEntries(a.factor_shocks.map((fs) => [fs.factor, fs.shock]));
+  const shocksB = Object.fromEntries(b.factor_shocks.map((fs) => [fs.factor, fs.shock]));
+  const contribsA = selectedFactorAttribution(a, method);
+  const contribsB = selectedFactorAttribution(b, method);
+  const keys = new Set([
+    ...Object.keys(shocksA),
+    ...Object.keys(shocksB),
+    ...Object.keys(contribsA),
+    ...Object.keys(contribsB)
+  ]);
+  return [...keys]
+    .map((factor) => {
+      const shockA = shocksA[factor] ?? 0;
+      const shockB = shocksB[factor] ?? 0;
+      const contribA = contribsA[factor] ?? 0;
+      const contribB = contribsB[factor] ?? 0;
+      return {
+        factor,
+        factorLabel: factorDisplayName(factors, factor),
+        shockA,
+        shockB,
+        shockDelta: shockB - shockA,
+        contribA,
+        contribB,
+        contribDelta: contribB - contribA
+      };
+    })
+    .filter(
+      (row) =>
+        Math.abs(row.shockA) > 1e-9 ||
+        Math.abs(row.shockB) > 1e-9 ||
+        Math.abs(row.contribA) > 1e-9 ||
+        Math.abs(row.contribB) > 1e-9
+    )
+    .sort((x, y) => Math.abs(y.contribDelta) - Math.abs(x.contribDelta));
+}
+
+export interface TickerDelta {
+  ticker: string;
+  totalA: number | null;
+  totalB: number | null;
+  delta: number;
+}
+
+/** Name-level A/B/delta over the union of both books' tickers. A ticker absent
+ *  from one book is null on that side (rendered as an em dash) and treated as 0
+ *  in the delta. Sorted by |delta| desc. */
+export function buildTickerDeltas(a: ScenarioResult, b: ScenarioResult): TickerDelta[] {
+  const mapA = a.portfolio_pnl.by_ticker_total;
+  const mapB = b.portfolio_pnl.by_ticker_total;
+  const keys = new Set([...Object.keys(mapA), ...Object.keys(mapB)]);
+  return [...keys]
+    .map((ticker) => {
+      const totalA = ticker in mapA ? mapA[ticker] : null;
+      const totalB = ticker in mapB ? mapB[ticker] : null;
+      return { ticker, totalA, totalB, delta: (totalB ?? 0) - (totalA ?? 0) };
+    })
+    .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+}

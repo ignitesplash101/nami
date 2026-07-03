@@ -13,6 +13,7 @@ import {
   Lock,
   LogOut,
   Menu,
+  Pin,
   Save,
   Shield,
   Table2,
@@ -51,6 +52,7 @@ import {
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
+  sameScenarioResult,
   chartTheme,
   factorReasoningRows,
   formatCurrency,
@@ -72,6 +74,7 @@ import type { CommandAction } from "./CommandPalette";
 import { AttributionGuide } from "./AttributionGuide";
 import { nextEnabledMethod } from "./attributionNav";
 import { getSavedScenario } from "./api";
+import { ComparisonPanel } from "./ComparisonPanel";
 import { MethodologyDrawer } from "./MethodologyDrawer";
 import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
@@ -190,6 +193,10 @@ export default function App() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [eventsReplay, setEventsReplay] = useState<EventsReplay | null>(null);
   const [replayBusy, setReplayBusy] = useState(false);
+  // Pin & compare: holds a full envelope for side-by-side comparison. No other
+  // setter touches it, so it survives runs, adjustments, decompositions, and
+  // saved-scenario opens until the user re-pins or clears it.
+  const [pinnedEnvelope, setPinnedEnvelope] = useState<ScenarioRunResponse | null>(null);
   // Default every book to a $100k notional value so the dollar view (P&L,
   // stressed values, position table) is populated out-of-the-box for everyone,
   // incl. visitors. Pure client-side notional scaling — NOT mark-to-market.
@@ -226,6 +233,9 @@ export default function App() {
   const accessModeRef = useRef<AccessResponse["access_mode"] | null>(null);
   const lastFailedActionRef = useRef<"run" | "decompose" | "boot" | null>(null);
   const passcodeInputRef = useRef<HTMLInputElement>(null);
+  // Guards the boot effect's default-selection seeding (see boot()) so a second
+  // async wave can never clobber a selection the user has already made.
+  const bootSeededRef = useRef(false);
   // Separate lifecycles: cancelling/superseding a run must not abort an
   // in-flight decomposition and vice versa.
   const runLifecycle = useRef(createRunLifecycle()).current;
@@ -328,10 +338,17 @@ export default function App() {
       setPortfolios(portfolioResponse);
       setScenarios(scenarioResponse);
       setFactorMeta(factorMap(factorResponse));
-      setPortfolioKey(portfolioResponse[0]?.key ?? "us_tech_growth");
-      setScenarioKey(scenarioResponse[0]?.key ?? "china_tariffs");
-      setScenarioText(scenarioResponse[0]?.text ?? "");
-      setScenarioDraftMode("sample");
+      // Seed the DEFAULT selection exactly once per app life. Boot's async work
+      // can complete in more than one wave (StrictMode double-invoke in dev,
+      // connection-queued fetches), and a late wave re-running these setters
+      // silently reverted any portfolio/scenario the user had already picked.
+      if (!bootSeededRef.current) {
+        bootSeededRef.current = true;
+        setPortfolioKey(portfolioResponse[0]?.key ?? "us_tech_growth");
+        setScenarioKey(scenarioResponse[0]?.key ?? "china_tariffs");
+        setScenarioText(scenarioResponse[0]?.text ?? "");
+        setScenarioDraftMode("sample");
+      }
       setMethodology(methodologyText);
 
       // Permalink hydration: ?saved=<id> opens a saved scenario directly.
@@ -826,7 +843,24 @@ export default function App() {
           onOpenMethodology={openMethodology}
           canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
           onSave={saveDialog.open}
+          onPin={() => setPinnedEnvelope(resultEnvelope)}
+          isPinned={Boolean(
+            pinnedEnvelope &&
+              resultEnvelope &&
+              sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
+          )}
         />
+
+        {pinnedEnvelope &&
+        resultEnvelope &&
+        !sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result) ? (
+          <ComparisonPanel
+            pinned={pinnedEnvelope}
+            current={resultEnvelope}
+            factorMeta={factorMeta}
+            onUnpin={() => setPinnedEnvelope(null)}
+          />
+        ) : null}
 
         {resultEnvelope &&
         canonicalSnapshot &&
@@ -1444,7 +1478,9 @@ export function ResultsPanel({
   onCancelDecompose,
   onOpenMethodology,
   canSave,
-  onSave
+  onSave,
+  onPin,
+  isPinned = false
 }: {
   envelope: ScenarioRunResponse | null;
   attributionMethod: AttributionMethod;
@@ -1477,6 +1513,9 @@ export function ResultsPanel({
   onCancelDecompose?: () => void;
   onOpenMethodology: (section?: string) => void;
   canSave: boolean;
+  // Pin & compare: pins the CURRENT envelope for the App-level ComparisonPanel.
+  onPin?: () => void;
+  isPinned?: boolean;
   onSave: () => void;
 }) {
   if (!envelope) {
@@ -1792,6 +1831,17 @@ export function ResultsPanel({
           {canSave ? (
             <button className="ghost-button" onClick={onSave}>
               <Save size={14} /> Save scenario
+            </button>
+          ) : null}
+          {onPin ? (
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={onPin}
+              disabled={isPinned}
+              title="Hold this result and compare the next run, adjustment, or opened scenario against it"
+            >
+              <Pin size={14} /> {isPinned ? "Pinned" : "Pin to compare"}
             </button>
           ) : null}
           {isMarked ? (
