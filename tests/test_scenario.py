@@ -270,6 +270,51 @@ def test_run_scenario_attaches_pnl_uncertainty(monkeypatch):
     assert unc.band_1sigma == pytest.approx(expected_weekly * expected_h**0.5)
 
 
+def test_run_scenario_attaches_severity_ladder(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    result = run_scenario(
+        scenario_text="A pandemic-like risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=gemini,
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+
+    ladder = result.severity_ladder
+    assert ladder is not None
+    # Mock envelope is degenerate (2 uniform analogs -> count=2 < 3), so every
+    # nonzero shock is low-evidence: held at its proposed value in every rung.
+    assert ladder.n_banded == 0
+    assert ladder.n_held == len(result.factor_shocks)
+    assert ladder.base_pnl == pytest.approx(result.portfolio_pnl.total_pnl)
+    assert ladder.worst_pnl == pytest.approx(ladder.base_pnl)
+    assert ladder.best_pnl == pytest.approx(ladder.base_pnl)
+
+
+def test_run_scenario_cache_hit_round_trips_severity_ladder(monkeypatch):
+    _patch_market_layer(monkeypatch)
+    cache = InMemoryCache()
+    gemini = _MockGeminiClient()
+
+    kwargs = {
+        "scenario_text": "Same ladder scenario",
+        "portfolio_key": "us_tech_growth",
+        "config": _config(),
+        "gemini": gemini,
+        "cache": cache,
+        "market_date": date(2026, 5, 25),
+    }
+    first = run_scenario(**kwargs)
+    second = run_scenario(**kwargs)
+
+    assert first.severity_ladder is not None
+    assert second.severity_ladder == first.severity_ladder
+
+
 def test_run_scenario_cache_hit_round_trips_analog_replay(monkeypatch):
     _patch_market_layer(monkeypatch)
     cache = InMemoryCache()

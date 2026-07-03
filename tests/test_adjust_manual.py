@@ -117,6 +117,43 @@ def test_manual_adjustment_preserves_analog_replay(monkeypatch):
     assert result.analog_replay == canonical.analog_replay
 
 
+def test_manual_adjustment_recomputes_severity_ladder_from_new_shocks(monkeypatch):
+    # The ladder is shock-DEPENDENT (unlike analog_replay): after an adjustment
+    # it must reflect the new base and the (widened) envelope's band edges.
+    canonical, cache, gemini, key, config = _canonical_run(monkeypatch)
+
+    overrides = {fs.factor: fs.shock for fs in canonical.factor_shocks}
+    target = canonical.factor_shocks[0]
+    overrides[target.factor] = target.shock + 0.01
+
+    result = adjust_scenario_shocks(
+        key,
+        overrides=overrides,
+        config=config,
+        gemini=gemini,
+        cache=cache,
+    )
+
+    ladder = result.severity_ladder
+    assert ladder is not None
+    # _canonical_run widened every factor's envelope to count=5, so all three
+    # shocked factors are banded now (the cached canonical's own ladder was
+    # computed pre-widening, with everything held).
+    assert ladder.n_banded == len(result.factor_shocks)
+    assert ladder.n_held == 0
+    assert ladder != canonical.severity_ladder
+
+    # Mock betas: exposure 1.0 on the first factor, 0 elsewhere — so only the
+    # first factor's band moves the rungs. Periphery rides along unchanged.
+    periphery_total = sum(result.portfolio_pnl.by_ticker_periphery.values())
+    p10 = canonical.factor_envelope[target.factor]["p10"]
+    p90 = canonical.factor_envelope[target.factor]["p90"]
+    assert ladder.base_pnl == pytest.approx(result.portfolio_pnl.total_pnl)
+    assert ladder.worst_pnl == pytest.approx(min(p10, p90) + periphery_total)
+    assert ladder.best_pnl == pytest.approx(max(p10, p90) + periphery_total)
+    assert ladder.worst_pnl <= ladder.base_pnl <= ladder.best_pnl
+
+
 def test_manual_adjustment_recomputes_identical_pnl_uncertainty(monkeypatch):
     # The band is shock-independent (stats + analog windows only); adjusting on
     # the same vintage must land on an identical block.

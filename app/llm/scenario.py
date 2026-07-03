@@ -9,6 +9,7 @@ analogs / periphery but recomputed factor shocks and P&L.
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -57,9 +58,11 @@ from app.llm.schemas import (
     PortfolioPnL,
     RegressionQuality,
     ScenarioResult,
+    SeverityLadder,
     ShockAdjustment,
     TickerRegressionQuality,
 )
+from app.llm.validation import MIN_ENVELOPE_COUNT_FOR_BAND_CHECK
 from app.utils.calendar import latest_market_date, resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
 
@@ -429,6 +432,74 @@ def _pnl_uncertainty_block(
         band_1sigma=band,
         portfolio_idio_vol_weekly=weekly,
         horizon_weeks=horizon_weeks,
+    )
+
+
+def _severity_ladder_block(
+    portfolio: Portfolio,
+    betas: pd.DataFrame,
+    factor_shocks: list[FactorShock],
+    factor_envelope: dict[str, dict[str, float]],
+    *,
+    periphery_total: float,
+) -> SeverityLadder:
+    """Envelope-constrained worst/base/best engine P&L (vertex of the shock box).
+
+    P&L is linear in each factor's shock, so its min/max over the per-factor
+    [p10, p90] box is attained by pushing each banded shock to whichever band
+    edge is adverse (resp. favorable) for THIS book's exposure
+    `E_f = Σ_t w_t·β_{t,f}` — NOT by all-p10/all-p90 rungs, whose ordering a
+    negative exposure flips. Banded means envelope `count ≥ 3` with finite
+    p10/p90 — the same gate `validate_factor_overrides` puts on the adjustment
+    sliders; low-evidence shocks are held at their proposed values in every
+    rung, removed (0.0) shocks contribute nothing, and the periphery total
+    rides along unchanged. `worst ≤ base ≤ best` holds whenever every banded
+    shock sits inside its own band (the proposal and adjustment validators
+    both enforce this). Shock-DEPENDENT — recomputed on adjustments, unlike
+    the preserved `analog_replay`.
+    """
+    weights = pd.Series(portfolio.holdings, dtype=float).reindex(betas.index).fillna(0.0)
+    exposures = betas.mul(weights, axis=0).sum(axis=0)
+
+    worst = base = best = periphery_total
+    n_banded = 0
+    n_held = 0
+    for fs in factor_shocks:
+        if fs.shock == 0.0 or fs.factor not in exposures.index:
+            continue
+        exposure = float(exposures[fs.factor])
+        base_contrib = exposure * fs.shock
+        base += base_contrib
+
+        env = factor_envelope.get(fs.factor) or {}
+        count = env.get("count")
+        p10 = env.get("p10")
+        p90 = env.get("p90")
+        banded = (
+            count is not None
+            and count >= MIN_ENVELOPE_COUNT_FOR_BAND_CHECK
+            and p10 is not None
+            and p90 is not None
+            and math.isfinite(p10)
+            and math.isfinite(p90)
+        )
+        if banded:
+            lo = exposure * float(p10)
+            hi = exposure * float(p90)
+            worst += min(lo, hi)
+            best += max(lo, hi)
+            n_banded += 1
+        else:
+            worst += base_contrib
+            best += base_contrib
+            n_held += 1
+
+    return SeverityLadder(
+        worst_pnl=float(worst),
+        base_pnl=float(base),
+        best_pnl=float(best),
+        n_banded=n_banded,
+        n_held=n_held,
     )
 
 
@@ -863,6 +934,13 @@ def run_scenario(
         portfolio_obj.holdings,
         [int(rec["window_calendar_days"]) for rec in per_event_returns],
     )
+    severity_ladder = _severity_ladder_block(
+        portfolio_obj,
+        betas,
+        shock_out.factor_shocks,
+        factor_envelope,
+        periphery_total=sum(portfolio_pnl_model.by_ticker_periphery.values()),
+    )
     risk_diagnostics = generate_risk_diagnostics(
         factor_shocks=shock_out.factor_shocks,
         envelope=envelope,
@@ -892,6 +970,7 @@ def run_scenario(
         analog_event_returns=[AnalogEventReturns.model_validate(rec) for rec in per_event_returns],
         analog_replay=analog_replay,
         pnl_uncertainty=pnl_uncertainty,
+        severity_ladder=severity_ladder,
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,
@@ -1130,6 +1209,13 @@ def adjust_scenario_shocks(
         canonical.portfolio_holdings,
         [rec.window_calendar_days for rec in (canonical.analog_event_returns or [])],
     )
+    severity_ladder = _severity_ladder_block(
+        portfolio_obj,
+        betas,
+        new_factor_shocks,
+        canonical.factor_envelope,
+        periphery_total=sum(portfolio_pnl_model.by_ticker_periphery.values()),
+    )
     risk_diagnostics = generate_risk_diagnostics(
         factor_shocks=new_factor_shocks,
         envelope=_envelope_df_from_canonical(canonical),
@@ -1151,6 +1237,9 @@ def adjust_scenario_shocks(
             # Shock-independent; recomputed from the same vintage stats + the
             # canonical's analog windows, so it lands byte-identical.
             "pnl_uncertainty": pnl_uncertainty,
+            # Shock-DEPENDENT (unlike the preserved analog_replay): the base and
+            # the held low-evidence values move with the new shocks.
+            "severity_ladder": severity_ladder,
             "adjustment_history": [*canonical.adjustment_history, new_entry],
         }
     )

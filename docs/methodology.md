@@ -414,6 +414,35 @@ distribution; the band brackets the total either way.
 
 ---
 
+## Severity ladder (envelope bounds)
+
+The proposed shocks are clamped to the analog envelope's [p10, p90] per factor, so the
+headline P&L is capped at the selected analogs' severity **by construction** — a single
+confident number can hide that cap. The severity ladder makes the evidence-base bound
+explicit: the **exact minimum and maximum engine P&L over the per-factor shock box**
+`[p10, p90]^K`, shown as worst / base / best next to the headline.
+
+Because portfolio P&L is linear in each factor's shock, the extremum over the box is
+attained at a vertex: each **banded** shock (envelope `count ≥ 3` with finite p10/p90 —
+the same gate the adjustment sliders enforce) is pushed to whichever band edge is
+adverse (respectively favorable) for **this book's** exposure `E_f = Σᵢ wᵢ·βᵢ,f`.
+Deliberately *not* all-p10 / all-p90 rungs: a negative exposure flips that factor's
+interval, so the base would not be guaranteed to sit inside that pair — whereas
+`worst ≤ base ≤ best` holds by construction whenever every banded shock is inside its
+own band (which the proposal and adjustment validators both enforce).
+
+Honesty rules: **low-evidence shocks** (`count < 3` — the keep-or-remove domain) are
+held at their proposed values in every rung and counted separately in the display;
+removed shocks (0.0) contribute nothing; the periphery total rides along unchanged.
+The ladder is an **evidence-base bound, not a joint scenario** — pushing every factor
+to an adverse edge simultaneously ignores how the analogs actually co-moved — and not
+a forecast. Zero LLM involvement: it is deterministic post-processing cached with the
+canonical result, and because it depends on the shock values it is **recomputed on
+shock adjustments** (unlike the analog replay range, which is shock-independent
+evidence and is preserved byte-for-byte).
+
+---
+
 ## LLM pipeline
 
 `app/llm/scenario.run_scenario` orchestrates two Gemini calls + one structured extraction.
@@ -764,6 +793,11 @@ severity of the LLM-proposed, envelope-banded shocks.
 - **Not real-time risk.** Designed for one-shot scenario evaluation, not live position
   monitoring.
 - **Not multi-asset.** Equity-only in v1; fixed income, FX, and commodities are deferred.
+- **Not point-in-time on holdings when backdated.** Prices, factor history, and the analog
+  registry are strictly vintage-filtered, but sample-book weights are TODAY'S frozen
+  cap-weight snapshot replayed onto the as-of date — point-in-time weight drift and
+  survivorship apply. The backdated-mode banner discloses this in-product, with the
+  snapshot date.
 - **Not deterministic in narrative wording.** Shocks are reproducible by cache hash;
   narrative text varies slightly across runs even at `temperature=0`.
 - **Not investment advice.** Period.

@@ -773,6 +773,11 @@ export default function App() {
             requestedDate={
               resultEnvelope.result.requested_as_of_date ?? resultEnvelope.result.market_date
             }
+            weightsAsOf={
+              resultEnvelope.result.portfolio_key !== "custom"
+                ? access?.sample_weights_as_of ?? null
+                : null
+            }
           />
         ) : null}
 
@@ -1781,6 +1786,7 @@ export function ResultsPanel({
         nav={nav}
         currency={currency}
       />
+      <SeverityLadderStrip result={result} showDollars={showDollars} nav={nav} currency={currency} />
       <div className="results-toolbar">
         <div className="results-toolbar-left">
           {canSave ? (
@@ -2504,6 +2510,48 @@ function EventsReplayCard({ replay }: { replay: EventsReplay }) {
           </tbody>
         </table>
       </TableScroll>
+    </section>
+  );
+}
+
+export function SeverityLadderStrip({
+  result,
+  showDollars,
+  nav,
+  currency
+}: {
+  result: ScenarioResult;
+  showDollars: boolean;
+  nav: number | null;
+  currency: string;
+}) {
+  const ladder = result.severity_ladder;
+  // Older cached/saved payloads carry no ladder — "not computed", never zero.
+  if (!ladder) return null;
+  const fmt = (value: number) =>
+    showDollars && nav != null
+      ? formatSignedCurrency(nav * value, currency)
+      : formatPercent(value);
+  const tone = (value: number) => (value < 0 ? "down" : value > 0 ? "up" : "");
+  return (
+    <section className="analog-replay severity-ladder" aria-label="Severity ladder">
+      <p className="readout-eyebrow">Severity ladder — envelope bounds</p>
+      <p className="replay-range">
+        Within its own analog evidence bands, the engine spans{" "}
+        <strong className={tone(ladder.worst_pnl)}>{fmt(ladder.worst_pnl)}</strong> to{" "}
+        <strong className={tone(ladder.best_pnl)}>{fmt(ladder.best_pnl)}</strong> for this scenario
+        (base <strong className={tone(ladder.base_pnl)}>{fmt(ladder.base_pnl)}</strong>).
+      </p>
+      <p className="replay-caption">
+        {ladder.n_banded} banded factor shock{ladder.n_banded === 1 ? "" : "s"} pushed to whichever
+        analog-envelope edge is adverse (or favorable) for this book
+        {ladder.n_held > 0
+          ? `; ${ladder.n_held} low-evidence shock${
+              ladder.n_held === 1 ? "" : "s"
+            } held at proposed value`
+          : ""}
+        . An evidence-base bound, not a joint scenario — not a forecast.
+      </p>
     </section>
   );
 }

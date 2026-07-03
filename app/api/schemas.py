@@ -23,6 +23,9 @@ class AccessResponse(BaseModel):
     # Latest NYSE regular-close date (YYYY-MM-DD). The UI seeds the as-of picker
     # with this so "live" means the latest US close, not the browser's local day.
     latest_market_date: str
+    # Frozen sample cap-weight snapshot date — backs the backdated-mode PIT-drift
+    # disclosure (sample books replay TODAY'S weights onto historical dates).
+    sample_weights_as_of: str
 
 
 class UnlockRequest(BaseModel):

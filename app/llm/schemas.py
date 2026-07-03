@@ -284,6 +284,28 @@ class AnalogReplay(BaseModel):
     max_pnl: float
 
 
+class SeverityLadder(BaseModel):
+    """Envelope-constrained worst / base / best engine P&L (Phase 26).
+
+    Exact min/max of portfolio P&L over the per-factor shock box [p10, p90]^K:
+    each banded shock (envelope count ≥ 3, the same gate as the adjustment
+    sliders) is pushed to whichever band edge is adverse (resp. favorable) for
+    THIS book's exposure — the vertex of the box, since P&L is linear in each
+    shock. Not all-p10/all-p90 rungs: a negative exposure flips that factor's
+    interval, so the base would not be guaranteed inside that pair. Low-evidence
+    shocks (count < 3) are held at their proposed values in every rung; removed
+    shocks (0.0) contribute nothing. Periphery is held at the canonical values.
+    An evidence-base bound, not a joint scenario and not a forecast.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    worst_pnl: float
+    base_pnl: float
+    best_pnl: float
+    n_banded: int
+    n_held: int
+
+
 class ScenarioResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_text: str
@@ -315,6 +337,10 @@ class ScenarioResult(BaseModel):
     # analog windows only); cached with the canonical and recomputed on
     # adjustments from the same vintage. None on older payloads.
     pnl_uncertainty: PnLUncertainty | None = None
+    # Envelope-constrained worst/base/best (Phase 26). Shock-DEPENDENT: cached
+    # with the canonical and RECOMPUTED on adjustments (unlike analog_replay,
+    # which is preserved). None on older cached/saved payloads.
+    severity_ladder: SeverityLadder | None = None
     # Backdating metadata (added Phase 11). All default-defaulted so cached v5
     # entries deserialize cleanly under v6 lazy re-derivation.
     # `market_date` is the *effective* as-of date (last NYSE trading day on or

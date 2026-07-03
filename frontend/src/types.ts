@@ -12,6 +12,9 @@ export interface AccessResponse {
   permissions: Permissions;
   // Latest NYSE regular-close date (YYYY-MM-DD); seeds the as-of picker default.
   latest_market_date: string;
+  // Frozen sample cap-weight snapshot date (Phase 26) — backs the PIT-drift
+  // disclosure on backdated runs. Optional so older test fixtures stay valid.
+  sample_weights_as_of?: string;
 }
 
 export interface SamplePortfolio {
@@ -156,6 +159,14 @@ export interface AnalogReplay {
 
 // ±1σ idiosyncratic dispersion around the factor-driven point estimate —
 // a dispersion floor (independence assumptions), never a confidence interval.
+export interface SeverityLadder {
+  worst_pnl: number;
+  base_pnl: number;
+  best_pnl: number;
+  n_banded: number;
+  n_held: number;
+}
+
 export interface PnLUncertainty {
   band_1sigma: number;
   portfolio_idio_vol_weekly: number;
@@ -187,6 +198,8 @@ export interface ScenarioResult {
   analog_replay?: AnalogReplay | null;
   // ±1σ idio dispersion band (Phase 21). Null/absent on older payloads.
   pnl_uncertainty?: PnLUncertainty | null;
+  // Envelope-constrained worst/base/best (Phase 26). Null/absent on older payloads.
+  severity_ladder?: SeverityLadder | null;
   // Backdating metadata (added Phase 11). Defaults match live runs so older
   // cached payloads deserialize cleanly.
   requested_as_of_date: string | null;

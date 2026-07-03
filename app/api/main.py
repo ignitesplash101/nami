@@ -72,7 +72,12 @@ from app.data.firestore_store import (
     utcnow,
 )
 from app.data.marking import MarkingError
-from app.data.sample_portfolios import SAMPLE_PORTFOLIOS, Portfolio, ticker_metadata
+from app.data.sample_portfolios import (
+    SAMPLE_PORTFOLIOS,
+    Portfolio,
+    sample_as_of,
+    ticker_metadata,
+)
 from app.factors import warm_cache
 from app.factors.analogs import HistoricalEvent, events_version, load_events
 from app.factors.regression import InsufficientHistoryError, regression_spec
@@ -266,6 +271,7 @@ def _access_response(request: Request) -> AccessResponse:
         admin_available=configured_passcode() is not None,
         permissions=_permissions(mode),
         latest_market_date=latest_market_date().isoformat(),
+        sample_weights_as_of=sample_as_of(),
     )
 
 
@@ -453,6 +459,7 @@ def unlock(body: UnlockRequest, request: Request, response: Response) -> AccessR
         admin_available=True,
         permissions=_permissions("admin"),
         latest_market_date=latest_market_date().isoformat(),
+        sample_weights_as_of=sample_as_of(),
     )
 
 
@@ -464,6 +471,7 @@ def lock(request: Request, response: Response) -> AccessResponse:
         admin_available=configured_passcode() is not None,
         permissions=_permissions("visitor"),
         latest_market_date=latest_market_date().isoformat(),
+        sample_weights_as_of=sample_as_of(),
     )
 
 

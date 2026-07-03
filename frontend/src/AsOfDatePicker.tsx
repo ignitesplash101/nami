@@ -39,10 +39,14 @@ export function AsOfDatePicker({ value, latestClose, onChange, disabled }: AsOfD
 
 export function BackdatedModeBanner({
   effectiveDate,
-  requestedDate
+  requestedDate,
+  weightsAsOf = null
 }: {
   effectiveDate: string;
   requestedDate: string;
+  // Frozen sample cap-weight snapshot date; null for custom books (their
+  // holdings are user-supplied, so the PIT-drift disclosure does not apply).
+  weightsAsOf?: string | null;
 }) {
   const resolved = effectiveDate !== requestedDate;
   return (
@@ -67,6 +71,14 @@ export function BackdatedModeBanner({
         and may reference concepts learned from post-as-of training data — treat the
         analog envelope and shock magnitudes as the canonical record; the narrative
         is illustrative.
+        {weightsAsOf ? (
+          <>
+            {" "}
+            Holdings are the frozen sample cap-weight snapshot (as of{" "}
+            <code>{weightsAsOf}</code>), replayed onto <code>{effectiveDate}</code> —
+            point-in-time weight drift and survivorship apply.
+          </>
+        ) : null}
       </p>
     </div>
   );
