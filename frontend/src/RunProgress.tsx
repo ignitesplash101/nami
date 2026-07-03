@@ -10,6 +10,12 @@ const STAGE_LABELS: Record<Exclude<SsePipelineStage, "done" | "error" | "cache_h
   attribution: "Computing attribution"
 };
 
+/** Human label for a pipeline stage; used by the stepper AND the App-level
+ * aria-live announcer so screen readers hear the same text the stepper shows. */
+export function stageLabel(stage: SsePipelineStage): string | null {
+  return stage in STAGE_LABELS ? STAGE_LABELS[stage as keyof typeof STAGE_LABELS] : null;
+}
+
 const STAGE_ORDER: (keyof typeof STAGE_LABELS)[] = [
   "cache_check",
   "market",
@@ -51,7 +57,7 @@ export function RunProgress({
           const isDone = completedStages.has(stage);
           const className = isActive ? "active" : isDone ? "done" : "pending";
           return (
-            <li key={stage} className={className}>
+            <li key={stage} className={className} aria-current={isActive ? "step" : undefined}>
               <span className="dot" />
               <span className="label">{STAGE_LABELS[stage]}</span>
             </li>

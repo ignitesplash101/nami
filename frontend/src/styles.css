@@ -1,4 +1,7 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+/* Fonts load from index.html via preconnect + <link rel="stylesheet"> (parallel
+ * discovery). Do NOT reintroduce an @import here — it serializes the font CSS
+ * fetch behind this stylesheet. Keep the family list in index.html in sync
+ * with the --font-* tokens below. */
 
 /* ============================================================================
  * nami — "Hokusai Deep" design system.
@@ -154,6 +157,25 @@ button:disabled {
   border: 0;
 }
 
+/* First focusable element on the page; visually hidden until keyboard focus
+ * lands on it, then a pill above every overlay tier. */
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: calc(var(--z-toast) + 10);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus-visible {
+  transform: none;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 360px minmax(720px, 1fr);
@@ -205,8 +227,13 @@ button:disabled {
 .brand-block .brand-kicker {
   position: relative;
 }
-.brand-block h1 {
+/* Branding, not a document heading — the page <h1> lives in the topbar so
+ * phones (where the rail hides in a drawer) still expose a visible h1. */
+.brand-block .brand-title {
   position: relative;
+  margin: 0;
+  font-family: var(--font-display);
+  line-height: 1.08;
   font-size: var(--step-4);
   letter-spacing: -0.02em;
 }
@@ -291,6 +318,16 @@ p {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* It's a <form> (Enter submits the passcode) — kill the UA form margin. */
+  margin: 0;
+}
+
+.app-footer {
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--step--1);
 }
 
 .panel-title,
@@ -311,6 +348,12 @@ p {
 .topbar {
   justify-content: space-between;
   margin-bottom: 18px;
+}
+/* The topbar heading is the page <h1> (rail brand is decorative) but keeps
+ * the visual weight it had as an h2. */
+.topbar h1 {
+  font-size: var(--step-3);
+  letter-spacing: -0.01em;
 }
 
 .status-strip {
@@ -2255,7 +2298,7 @@ a {
   .workbench {
     padding: 16px 14px 32px;
   }
-  .topbar h2 {
+  .topbar h1 {
     font-size: 1.35rem;
   }
   /* Hide the duplicated portfolio-name chip on phone (it's in the rail drawer).
@@ -2765,6 +2808,26 @@ th.sortable.num button {
   .toast-stack {
     left: 16px;
     width: auto;
+  }
+
+  /* Notched/home-indicator phones (viewport-fit=cover): keep content and the
+   * fixed overlays out of the unsafe insets. max() preserves the existing
+   * paddings on rectangular screens where env() is 0. */
+  .workbench {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
+  }
+  .rail-drawer-panel {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    padding-left: max(0px, env(safe-area-inset-left));
+  }
+  .drawer-panel {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+  .toast-stack {
+    top: max(16px, env(safe-area-inset-top));
   }
 }
 

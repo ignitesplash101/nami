@@ -12,8 +12,10 @@ from datetime import date as date_type
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.errors import http_error
 from app.api.middleware import request_context_middleware
@@ -131,6 +133,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 api = FastAPI(title="nami API", version="0.1.0", lifespan=lifespan)
 api.middleware("http")(request_context_middleware)
 setup_rate_limiting(api)
+
+# The two SSE endpoints must bypass compression: the gzip deflate stream holds
+# small frames in its internal buffer until a block fills, which would freeze
+# the client's progress stepper mid-run. Everything else (JSON, the 5MB-class
+# JS bundle) compresses — Cloud Run does not compress for us.
+_SSE_STREAM_PATHS = frozenset({"/api/scenarios/run-stream", "/api/scenarios/decompose-stream"})
+
+
+class SseAwareGZipMiddleware:
+    """GZip responses except on the SSE stream paths (pure ASGI passthrough)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._plain = app
+        self._gzip = GZipMiddleware(app, minimum_size=1024)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("path") in _SSE_STREAM_PATHS:
+            await self._plain(scope, receive, send)
+            return
+        await self._gzip(scope, receive, send)
+
+
+api.add_middleware(SseAwareGZipMiddleware)
 
 # CORS is opt-in: the SPA is served from this same origin, so by default no
 # cross-origin access is granted. Set CORS_ALLOW_ORIGINS to enable an external
@@ -1247,16 +1272,36 @@ def meta() -> dict[str, str]:
     return {"disclaimer": DISCLAIMER_SHORT}
 
 
+class ImmutableStaticFiles(StaticFiles):
+    """Vite asset filenames are content-hashed, so a year-long immutable cache
+    is safe: any change ships under a new URL via the no-cache index.html."""
+
+    def file_response(self, *args: object, **kwargs: object) -> Response:
+        response = super().file_response(*args, **kwargs)  # type: ignore[arg-type]
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 if FRONTEND_DIST.exists():
-    api.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+    api.mount("/assets", ImmutableStaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
 
-@api.get("/{path:path}", include_in_schema=False)
-def frontend(path: str) -> FileResponse:
+# HEAD is explicit: FastAPI does not auto-derive it from GET, and uptime
+# monitors probe the root with HEAD — a 405 there reads as an outage.
+@api.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+def frontend(path: str) -> Response:
+    # Unknown API paths must be honest 404s, not a masked 200 serving the SPA
+    # shell — clients probing /api/* need machine-readable failures.
+    if path == "api" or path.startswith("api/"):
+        return JSONResponse({"detail": "Not found"}, status_code=404)
     index = FRONTEND_DIST / "index.html"
     if not index.exists():
         raise HTTPException(status_code=404, detail="Frontend build not found.")
     requested = FRONTEND_DIST / path
     if path and requested.is_file() and requested.resolve().is_relative_to(FRONTEND_DIST.resolve()):
-        return FileResponse(requested)
-    return FileResponse(index)
+        # Root-level public files (favicon, manifest, robots) are NOT
+        # content-hashed — cache briefly so icon updates propagate.
+        return FileResponse(requested, headers={"Cache-Control": "public, max-age=3600"})
+    # The shell references hashed assets; it must revalidate on every visit
+    # (no-cache still permits ETag 304s) or deploys would strand old clients.
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})

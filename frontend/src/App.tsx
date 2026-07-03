@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import Plot from "react-plotly.js";
+import { PlotLazy } from "./PlotLazy";
 import {
   Activity,
   ArrowRight,
@@ -78,10 +78,9 @@ import { CollapsibleCard } from "./CollapsibleCard";
 import { ComparisonPanel } from "./ComparisonPanel";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { KnowYourBook } from "./KnowYourBook";
-import { MethodologyDrawer } from "./MethodologyDrawer";
 import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
-import { RunProgress } from "./RunProgress";
+import { RunProgress, stageLabel } from "./RunProgress";
 import { SaveScenarioDialog } from "./SaveScenarioDialog";
 import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { useMediaQuery } from "./useMediaQuery";
@@ -103,6 +102,12 @@ import type {
   SsePipelineStage,
   TickerMetadata
 } from "./types";
+
+// Lazy so react-markdown + the methodology renderer stay out of the first-load
+// chunk; the drawer opens on click, so a one-frame Suspense gap is invisible.
+const MethodologyDrawer = lazy(() =>
+  import("./MethodologyDrawer").then((m) => ({ default: m.MethodologyDrawer }))
+);
 
 type WaterfallTrace = {
   type: "waterfall";
@@ -246,9 +251,41 @@ export default function App() {
   // Bumped only when a RUN completes (not adjustments or saved-scenario opens):
   // the effect below scrolls the fresh results into view.
   const [runSerial, setRunSerial] = useState(0);
+
+  // Dynamic tab title: the headline P&L + a scenario snippet while a result is
+  // on screen, so parked tabs stay identifiable. Reset when cleared.
+  useEffect(() => {
+    if (resultEnvelope) {
+      const pnl = formatPercent(resultEnvelope.result.portfolio_pnl.total_pnl);
+      const text = resultEnvelope.result.scenario_text.trim();
+      const snippet = text.length > 40 ? `${text.slice(0, 39).trimEnd()}…` : text;
+      document.title = `${pnl} · ${snippet} — nami`;
+    } else {
+      document.title = "nami — scenario explorer";
+    }
+  }, [resultEnvelope]);
+
+  // One polite live region announces run lifecycle to screen readers with the
+  // same stage labels the visual stepper shows. Completion announces the
+  // headline; errors are announced by the toast/notice components themselves.
+  const runAnnouncement = isRunning
+    ? cacheHit
+      ? "Loading cached result"
+      : (currentStage && stageLabel(currentStage)) || "Running scenario"
+    : resultEnvelope
+      ? `Scenario complete: modeled portfolio P&L ${formatPercent(
+          resultEnvelope.result.portfolio_pnl.total_pnl
+        )}`
+      : "";
   const resultsRef = useRef<HTMLElement>(null);
   const { push: pushToast } = useToasts();
   const methodologyDrawer = useMethodologyDrawer();
+  // Latched on first open: the lazy chunk (react-markdown) fetches on demand,
+  // then the drawer stays mounted so its accordion state survives close/reopen.
+  const [methodologyMounted, setMethodologyMounted] = useState(false);
+  useEffect(() => {
+    if (methodologyDrawer.isOpen) setMethodologyMounted(true);
+  }, [methodologyDrawer.isOpen]);
   const railDrawer = useOverlay();
   const commandPalette = useOverlay();
   const opsDrawer = useOverlay();
@@ -676,7 +713,7 @@ export default function App() {
       <div className="brand-block">
         <span className="brand-glyph" aria-hidden="true">波</span>
         <div className="brand-kicker">nami</div>
-        <h1>Scenario Explorer</h1>
+        <div className="brand-title">Scenario Explorer</div>
         <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
         <div className="brand-crest" aria-hidden="true" />
       </div>
@@ -702,9 +739,15 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      <a className="skip-link" href="#workbench">
+        Skip to workbench
+      </a>
+      <div className="visually-hidden" role="status" aria-live="polite">
+        {runAnnouncement}
+      </div>
       {!isMobileOrTablet ? <aside className="rail">{railContent}</aside> : null}
 
-      <section className="workbench">
+      <section className="workbench" id="workbench">
         <header className="topbar">
           <button
             className="methodology-btn rail-toggle-btn"
@@ -716,7 +759,7 @@ export default function App() {
           </button>
           <div>
             <p className="eyebrow">Live workbench</p>
-            <h2>Hypothetical stress workbench</h2>
+            <h1>Hypothetical stress workbench</h1>
           </div>
           <div className="status-strip">
             <span className="status-chip">{access?.access_mode ?? "loading"}</span>
@@ -938,6 +981,10 @@ export default function App() {
             />
           </CollapsibleCard>
         ) : null}
+
+        <footer className="app-footer">
+          nami — scenario explorer · educational/research use only
+        </footer>
       </section>
 
       {resultEnvelope?.reproducibility ? (
@@ -986,12 +1033,16 @@ export default function App() {
         busy={purgeBusy}
       />
 
-      <MethodologyDrawer
-        markdown={methodology}
-        isOpen={methodologyDrawer.isOpen}
-        initialSection={methodologyDrawer.initialSection}
-        onClose={methodologyDrawer.close}
-      />
+      {methodologyMounted ? (
+        <Suspense fallback={null}>
+          <MethodologyDrawer
+            markdown={methodology}
+            isOpen={methodologyDrawer.isOpen}
+            initialSection={methodologyDrawer.initialSection}
+            onClose={methodologyDrawer.close}
+          />
+        </Suspense>
+      ) : null}
 
       <CommandPalette
         isOpen={commandPalette.isOpen}
@@ -1059,22 +1110,29 @@ function AccessPanel({
           <LogOut size={15} /> Return to visitor mode
         </button>
       ) : (
-        <div className="unlock-row">
+        <form
+          className="unlock-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (passcode && !busy && access?.admin_available) void handleUnlock();
+          }}
+        >
           <input
             ref={passcodeInputRef}
             value={passcode}
             onChange={(event) => setPasscode(event.target.value)}
             type="password"
+            autoComplete="current-password"
             placeholder="Admin passcode"
             aria-label="Admin passcode"
             aria-invalid={Boolean(message)}
             aria-describedby={message ? "unlock-message" : undefined}
             disabled={!access?.admin_available || busy}
           />
-          <button onClick={handleUnlock} disabled={!passcode || busy || !access?.admin_available}>
+          <button type="submit" disabled={!passcode || busy || !access?.admin_available}>
             <Shield size={15} /> Unlock
           </button>
-        </div>
+        </form>
       )}
       {message ? <ErrorNotice variant="inline" error={message} id="unlock-message" /> : null}
     </section>
@@ -1380,6 +1438,13 @@ export function ScenarioPanel({
             className="scenario-text-input"
             value={scenarioText}
             onChange={(event) => setScenarioText(event.target.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !runDisabled) {
+                event.preventDefault();
+                onRun();
+              }
+            }}
+            enterKeyHint="go"
             disabled={!canEditText}
             placeholder="Describe a hypothetical market stress."
           />
@@ -1850,6 +1915,7 @@ export function ResultsPanel({
                   setNavInput(event.target.value);
                   if (parseNav(event.target.value) != null) setDisplayMode("usd");
                 }}
+                onFocus={(event) => event.currentTarget.select()}
                 placeholder="e.g. $1,000,000"
                 inputMode="decimal"
                 aria-label="Portfolio value (USD) for the dollar view"
@@ -1972,46 +2038,48 @@ export function ResultsPanel({
           </div>
         ) : null}
         <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
-        <Plot
-          data={[
-            {
-              type: "waterfall",
-              orientation: "v",
-              x: waterfall.x,
-              y: waterfall.y,
-              measure: waterfall.measure,
-              text: waterfall.text,
-              hovertext: waterfall.hoverText,
-              hovertemplate: "%{hovertext}<extra></extra>",
-              textposition: "outside",
-              connector: { line: { color: theme.connector } },
-              increasing: { marker: { color: theme.up } },
-              decreasing: { marker: { color: theme.down } },
-              totals: { marker: { color: theme.total } }
-            } as WaterfallTrace
-          ]}
-          layout={{
-            autosize: true,
-            height: chartHeight,
-            paper_bgcolor: "rgba(0,0,0,0)",
-            plot_bgcolor: "rgba(0,0,0,0)",
-            font: { color: theme.text, family: theme.fontMono },
-            margin: { l: 42, r: 18, t: 20, b: isPhone ? 110 : 70 },
-            yaxis: {
-              tickformat: showDollars ? "$,.0f" : ".1%",
-              gridcolor: theme.grid
-            },
-            xaxis: {
-              tickangle: isPhone ? -90 : -35,
-              tickfont: isPhone ? { size: 9 } : undefined,
-              automargin: true
-            },
-            showlegend: false
-          }}
-          config={{ displayModeBar: false, responsive: true }}
-          useResizeHandler
-          className="plot"
-        />
+        <Suspense fallback={<div className="skeleton-block" style={{ height: chartHeight }} />}>
+          <PlotLazy
+            data={[
+              {
+                type: "waterfall",
+                orientation: "v",
+                x: waterfall.x,
+                y: waterfall.y,
+                measure: waterfall.measure,
+                text: waterfall.text,
+                hovertext: waterfall.hoverText,
+                hovertemplate: "%{hovertext}<extra></extra>",
+                textposition: "outside",
+                connector: { line: { color: theme.connector } },
+                increasing: { marker: { color: theme.up } },
+                decreasing: { marker: { color: theme.down } },
+                totals: { marker: { color: theme.total } }
+              } as WaterfallTrace
+            ]}
+            layout={{
+              autosize: true,
+              height: chartHeight,
+              paper_bgcolor: "rgba(0,0,0,0)",
+              plot_bgcolor: "rgba(0,0,0,0)",
+              font: { color: theme.text, family: theme.fontMono },
+              margin: { l: 42, r: 18, t: 20, b: isPhone ? 110 : 70 },
+              yaxis: {
+                tickformat: showDollars ? "$,.0f" : ".1%",
+                gridcolor: theme.grid
+              },
+              xaxis: {
+                tickangle: isPhone ? -90 : -35,
+                tickfont: isPhone ? { size: 9 } : undefined,
+                automargin: true
+              },
+              showlegend: false
+            }}
+            config={{ displayModeBar: false, responsive: true }}
+            useResizeHandler
+            className="plot"
+          />
+        </Suspense>
       </div>
 
       <ExposureBreakdown result={result} />

@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ResultsPanel, ScenarioPanel } from "./App";
 import type { AccessResponse, ScenarioResult, ScenarioRunResponse } from "./types";
 
-vi.mock("react-plotly.js", () => ({
-  default: () => <div data-testid="plot" />
+vi.mock("./PlotLazy", () => ({
+  PlotLazy: () => <div data-testid="plot" />
 }));
 
 vi.mock("./api", async () => {

@@ -1,0 +1,13 @@
+{
+  "name": "nami — scenario explorer",
+  "short_name": "nami",
+  "description": "LLM-grounded hypothetical stress explorer for equity portfolios. Educational/research only.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1b2b",
+  "theme_color": "#0b1b2b",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}
