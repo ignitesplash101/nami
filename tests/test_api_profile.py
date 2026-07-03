@@ -1,4 +1,5 @@
-"""Free book-profile endpoint — access rules, math wiring, error mapping."""
+"""Free engine-only endpoints (book profile, events replay) — access rules,
+math wiring, error mapping."""
 
 from __future__ import annotations
 
@@ -122,3 +123,41 @@ def test_transient_market_failure_maps_to_coded_503(client, monkeypatch):
     resp = client.post("/api/portfolios/profile", json={"portfolio_key": "us_tech_growth"})
     assert resp.status_code == 503
     assert resp.headers.get("X-Error-Code") == "unavailable"
+
+
+def _patch_events_matrix(monkeypatch) -> None:
+    # Real registry ids so compute_events_replay's load_events() lookup resolves.
+    matrix = pd.DataFrame(
+        {
+            "SPY": [-0.30, -0.10],
+            "ACWI": [-0.20, -0.05],
+            "GLD": [float("nan"), 0.02],
+        },
+        index=["covid-crash-2020", "q4-trade-war-2018"],
+    )
+    monkeypatch.setattr("app.llm.scenario.get_event_returns_matrix", lambda: matrix)
+
+
+def test_visitor_sample_events_replay(client, monkeypatch):
+    _patch_profile_market(monkeypatch)
+    _patch_events_matrix(monkeypatch)
+    resp = client.post("/api/portfolios/events-replay", json={"portfolio_key": "us_tech_growth"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["n_factors"] == 3
+    rows = body["per_event"]
+    assert [row["event_id"] for row in rows] == ["covid-crash-2020", "q4-trade-war-2018"]
+    # uniform 0.5 betas, weights sum 1: pnl = 0.5 * sum(non-NaN factor returns)
+    assert rows[0]["replay_pnl"] == pytest.approx(0.5 * (-0.30 - 0.20))
+    assert rows[0]["n_factors_covered"] == 2  # GLD NaN excluded
+    assert rows[1]["replay_pnl"] == pytest.approx(0.5 * (-0.10 - 0.05 + 0.02))
+    assert rows[1]["n_factors_covered"] == 3
+    assert rows[0]["replay_pnl"] <= rows[1]["replay_pnl"]  # worst-first
+    assert rows[0]["name"] and rows[0]["start_date"] < rows[0]["end_date"]
+
+
+def test_visitor_custom_events_replay_forbidden(client, monkeypatch):
+    _patch_profile_market(monkeypatch)
+    _patch_events_matrix(monkeypatch)
+    resp = client.post("/api/portfolios/events-replay", json={"portfolio_holdings": {"AAPL": 1.0}})
+    assert resp.status_code == 403

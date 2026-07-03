@@ -181,6 +181,36 @@ class BookProfileResponse(BaseModel):
     n_factors: int
 
 
+class EventsReplayRequest(BaseModel):
+    """All-events replay of the current book — same portfolio-resolution rules
+    as a run (visitors: sample keys only; admins may send custom holdings)."""
+
+    model_config = ConfigDict(extra="forbid")
+    portfolio_key: str | None = None
+    portfolio_name: str | None = None
+    portfolio_holdings: dict[str, float] | None = None
+
+
+class EventReplayRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_id: str
+    name: str
+    start_date: str
+    end_date: str
+    window_calendar_days: int
+    tags: list[str]
+    replay_pnl: float
+    n_factors_covered: int
+
+
+class EventsReplayResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    portfolio_name: str
+    as_of: str
+    n_factors: int
+    per_event: list[EventReplayRow]
+
+
 class AnalogEventResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str

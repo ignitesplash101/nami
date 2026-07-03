@@ -366,6 +366,28 @@ drift is part of the message, not a bug). It is a historical replay, not a forec
 
 ---
 
+## Event replay screen (all events, free)
+
+The per-result analog replay generalizes to the **full registry** as a free pre-scenario
+screen: every historical event's realized factor returns pushed through the **current
+book's** betas — the identical `analog_replay_pnl` math — sorted worst-first, with each
+event's window length and factor coverage disclosed (a 2000 event covers fewer of the 26
+factors than a 2020 one; NaN holes contribute zero and are excluded from the coverage
+count). "Which historical episodes hurt this book most, through today's factor structure?"
+answered with zero LLM calls, before any paid run.
+
+The same honesty framing as the per-result strip applies, plus one distinction worth
+naming: this screen uses **current** betas on historical windows (the question is about
+today's book), whereas the engine-replay validation harness uses **vintage** betas (its
+question is about engine accuracy). Factor-model only, no idiosyncratic or periphery
+effects — a severity screen, not a backtest and not a forecast. Operationally, the
+events × factors return matrix is cached in-process per registry version: historical
+windows never change, and deep-vintage batches cannot live in the market-data cache
+(pre-launch ETFs make them incomplete batches, which are never cached), so recomputing
+the matrix on every request would re-fire dozens of live provider downloads.
+
+---
+
 ## Idiosyncratic dispersion band
 
 The headline P&L is a factor-driven point estimate; the same regression that produces

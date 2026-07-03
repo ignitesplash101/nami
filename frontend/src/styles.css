@@ -726,6 +726,17 @@ input[type="range"]::-moz-range-thumb {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.events-replay td.loss {
+  color: var(--down);
+}
+.events-replay td.gain {
+  color: var(--up);
+}
+.events-replay-window {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 /* First-run skeleton while the initial scenario streams. */
 .results-skeleton {

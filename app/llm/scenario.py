@@ -42,7 +42,7 @@ from app.factors.regression import (
 )
 from app.factors.shocks import analog_replay_pnl, portfolio_idio_band, portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
-from app.factors.warm_cache import get_factor_returns_with_history
+from app.factors.warm_cache import get_event_returns_matrix, get_factor_returns_with_history
 from app.llm.adjust_validation import validate_factor_overrides
 from app.llm.gemini_client import GeminiClient
 from app.llm.prompts import PROMPT_VERSION
@@ -239,6 +239,70 @@ def _estimate_betas_cash_aware(
     return betas, stats
 
 
+def _book_betas(
+    book: Portfolio, config: Config
+) -> tuple[pd.DataFrame, dict[str, TickerRegressionStats], str]:
+    """Shared LLM-free market path for the pre-scenario surfaces (profile,
+    events replay): weekly prices → USD conversion → warm factor cache →
+    cash-aware ridge. Returns (betas, stats, as_of_iso)."""
+    prices = fetch_weekly_prices(_market_tickers(book), lookback_weeks=config.beta_lookback_weeks)
+    ticker_returns = convert_weekly_returns_to_usd(compute_weekly_returns(prices))
+    factor_returns, _history = get_factor_returns_with_history(
+        lookback_weeks=config.beta_lookback_weeks
+    )
+    betas, stats = _estimate_betas_cash_aware(
+        book, config=config, factor_returns=factor_returns, ticker_returns=ticker_returns
+    )
+    return betas, stats, str(pd.Timestamp(ticker_returns.index.max()).date())
+
+
+def compute_events_replay(
+    portfolio: str | Portfolio,
+    *,
+    config: Config | None = None,
+) -> dict[str, object]:
+    """LLM-free all-events replay: every registry event through the CURRENT book.
+
+    Each event's realized factor returns are pushed through the book's current
+    betas via `analog_replay_pnl` — the same math as a result's analog-replay
+    strip, generalized from the selected analogs to the full registry and
+    available before any paid run. Rows are sorted worst-first. Factor-model
+    only (no periphery/idiosyncratic effects), current betas on historical
+    windows — a severity screen, not a backtest and not a forecast.
+    """
+    config = config or load_config()
+    book = get_portfolio(portfolio) if isinstance(portfolio, str) else portfolio
+
+    betas, _stats, as_of = _book_betas(book, config)
+    events = load_events()
+    matrix = get_event_returns_matrix()
+
+    per_event: list[dict[str, object]] = []
+    for event_id, row in matrix.iterrows():
+        event = events[str(event_id)]
+        pnl, covered = analog_replay_pnl(book, betas, row.to_dict())
+        per_event.append(
+            {
+                "event_id": event.id,
+                "name": event.name,
+                "start_date": event.start_date.isoformat(),
+                "end_date": event.end_date.isoformat(),
+                "window_calendar_days": (event.end_date - event.start_date).days,
+                "tags": list(event.tags),
+                "replay_pnl": float(pnl),
+                "n_factors_covered": int(covered),
+            }
+        )
+    per_event.sort(key=lambda r: r["replay_pnl"])  # worst-first
+
+    return {
+        "portfolio_name": book.name,
+        "as_of": as_of,
+        "n_factors": int(betas.shape[1]),
+        "per_event": per_event,
+    }
+
+
 def compute_book_profile(
     portfolio: str | Portfolio,
     *,
@@ -256,14 +320,7 @@ def compute_book_profile(
     config = config or load_config()
     book = get_portfolio(portfolio) if isinstance(portfolio, str) else portfolio
 
-    prices = fetch_weekly_prices(_market_tickers(book), lookback_weeks=config.beta_lookback_weeks)
-    ticker_returns = convert_weekly_returns_to_usd(compute_weekly_returns(prices))
-    factor_returns, _history = get_factor_returns_with_history(
-        lookback_weeks=config.beta_lookback_weeks
-    )
-    betas, stats = _estimate_betas_cash_aware(
-        book, config=config, factor_returns=factor_returns, ticker_returns=ticker_returns
-    )
+    betas, stats, as_of = _book_betas(book, config)
 
     weights = pd.Series(book.holdings, dtype=float).reindex(betas.index).fillna(0.0)
     exposures = betas.mul(weights, axis=0).sum(axis=0)
@@ -288,7 +345,7 @@ def compute_book_profile(
     ]
     return {
         "portfolio_name": book.name,
-        "as_of": str(pd.Timestamp(ticker_returns.index.max()).date()),
+        "as_of": as_of,
         "factor_exposures": {str(f): float(v) for f, v in exposures.items()},
         "per_name": per_name,
         "idio_band_weekly": idio_band_weekly,

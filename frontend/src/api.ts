@@ -2,6 +2,7 @@ import type {
   AccessResponse,
   AuditEntry,
   BookProfile,
+  EventsReplay,
   FactorMetadata,
   PortfolioSnapshotRecord,
   PortfolioValidationResponse,
@@ -231,6 +232,17 @@ export function profileBook(payload: {
   portfolio_holdings?: Record<string, number>;
 }): Promise<BookProfile> {
   return requestJson<BookProfile>("/api/portfolios/profile", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function replayEvents(payload: {
+  portfolio_key?: string;
+  portfolio_name?: string;
+  portfolio_holdings?: Record<string, number>;
+}): Promise<EventsReplay> {
+  return requestJson<EventsReplay>("/api/portfolios/events-replay", {
     method: "POST",
     body: JSON.stringify(payload)
   });

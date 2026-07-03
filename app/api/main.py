@@ -5,7 +5,7 @@ import contextvars
 import json
 import queue
 import threading
-from collections.abc import AsyncIterator, Generator
+from collections.abc import AsyncIterator, Callable, Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import date as date_type
@@ -26,6 +26,8 @@ from app.api.schemas import (
     AuditEntry,
     BookProfileRequest,
     BookProfileResponse,
+    EventsReplayRequest,
+    EventsReplayResponse,
     FactorMetadataResponse,
     NarrativeDecompositionRequest,
     Permissions,
@@ -80,6 +82,7 @@ from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import (
     adjust_scenario_shocks,
     compute_book_profile,
+    compute_events_replay,
     compute_scenario_cache_key,
     run_scenario,
 )
@@ -338,7 +341,7 @@ def _resolve_scenario_text(body: ScenarioRunRequest, mode: AccessMode) -> str:
 
 
 def _resolve_portfolio(
-    body: ScenarioRunRequest | BookProfileRequest, mode: AccessMode
+    body: ScenarioRunRequest | BookProfileRequest | EventsReplayRequest, mode: AccessMode
 ) -> Portfolio | str:
     if mode == "visitor":
         if body.portfolio_key not in SAMPLE_PORTFOLIOS:
@@ -511,13 +514,15 @@ def validate_portfolio(body: PortfolioValidationRequest) -> PortfolioValidationR
     )
 
 
-@api.post("/api/portfolios/profile", response_model=BookProfileResponse)
-@limiter.limit(llm_limit)
-def book_profile_endpoint(body: BookProfileRequest, request: Request) -> BookProfileResponse:
-    """Free (zero-Gemini) pre-scenario book profile: factor exposures, per-name
-    fit quality, and the 1-week idio dispersion floor. Rate-limited like the
-    paid endpoints because it fans out to the market-data provider, but it is
-    deliberately NOT metered — no LLM call ever happens on this path."""
+def _run_free_engine_endpoint(
+    body: BookProfileRequest | EventsReplayRequest,
+    request: Request,
+    compute: Callable[[Portfolio | str], dict],
+) -> dict:
+    """Shared plumbing for the free (zero-Gemini) engine-only endpoints (book
+    profile, events replay): visitor field guard, portfolio resolution, and the
+    /run-mirroring error mapping. Rate limiting stays on the endpoint decorators;
+    these paths are deliberately NOT metered — no LLM call ever happens here."""
     mode = access_mode_for_request(request)
     if mode == "visitor" and (
         body.portfolio_holdings is not None or body.portfolio_name is not None
@@ -528,7 +533,7 @@ def book_profile_endpoint(body: BookProfileRequest, request: Request) -> BookPro
         )
     portfolio = _resolve_portfolio(body, mode)
     try:
-        profile = compute_book_profile(portfolio)
+        return compute(portfolio)
     except MarkingError as exc:
         # FX series unavailable for a non-USD listing — fail closed like a run.
         raise http_error(503, "marking_unavailable", str(exc)) from exc
@@ -538,7 +543,22 @@ def book_profile_endpoint(body: BookProfileRequest, request: Request) -> BookPro
         # Remaining RuntimeErrors are transient market-data failures; MUST stay
         # LAST (the subclasses above take their own statuses).
         raise http_error(503, "unavailable", str(exc)) from exc
-    return BookProfileResponse(**profile)  # type: ignore[arg-type]
+
+
+@api.post("/api/portfolios/profile", response_model=BookProfileResponse)
+@limiter.limit(llm_limit)
+def book_profile_endpoint(body: BookProfileRequest, request: Request) -> BookProfileResponse:
+    """Free (zero-Gemini) pre-scenario book profile: factor exposures, per-name
+    fit quality, and the 1-week idio dispersion floor."""
+    return BookProfileResponse(**_run_free_engine_endpoint(body, request, compute_book_profile))
+
+
+@api.post("/api/portfolios/events-replay", response_model=EventsReplayResponse)
+@limiter.limit(llm_limit)
+def events_replay_endpoint(body: EventsReplayRequest, request: Request) -> EventsReplayResponse:
+    """Free (zero-Gemini) all-events replay: every registry event's realized
+    factor moves through the current book's betas, sorted worst-first."""
+    return EventsReplayResponse(**_run_free_engine_endpoint(body, request, compute_events_replay))
 
 
 @api.get("/api/scenarios/samples", response_model=list[SampleScenarioResponse])

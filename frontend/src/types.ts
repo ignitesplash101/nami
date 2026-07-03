@@ -363,6 +363,26 @@ export interface BookProfile {
   n_factors: number;
 }
 
+// --- Free all-events replay — mirrors EventsReplayResponse ---
+
+export interface EventReplayRow {
+  event_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  window_calendar_days: number;
+  tags: string[];
+  replay_pnl: number;
+  n_factors_covered: number;
+}
+
+export interface EventsReplay {
+  portfolio_name: string;
+  as_of: string;
+  n_factors: number;
+  per_event: EventReplayRow[];
+}
+
 // --- Operations console (admin) — mirrors app/api/schemas.py ---
 
 export interface StatusResponse {

@@ -31,6 +31,7 @@ import {
   lock,
   profileBook,
   purgeAllData,
+  replayEvents,
   runScenarioStream,
   toApiError,
   unlock,
@@ -85,6 +86,7 @@ import type {
   AnalogEvent,
   AttributionMethod,
   BookProfile,
+  EventsReplay,
   FactorMetadataMap,
   PortfolioSnapshotRecord,
   RiskDiagnostic as RiskDiagnosticRecord,
@@ -182,10 +184,12 @@ export default function App() {
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
   // Optional benchmark ticker for a custom book (sample books carry their own).
   const [customBenchmark, setCustomBenchmark] = useState("");
-  // Free pre-scenario book profile (zero LLM). Cleared whenever the book
-  // selection changes so a stale profile can't describe a different portfolio.
+  // Free pre-scenario surfaces (zero LLM). Cleared whenever the book
+  // selection changes so stale analytics can't describe a different portfolio.
   const [bookProfile, setBookProfile] = useState<BookProfile | null>(null);
   const [profileBusy, setProfileBusy] = useState(false);
+  const [eventsReplay, setEventsReplay] = useState<EventsReplay | null>(null);
+  const [replayBusy, setReplayBusy] = useState(false);
   // Default every book to a $100k notional value so the dollar view (P&L,
   // stressed values, position table) is populated out-of-the-box for everyone,
   // incl. visitors. Pure client-side notional scaling — NOT mark-to-market.
@@ -400,28 +404,44 @@ export default function App() {
 
   // Normalize any failure into an ApiError; cancelled runs stay silent and a
   // forbidden response triggers an access re-check (catches stale admin cookies).
-  // A profile describes exactly one book — drop it whenever the selection or
-  // the custom holdings change so a stale profile can't describe another book.
+  // The free analytics describe exactly one book — drop them whenever the
+  // selection or the custom holdings change so a stale card can't describe
+  // another book.
   useEffect(() => {
     setBookProfile(null);
+    setEventsReplay(null);
   }, [portfolioKey, portfolioMode, customRows, customUnits]);
+
+  function freeEnginePayload() {
+    return portfolioMode === "sample"
+      ? { portfolio_key: portfolioKey }
+      : {
+          portfolio_holdings: holdingsFromRows(customRows),
+          portfolio_name: customName || undefined
+        };
+  }
 
   async function handleProfileBook() {
     setProfileBusy(true);
     setError(null);
     try {
-      const payload =
-        portfolioMode === "sample"
-          ? { portfolio_key: portfolioKey }
-          : {
-              portfolio_holdings: holdingsFromRows(customRows),
-              portfolio_name: customName || undefined
-            };
-      setBookProfile(await profileBook(payload));
+      setBookProfile(await profileBook(freeEnginePayload()));
     } catch (exc) {
       reportError(exc);
     } finally {
       setProfileBusy(false);
+    }
+  }
+
+  async function handleEventsReplay() {
+    setReplayBusy(true);
+    setError(null);
+    try {
+      setEventsReplay(await replayEvents(freeEnginePayload()));
+    } catch (exc) {
+      reportError(exc);
+    } finally {
+      setReplayBusy(false);
     }
   }
 
@@ -785,9 +805,12 @@ export default function App() {
           bookProfile={bookProfile}
           profileBusy={profileBusy}
           onProfileBook={handleProfileBook}
+          eventsReplay={eventsReplay}
+          replayBusy={replayBusy}
+          onEventsReplay={handleEventsReplay}
           profileUnavailableReason={
             portfolioMode === "custom" && customUnits === "shares"
-              ? "Book profile needs weights — switch the custom editor to Weights."
+              ? "The free book analytics need weights — switch the custom editor to Weights."
               : null
           }
           canDecompose={Boolean(isAdmin && resultEnvelope)}
@@ -1405,6 +1428,9 @@ export function ResultsPanel({
   bookProfile = null,
   profileBusy = false,
   onProfileBook,
+  eventsReplay = null,
+  replayBusy = false,
+  onEventsReplay,
   profileUnavailableReason = null,
   canDecompose,
   isDecomposing,
@@ -1431,10 +1457,13 @@ export function ResultsPanel({
   scrollRef?: RefObject<HTMLElement>;
   sampleScenarios?: SampleScenario[];
   onSeedScenario?: (key: string) => void;
-  // Free pre-scenario book profile (renders in the empty state only).
+  // Free pre-scenario analytics (render in the empty state only).
   bookProfile?: BookProfile | null;
   profileBusy?: boolean;
   onProfileBook?: () => void;
+  eventsReplay?: EventsReplay | null;
+  replayBusy?: boolean;
+  onEventsReplay?: () => void;
   profileUnavailableReason?: string | null;
   canDecompose: boolean;
   isDecomposing: boolean;
@@ -1488,22 +1517,35 @@ export function ResultsPanel({
               ))}
             </div>
           ) : null}
-          {onProfileBook ? (
+          {onProfileBook || onEventsReplay ? (
             <div className="book-profile-cta">
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={onProfileBook}
-                disabled={profileBusy || Boolean(profileUnavailableReason)}
-              >
-                {profileBusy ? "Profiling book…" : "Profile this book — free, no LLM"}
-              </button>
+              {onProfileBook ? (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={onProfileBook}
+                  disabled={profileBusy || Boolean(profileUnavailableReason)}
+                >
+                  {profileBusy ? "Profiling book…" : "Profile this book — free, no LLM"}
+                </button>
+              ) : null}
+              {onEventsReplay ? (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={onEventsReplay}
+                  disabled={replayBusy || Boolean(profileUnavailableReason)}
+                >
+                  {replayBusy ? "Replaying events…" : "Replay every historical event — free, no LLM"}
+                </button>
+              ) : null}
               {profileUnavailableReason ? (
                 <span className="field-note">{profileUnavailableReason}</span>
               ) : null}
             </div>
           ) : null}
           {bookProfile ? <BookProfileCard profile={bookProfile} factorMeta={factorMeta} /> : null}
+          {eventsReplay ? <EventsReplayCard replay={eventsReplay} /> : null}
         </div>
       </section>
     );
@@ -2391,6 +2433,71 @@ function BookProfileCard({
                 <td className="num">{row.n_obs ?? "—"}</td>
                 <td className="num">
                   {row.idio_vol_weekly != null ? formatPercent(row.idio_vol_weekly) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScroll>
+    </section>
+  );
+}
+
+function EventsReplayCard({ replay }: { replay: EventsReplay }) {
+  const exportCsv = () =>
+    downloadCsv(
+      csvFilename(replay.portfolio_name, "all-events", replay.as_of, "events-replay"),
+      ["event", "start", "end", "days", "modeled_pnl", "factors_covered", "tags"],
+      replay.per_event.map((row) => [
+        row.name,
+        row.start_date,
+        row.end_date,
+        row.window_calendar_days,
+        row.replay_pnl,
+        row.n_factors_covered,
+        row.tags.join("|")
+      ])
+    );
+  return (
+    <section className="result-card book-profile events-replay" aria-label="Historical event replay">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Event replay — engine only, no LLM</p>
+          <h3>
+            {replay.per_event.length} historical events × {replay.portfolio_name}
+          </h3>
+        </div>
+        <ExportCsvButton label="Export event replay as CSV" onClick={exportCsv} />
+      </div>
+      <p className="hint">
+        Each event's realized factor moves pushed through this book's current betas (as of{" "}
+        {replay.as_of}), worst first. Factor-model only — no idiosyncratic or periphery effects,
+        current betas on historical windows. A severity screen, not a backtest and not a forecast.
+      </p>
+      <TableScroll>
+        <table>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Window</th>
+              <th className="num">Days</th>
+              <th className="num">Modeled P&L</th>
+              <th className="num">Coverage</th>
+            </tr>
+          </thead>
+          <tbody>
+            {replay.per_event.map((row) => (
+              <tr key={row.event_id}>
+                <td>{row.name}</td>
+                <td className="events-replay-window">
+                  {row.start_date} → {row.end_date}
+                </td>
+                <td className="num">{row.window_calendar_days}</td>
+                <td className={`num ${row.replay_pnl < 0 ? "loss" : "gain"}`}>
+                  {formatPercent(row.replay_pnl)}
+                </td>
+                <td className="num">
+                  {row.n_factors_covered}/{replay.n_factors}
                 </td>
               </tr>
             ))}
