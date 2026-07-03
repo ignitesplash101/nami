@@ -534,3 +534,23 @@ export function buildWaterfallDataDollars(
     })
   };
 }
+
+/** One row of the free book profile's exposure list. */
+export interface BookExposureRow {
+  key: string;
+  label: string;
+  exposure: number;
+}
+
+/** Top-|exposure| portfolio betas (Σ weight × beta per factor) for the free
+ *  book profile — presentation-sorted, engine values untouched. */
+export function buildBookProfileRows(
+  exposures: Record<string, number>,
+  labelFor: (key: string) => string,
+  limit = 10
+): BookExposureRow[] {
+  return Object.entries(exposures)
+    .map(([key, exposure]) => ({ key, label: labelFor(key), exposure }))
+    .sort((a, b) => Math.abs(b.exposure) - Math.abs(a.exposure))
+    .slice(0, limit);
+}

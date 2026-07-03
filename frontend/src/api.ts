@@ -1,6 +1,7 @@
 import type {
   AccessResponse,
   AuditEntry,
+  BookProfile,
   FactorMetadata,
   PortfolioSnapshotRecord,
   PortfolioValidationResponse,
@@ -222,6 +223,17 @@ export async function getTickerMetadata(tickers?: string[]): Promise<TickerMetad
     `/api/portfolios/ticker-metadata${query}`
   );
   return body.ticker_meta;
+}
+
+export function profileBook(payload: {
+  portfolio_key?: string;
+  portfolio_name?: string;
+  portfolio_holdings?: Record<string, number>;
+}): Promise<BookProfile> {
+  return requestJson<BookProfile>("/api/portfolios/profile", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
 export function validatePortfolio(

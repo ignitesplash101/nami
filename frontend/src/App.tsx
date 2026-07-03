@@ -29,6 +29,7 @@ import {
   getSampleScenarios,
   getTickerMetadata,
   lock,
+  profileBook,
   purgeAllData,
   runScenarioStream,
   toApiError,
@@ -45,6 +46,7 @@ import { nextSessionExpired, useAccessWatch } from "./useAccessWatch";
 import {
   buildAnalogReplayRows,
   buildPositionValuations,
+  buildBookProfileRows,
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
@@ -82,6 +84,7 @@ import type {
   AccessResponse,
   AnalogEvent,
   AttributionMethod,
+  BookProfile,
   FactorMetadataMap,
   PortfolioSnapshotRecord,
   RiskDiagnostic as RiskDiagnosticRecord,
@@ -179,6 +182,10 @@ export default function App() {
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
   // Optional benchmark ticker for a custom book (sample books carry their own).
   const [customBenchmark, setCustomBenchmark] = useState("");
+  // Free pre-scenario book profile (zero LLM). Cleared whenever the book
+  // selection changes so a stale profile can't describe a different portfolio.
+  const [bookProfile, setBookProfile] = useState<BookProfile | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
   // Default every book to a $100k notional value so the dollar view (P&L,
   // stressed values, position table) is populated out-of-the-box for everyone,
   // incl. visitors. Pure client-side notional scaling — NOT mark-to-market.
@@ -393,6 +400,31 @@ export default function App() {
 
   // Normalize any failure into an ApiError; cancelled runs stay silent and a
   // forbidden response triggers an access re-check (catches stale admin cookies).
+  // A profile describes exactly one book — drop it whenever the selection or
+  // the custom holdings change so a stale profile can't describe another book.
+  useEffect(() => {
+    setBookProfile(null);
+  }, [portfolioKey, portfolioMode, customRows, customUnits]);
+
+  async function handleProfileBook() {
+    setProfileBusy(true);
+    setError(null);
+    try {
+      const payload =
+        portfolioMode === "sample"
+          ? { portfolio_key: portfolioKey }
+          : {
+              portfolio_holdings: holdingsFromRows(customRows),
+              portfolio_name: customName || undefined
+            };
+      setBookProfile(await profileBook(payload));
+    } catch (exc) {
+      reportError(exc);
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
   function reportError(exc: unknown, action: "run" | "decompose" | "boot" | null = null) {
     const err = toApiError(exc);
     if (err.kind === "cancelled") return;
@@ -750,6 +782,14 @@ export default function App() {
           scrollRef={resultsRef}
           sampleScenarios={scenarios}
           onSeedScenario={handleScenarioSeed}
+          bookProfile={bookProfile}
+          profileBusy={profileBusy}
+          onProfileBook={handleProfileBook}
+          profileUnavailableReason={
+            portfolioMode === "custom" && customUnits === "shares"
+              ? "Book profile needs weights — switch the custom editor to Weights."
+              : null
+          }
           canDecompose={Boolean(isAdmin && resultEnvelope)}
           isDecomposing={isDecomposing}
           decomposeProgress={decomposeProgress}
@@ -1362,6 +1402,10 @@ export function ResultsPanel({
   scrollRef,
   sampleScenarios = [],
   onSeedScenario,
+  bookProfile = null,
+  profileBusy = false,
+  onProfileBook,
+  profileUnavailableReason = null,
   canDecompose,
   isDecomposing,
   decomposeProgress,
@@ -1387,6 +1431,11 @@ export function ResultsPanel({
   scrollRef?: RefObject<HTMLElement>;
   sampleScenarios?: SampleScenario[];
   onSeedScenario?: (key: string) => void;
+  // Free pre-scenario book profile (renders in the empty state only).
+  bookProfile?: BookProfile | null;
+  profileBusy?: boolean;
+  onProfileBook?: () => void;
+  profileUnavailableReason?: string | null;
   canDecompose: boolean;
   isDecomposing: boolean;
   decomposeProgress: { done: number; total: number } | null;
@@ -1439,6 +1488,22 @@ export function ResultsPanel({
               ))}
             </div>
           ) : null}
+          {onProfileBook ? (
+            <div className="book-profile-cta">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={onProfileBook}
+                disabled={profileBusy || Boolean(profileUnavailableReason)}
+              >
+                {profileBusy ? "Profiling book…" : "Profile this book — free, no LLM"}
+              </button>
+              {profileUnavailableReason ? (
+                <span className="field-note">{profileUnavailableReason}</span>
+              ) : null}
+            </div>
+          ) : null}
+          {bookProfile ? <BookProfileCard profile={bookProfile} factorMeta={factorMeta} /> : null}
         </div>
       </section>
     );
@@ -2259,6 +2324,79 @@ function ScenarioReadout({
           </span>
         </div>
       </div>
+    </section>
+  );
+}
+
+function BookProfileCard({
+  profile,
+  factorMeta
+}: {
+  profile: BookProfile;
+  factorMeta: FactorMetadataMap;
+}) {
+  const rows = buildBookProfileRows(
+    profile.factor_exposures,
+    (key) => factorDisplayName(factorMeta, key),
+    10
+  );
+  const maxAbs = Math.max(...rows.map((row) => Math.abs(row.exposure)), 1e-9);
+  return (
+    <section className="result-card book-profile" aria-label="Book profile">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Book profile — engine only, no LLM</p>
+          <h3>{profile.portfolio_name}</h3>
+        </div>
+        <span className="muted book-profile-asof">
+          as of {profile.as_of} · {profile.n_factors} factors
+        </span>
+      </div>
+      <div className="exposure-bars" role="list" aria-label="Portfolio factor exposures">
+        {rows.map((row) => (
+          <div key={row.key} className="exposure-bar-row" role="listitem">
+            <span className="exposure-bar-label">{row.label}</span>
+            <span className="exposure-bar-track" aria-hidden="true">
+              <span
+                className={`exposure-bar-fill ${row.exposure < 0 ? "neg" : "pos"}`}
+                style={{ width: `${(Math.abs(row.exposure) / maxAbs) * 100}%` }}
+              />
+            </span>
+            <span className="exposure-bar-value">{row.exposure.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="hint">
+        Portfolio beta per factor (Σ weight × beta; top {rows.length} of {profile.n_factors} by
+        magnitude). ±{formatPercent(profile.idio_band_weekly)} weekly idio — a dispersion floor,
+        not a confidence interval.
+      </p>
+      <TableScroll>
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th className="num">Weight</th>
+              <th className="num">R² adj</th>
+              <th className="num">Weeks</th>
+              <th className="num">Idio vol (wk)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {profile.per_name.map((row) => (
+              <tr key={row.ticker}>
+                <td>{row.ticker}</td>
+                <td className="num">{formatPercent(row.weight, 1)}</td>
+                <td className="num">{row.r2_adj != null ? row.r2_adj.toFixed(2) : "—"}</td>
+                <td className="num">{row.n_obs ?? "—"}</td>
+                <td className="num">
+                  {row.idio_vol_weekly != null ? formatPercent(row.idio_vol_weekly) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableScroll>
     </section>
   );
 }

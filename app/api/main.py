@@ -24,6 +24,8 @@ from app.api.schemas import (
     AccessResponse,
     AnalogEventResponse,
     AuditEntry,
+    BookProfileRequest,
+    BookProfileResponse,
     FactorMetadataResponse,
     NarrativeDecompositionRequest,
     Permissions,
@@ -77,6 +79,7 @@ from app.llm.narrative_shapley import compute_narrative_shapley
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import (
     adjust_scenario_shocks,
+    compute_book_profile,
     compute_scenario_cache_key,
     run_scenario,
 )
@@ -334,7 +337,9 @@ def _resolve_scenario_text(body: ScenarioRunRequest, mode: AccessMode) -> str:
     raise HTTPException(status_code=400, detail="Scenario text is required.")
 
 
-def _resolve_portfolio(body: ScenarioRunRequest, mode: AccessMode) -> Portfolio | str:
+def _resolve_portfolio(
+    body: ScenarioRunRequest | BookProfileRequest, mode: AccessMode
+) -> Portfolio | str:
     if mode == "visitor":
         if body.portfolio_key not in SAMPLE_PORTFOLIOS:
             raise HTTPException(status_code=403, detail="Visitor mode requires a sample portfolio.")
@@ -504,6 +509,36 @@ def validate_portfolio(body: PortfolioValidationRequest) -> PortfolioValidationR
         normalized_holdings=holdings,
         total_weight=sum(holdings.values()),
     )
+
+
+@api.post("/api/portfolios/profile", response_model=BookProfileResponse)
+@limiter.limit(llm_limit)
+def book_profile_endpoint(body: BookProfileRequest, request: Request) -> BookProfileResponse:
+    """Free (zero-Gemini) pre-scenario book profile: factor exposures, per-name
+    fit quality, and the 1-week idio dispersion floor. Rate-limited like the
+    paid endpoints because it fans out to the market-data provider, but it is
+    deliberately NOT metered — no LLM call ever happens on this path."""
+    mode = access_mode_for_request(request)
+    if mode == "visitor" and (
+        body.portfolio_holdings is not None or body.portfolio_name is not None
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Visitor mode does not support: portfolio_holdings, portfolio_name.",
+        )
+    portfolio = _resolve_portfolio(body, mode)
+    try:
+        profile = compute_book_profile(portfolio)
+    except MarkingError as exc:
+        # FX series unavailable for a non-USD listing — fail closed like a run.
+        raise http_error(503, "marking_unavailable", str(exc)) from exc
+    except InsufficientHistoryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # Remaining RuntimeErrors are transient market-data failures; MUST stay
+        # LAST (the subclasses above take their own statuses).
+        raise http_error(503, "unavailable", str(exc)) from exc
+    return BookProfileResponse(**profile)  # type: ignore[arg-type]
 
 
 @api.get("/api/scenarios/samples", response_model=list[SampleScenarioResponse])

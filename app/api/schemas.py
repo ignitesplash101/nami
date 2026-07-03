@@ -151,6 +151,36 @@ class ScenarioRunRequest(BaseModel):
     benchmark: str | None = None
 
 
+class BookProfileRequest(BaseModel):
+    """LLM-free pre-scenario profile of a book — same portfolio-resolution rules
+    as a run (visitors: sample keys only; admins may send custom holdings)."""
+
+    model_config = ConfigDict(extra="forbid")
+    portfolio_key: str | None = None
+    portfolio_name: str | None = None
+    portfolio_holdings: dict[str, float] | None = None
+
+
+class BookProfileName(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ticker: str
+    weight: float
+    r2: float | None = None
+    r2_adj: float | None = None
+    n_obs: int | None = None
+    idio_vol_weekly: float | None = None
+
+
+class BookProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    portfolio_name: str
+    as_of: str
+    factor_exposures: dict[str, float]
+    per_name: list[BookProfileName]
+    idio_band_weekly: float
+    n_factors: int
+
+
 class AnalogEventResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     event_id: str

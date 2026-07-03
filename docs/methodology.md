@@ -69,6 +69,29 @@ require paid data or accounting machinery beyond an equity scenario explorer.
 
 ---
 
+## Book profile (free, engine-only)
+
+"What am I holding?" should not cost an LLM call. The **book profile** runs the exact market
+path a scenario would — weekly adjusted closes, USD conversion for non-USD listings, the same
+cash-aware standardized ridge — and stops before any narrative work. It reports:
+
+- **Portfolio factor exposures**: the portfolio-level beta per factor, `Σᵢ wᵢ·βᵢ,f`. This is
+  precisely the number a factor shock is multiplied by in a scenario (`contribution =
+  exposure × shock`), so the profile doubles as a preview of where scenario P&L would come from.
+- **Per-name fit quality**: weight, adjusted R², weeks of usable history, and weekly
+  idiosyncratic vol for every holding — the same `regression_quality` surfaced after a run,
+  available before one.
+- **The 1-week ±1σ idio dispersion floor**: `√(Σᵢ (wᵢ·σᵢ,idio)²)` — the same independence-based
+  floor as the post-run band, at the one-week horizon (a scenario's band is scaled to the
+  median selected-analog horizon instead).
+
+The profile is computed fresh on every request (nothing cached beyond the market-data layers),
+is available to visitors on sample books (admins may profile custom weight books), and involves
+zero Gemini calls — it is rate-limited like the paid endpoints only because it fans out to the
+market-data provider.
+
+---
+
 ## Factor universe (26 factors)
 
 All factors are tickers fetched via yfinance; each weekly "return" is the percent change in

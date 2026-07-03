@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildAnalogReplayRows,
+  buildBookProfileRows,
   buildPositionValuations,
   buildReadout,
   buildWaterfallData,
@@ -358,5 +359,17 @@ describe("chartTheme", () => {
     const second = chartTheme();
     expect(second).toBe(first);
     expect(second.up).toBe("#123456");
+  });
+});
+
+describe("buildBookProfileRows", () => {
+  it("sorts by absolute exposure, labels via the lookup, and truncates", () => {
+    const rows = buildBookProfileRows(
+      { SPY: 0.4, GLD: -0.9, HYG: 0.1, ACWI: 0.5 },
+      (key) => `L:${key}`,
+      3
+    );
+    expect(rows.map((r) => r.key)).toEqual(["GLD", "ACWI", "SPY"]);
+    expect(rows[0]).toEqual({ key: "GLD", label: "L:GLD", exposure: -0.9 });
   });
 });

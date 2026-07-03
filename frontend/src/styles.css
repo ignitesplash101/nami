@@ -670,6 +670,63 @@ input[type="range"]::-moz-range-thumb {
   margin-top: var(--space-3);
 }
 
+/* Free pre-scenario book profile (empty state only, zero LLM). */
+.book-profile-cta {
+  margin-top: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.book-profile {
+  margin-top: var(--space-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+.book-profile-asof {
+  font-size: 0.75rem;
+}
+.exposure-bars {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.exposure-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 3.2rem;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.78rem;
+}
+.exposure-bar-label {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exposure-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.exposure-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.exposure-bar-fill.pos {
+  background: var(--accent-2);
+}
+.exposure-bar-fill.neg {
+  background: var(--down);
+}
+.exposure-bar-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* First-run skeleton while the initial scenario streams. */
 .results-skeleton {
   display: grid;

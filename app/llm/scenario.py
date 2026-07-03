@@ -239,6 +239,63 @@ def _estimate_betas_cash_aware(
     return betas, stats
 
 
+def compute_book_profile(
+    portfolio: str | Portfolio,
+    *,
+    config: Config | None = None,
+) -> dict[str, object]:
+    """LLM-free pre-scenario book profile — "what am I holding?" for free.
+
+    Runs the exact market path a scenario would (weekly prices, USD conversion,
+    warm factor cache, the cash-aware standardized ridge) with zero Gemini
+    involvement, and returns a JSON-safe dict: portfolio-level factor exposures
+    (Σᵢ wᵢ·βᵢ,f per factor), per-name fit quality sorted by weight, and the
+    1-week ±1σ idio dispersion floor. Nothing here is cached beyond the market
+    layers — the profile recomputes from current data on every call.
+    """
+    config = config or load_config()
+    book = get_portfolio(portfolio) if isinstance(portfolio, str) else portfolio
+
+    prices = fetch_weekly_prices(_market_tickers(book), lookback_weeks=config.beta_lookback_weeks)
+    ticker_returns = convert_weekly_returns_to_usd(compute_weekly_returns(prices))
+    factor_returns, _history = get_factor_returns_with_history(
+        lookback_weeks=config.beta_lookback_weeks
+    )
+    betas, stats = _estimate_betas_cash_aware(
+        book, config=config, factor_returns=factor_returns, ticker_returns=ticker_returns
+    )
+
+    weights = pd.Series(book.holdings, dtype=float).reindex(betas.index).fillna(0.0)
+    exposures = betas.mul(weights, axis=0).sum(axis=0)
+    idio_band_weekly = float(
+        sum((book.holdings.get(t, 0.0) * s.idio_vol_weekly) ** 2 for t, s in stats.items()) ** 0.5
+    )
+
+    def _name_row(ticker: str, weight: float) -> dict[str, object]:
+        s = stats.get(ticker)
+        return {
+            "ticker": ticker,
+            "weight": float(weight),
+            "r2": (float(s.r2) if s else None),
+            "r2_adj": (float(s.r2_adj) if s and s.r2_adj is not None else None),
+            "n_obs": (int(s.n_obs) if s else None),
+            "idio_vol_weekly": (float(s.idio_vol_weekly) if s else None),
+        }
+
+    per_name = [
+        _name_row(t, w)
+        for t, w in sorted(book.holdings.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+    return {
+        "portfolio_name": book.name,
+        "as_of": str(pd.Timestamp(ticker_returns.index.max()).date()),
+        "factor_exposures": {str(f): float(v) for f, v in exposures.items()},
+        "per_name": per_name,
+        "idio_band_weekly": idio_band_weekly,
+        "n_factors": int(betas.shape[1]),
+    }
+
+
 def _per_event_records(
     returns_matrix: pd.DataFrame,
     events: dict[str, HistoricalEvent],

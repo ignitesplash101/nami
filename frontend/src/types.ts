@@ -343,6 +343,26 @@ export interface PortfolioValidationResponse {
   total_weight: number;
 }
 
+// --- Free pre-scenario book profile — mirrors BookProfileResponse ---
+
+export interface BookProfileName {
+  ticker: string;
+  weight: number;
+  r2: number | null;
+  r2_adj: number | null;
+  n_obs: number | null;
+  idio_vol_weekly: number | null;
+}
+
+export interface BookProfile {
+  portfolio_name: string;
+  as_of: string;
+  factor_exposures: Record<string, number>;
+  per_name: BookProfileName[];
+  idio_band_weekly: number;
+  n_factors: number;
+}
+
 // --- Operations console (admin) — mirrors app/api/schemas.py ---
 
 export interface StatusResponse {
