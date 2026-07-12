@@ -78,6 +78,81 @@ beforeEach(() => {
   adjustMock.mockReset();
 });
 
+function richResultFixture(): ScenarioResult {
+  const base = resultFixture();
+  return {
+    ...base,
+    factor_shocks: [
+      { factor: "TNX", shock: -0.05, reasoning: "small rates move" },
+      { factor: "SPY", shock: -0.1, reasoning: "broad selloff" },
+      { factor: "QUAL", shock: -0.32, reasoning: "quality drawdown" }
+    ],
+    factor_envelope: {
+      SPY: { mean: -0.05, p10: -0.2, p90: 0.05, count: 4 },
+      TNX: { mean: -0.02, p10: -0.3, p90: 0.1, count: 5 },
+      QUAL: { mean: -0.3, p10: 0, p90: 0, count: 1 }
+    },
+    portfolio_pnl: {
+      ...base.portfolio_pnl,
+      total_pnl: -0.14,
+      by_factor_naive: { SPY: -0.08, TNX: -0.01, QUAL: -0.05 }
+    }
+  };
+}
+
+function renderRichPanel() {
+  const rich = richResultFixture();
+  render(
+    <ToastProvider>
+      <AdjustmentPanel
+        envelope={{ result: rich, analog_events: {}, cache_key: "cache-key-1", reproducibility: null }}
+        canonicalSnapshot={richResultFixture()}
+        factorMeta={{}}
+        onResult={() => {}}
+        prefillRerun={vi.fn()}
+      />
+    </ToastProvider>
+  );
+}
+
+describe("AdjustmentPanel presentation", () => {
+  it("renders low-evidence factors as keep-or-remove chips, not slider rows", () => {
+    renderRichPanel();
+    const chip = screen.getByRole("button", { name: /QUAL/ });
+    expect(chip).toHaveClass("kr-chip");
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    expect(chip).toHaveTextContent("-32.00%");
+    // no slider or percent input exists for the low-evidence factor
+    expect(screen.queryByLabelText(/QUAL\) shock \(slider\)/)).toBeNull();
+    expect(screen.queryByLabelText(/QUAL\) shock value \(percent\)/)).toBeNull();
+    // the single shared caption replaces 26 per-row copies
+    expect(screen.getByText(/too few analog observations to re-tune/)).toBeInTheDocument();
+  });
+
+  it("orders tunable rows by |P&L contribution| and shows percent-unit inputs", () => {
+    renderRichPanel();
+    const sliders = screen.getAllByLabelText(/shock \(slider\)/);
+    expect(sliders.map((el) => el.getAttribute("aria-label"))).toEqual([
+      "US large-cap equities (SPY) shock (slider)", // |-0.08| beats |-0.01|
+      "US 10Y yield (TNX) shock (slider)"
+    ]);
+    const spyInput = screen.getByLabelText(
+      "US large-cap equities (SPY) shock value (percent)"
+    ) as HTMLInputElement;
+    expect(spyInput.value).toBe("-10"); // -0.10 decimal rendered as percent
+  });
+
+  it("shows the live preview after an edit and drops a removed chip's contribution", () => {
+    renderRichPanel();
+    expect(screen.queryByText(/After your edits/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /QUAL/ }));
+    // periphery 0 + SPY -0.08 + TNX -0.01 + removed QUAL 0 = -9.00%
+    expect(screen.getByText(/After your edits/)).toBeInTheDocument();
+    expect(screen.getByText("-9.00%")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /QUAL/ })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("AdjustmentPanel error dispatch", () => {
   it("classifies rerun_required via the error kind, not the detail text", async () => {
     // Detail deliberately lacks the word "rerun" — the old regex would miss it.

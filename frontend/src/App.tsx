@@ -38,7 +38,6 @@ import { useAccessSession } from "./state/useAccessSession";
 import { useFreeAnalytics } from "./state/useFreeAnalytics";
 import { useOverlayManager } from "./state/useOverlayManager";
 import { useRunController } from "./state/useRunController";
-import { AdjustmentPanel } from "./AdjustmentPanel";
 import { BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
 import type { CommandAction } from "./CommandPalette";
@@ -574,6 +573,11 @@ export default function App() {
         onOpenBook={() => setActiveArea("book")}
         resultsTab={resultsTab}
         onResultsTabChange={setResultsTab}
+        canAdjust={Boolean(access?.permissions.free_text_scenario)}
+        canonicalSnapshot={canonicalSnapshot}
+        onAdjustResult={handleAdjustmentResult}
+        onPrefillRerun={handlePrefillRerun}
+        onForbidden={() => void refreshAccess().catch(() => {})}
         canDecompose={Boolean(isAdmin && resultEnvelope)}
         isDecomposing={isDecomposing}
         decomposeProgress={decomposeProgress}
@@ -599,27 +603,6 @@ export default function App() {
           factorMeta={factorMeta}
           onUnpin={() => setPinnedEnvelope(null)}
         />
-      ) : null}
-
-      {resultEnvelope &&
-      canonicalSnapshot &&
-      access?.permissions.free_text_scenario &&
-      resultEnvelope.cache_key ? (
-        <CollapsibleCard
-          className="panel-shell"
-          eyebrow="Iterate"
-          title="Adjust factor shocks"
-          summary={`${resultEnvelope.result.factor_shocks.length} factor sliders + prompt edit`}
-        >
-          <AdjustmentPanel
-            envelope={resultEnvelope}
-            canonicalSnapshot={canonicalSnapshot}
-            factorMeta={factorMeta}
-            onResult={handleAdjustmentResult}
-            prefillRerun={handlePrefillRerun}
-            onForbidden={() => void refreshAccess().catch(() => {})}
-          />
-        </CollapsibleCard>
       ) : null}
     </>
   );

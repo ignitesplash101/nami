@@ -18,6 +18,7 @@ import { csvFilename, downloadCsv } from "../csv";
 import { factorDescription } from "../factors";
 import { formatFxRate, formatMarkPrice, formatShares } from "../format";
 import { nextEnabledMethod } from "../attributionNav";
+import { AdjustmentPanel } from "../AdjustmentPanel";
 import { CollapsibleCard } from "../CollapsibleCard";
 import { EvidenceBlock } from "../EvidenceBlock";
 import { TableScroll } from "../TableScroll";
@@ -36,12 +37,13 @@ import { WaterfallChart } from "./WaterfallChart";
 import type {
   AttributionMethod,
   FactorMetadataMap,
+  ScenarioResult,
   ScenarioRunResponse
 } from "../types";
 
 /** Results sub-tabs: the answer band (readout, evidence, toolbar, NAV metric)
  * always renders ABOVE these; the tabs split only the drill layer. */
-export type ResultsTabKey = "drivers" | "positions" | "story" | "advanced";
+export type ResultsTabKey = "drivers" | "positions" | "story" | "adjust" | "advanced";
 
 export type ValuationSortKey =
   | "ticker"
@@ -74,6 +76,11 @@ export function ResultsPanel({
   onOpenBook,
   resultsTab,
   onResultsTabChange,
+  canAdjust = false,
+  canonicalSnapshot = null,
+  onAdjustResult,
+  onPrefillRerun,
+  onForbidden,
   canDecompose,
   isDecomposing,
   decomposeProgress,
@@ -105,6 +112,13 @@ export function ResultsPanel({
   // props are omitted (tests) an internal fallback state takes over.
   resultsTab?: ResultsTabKey;
   onResultsTabChange?: (tab: ResultsTabKey) => void;
+  // Shock adjustment (admin): renders the "Adjust" sub-tab when permitted and
+  // a canonical + cache_key exist (the server's provenance requirements).
+  canAdjust?: boolean;
+  canonicalSnapshot?: ScenarioResult | null;
+  onAdjustResult?: (response: ScenarioRunResponse) => void;
+  onPrefillRerun?: (text: string) => void;
+  onForbidden?: () => void;
   canDecompose: boolean;
   isDecomposing: boolean;
   decomposeProgress: { done: number; total: number } | null;
@@ -363,6 +377,12 @@ export function ResultsPanel({
   function moveDiagnosticAttribution(direction: 1 | -1) {
     setAttributionMethod(nextEnabledMethod(diagnosticOptions, attributionMethod, direction));
   }
+
+  // The Adjust tab needs the full provenance chain: permission + the trusted
+  // canonical + a live cache_key (the server re-fetches the canonical by key).
+  const showAdjust = Boolean(
+    canAdjust && canonicalSnapshot && envelope.cache_key && onAdjustResult && onPrefillRerun
+  );
 
   const resultsTabItems: TabItem<ResultsTabKey>[] = [
     {
@@ -647,6 +667,24 @@ export function ResultsPanel({
         </CollapsibleCard>
       )
     },
+    ...(showAdjust
+      ? [
+          {
+            key: "adjust" as const,
+            label: "Adjust",
+            content: (
+              <AdjustmentPanel
+                envelope={envelope}
+                canonicalSnapshot={canonicalSnapshot as ScenarioResult}
+                factorMeta={factorMeta}
+                onResult={onAdjustResult as (response: ScenarioRunResponse) => void}
+                prefillRerun={onPrefillRerun as (text: string) => void}
+                onForbidden={onForbidden}
+              />
+            )
+          }
+        ]
+      : []),
     ...(canDecompose
       ? [
           {

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sliders, X } from "lucide-react";
+import { RotateCcw, Sliders, X } from "lucide-react";
 import { adjustScenarioShocks, toApiError } from "./api";
 import type { ApiError } from "./api";
 import { formatPercent } from "./charts";
 import { ErrorNotice } from "./ErrorNotice";
 import { factorDisplayName } from "./factors";
 import { formatDateTime } from "./format";
+import { previewAdjustedPnl } from "./results/adjustPreview";
 import { useToasts } from "./toast";
 import type {
   FactorMetadataMap,
@@ -35,8 +36,11 @@ function rowsFromResult(result: ScenarioResult): SliderRow[] {
   }));
 }
 
-function formatBefore(value: number, digits = 2): string {
-  return formatPercent(value, digits);
+/** Percent-unit display for the number inputs: the raw decimal is the model
+ * unit, but every label around the panel reads percent — show percent here
+ * too (rounded so float noise never renders as 24.999999...). */
+function toPercentInput(value: number): number {
+  return Number((value * 100).toFixed(2));
 }
 
 export function AdjustmentPanel({
@@ -71,6 +75,37 @@ export function AdjustmentPanel({
     }
     return map;
   }, [canonicalSnapshot]);
+
+  // Presentation partition: rows the server lets the user re-tune (envelope
+  // count >= 3) get slider rows; the keep-or-remove majority becomes a chip
+  // grid. Both sort by |naive contribution| so the impactful factors lead,
+  // matching how the Drivers tab reads. Indices point back into `rows` so
+  // setValue keeps working on the canonical-ordered state array (the server
+  // requires EVERY canonical key on submit, so `rows` itself never filters).
+  const partition = useMemo(() => {
+    const naive = result.portfolio_pnl.by_factor_naive;
+    const enriched = rows.map((row, index) => {
+      const env = result.factor_envelope[row.factor];
+      return {
+        row,
+        index,
+        p10: env?.p10 ?? -0.5,
+        p90: env?.p90 ?? 0.5,
+        count: env?.count ?? 0,
+        impact: Math.abs(naive[row.factor] ?? 0)
+      };
+    });
+    const byImpact = (a: { impact: number }, b: { impact: number }) => b.impact - a.impact;
+    return {
+      tunable: enriched.filter((e) => e.count >= 3).sort(byImpact),
+      keepOrRemove: enriched.filter((e) => e.count < 3).sort(byImpact)
+    };
+  }, [rows, result]);
+
+  const preview = useMemo(() => previewAdjustedPnl(result, rows), [result, rows]);
+  const changedFromCanonical = rows.filter(
+    (row) => Math.abs(row.value - (canonicalShocks.get(row.factor) ?? row.value)) > 1e-9
+  ).length;
 
   if (!cacheKey) {
     return null;
@@ -143,102 +178,20 @@ export function AdjustmentPanel({
     }
   }
 
+  const previewTone =
+    preview.total != null ? (preview.total > 0 ? "up" : preview.total < 0 ? "down" : "") : "";
+
   return (
     <section className="result-card adjustment-card">
       <div className="card-heading">
         <div>
           <p className="eyebrow">Iterate</p>
           <h3>Adjust factor shocks</h3>
+          <p className="muted card-subtitle">
+            Edits reuse the original narrative and analogs — they run in seconds.
+          </p>
         </div>
         <Sliders size={18} />
-      </div>
-      <p className="muted">
-        Edit shock magnitudes inside each factor&apos;s envelope, or describe an adjustment in
-        natural language. Removing a factor (0.0) is always permitted; other values must lie in
-        the analog envelope. Edits run in seconds — they reuse the original narrative and
-        analogs.
-      </p>
-
-      <div className="adjust-sliders">
-        {rows.map((row, index) => {
-          const env = result.factor_envelope[row.factor];
-          const p10 = env?.p10 ?? -0.5;
-          const p90 = env?.p90 ?? 0.5;
-          const count = env?.count ?? 0;
-          // Server-side rule (adjust_validation.py): when a factor's analog
-          // count < 3 the band is interpolation-shaped, so the only valid
-          // values are the canonical shock (keep) or 0.0 (remove). Disable
-          // re-tuning here so the panel never offers values the server rejects.
-          const lowEvidence = count < 3;
-          const canonical = canonicalShocks.get(row.factor) ?? row.value;
-          const changedFromCanonical = Math.abs(row.value - canonical) > 1e-9;
-          const isRemoved = row.value === 0 && canonical !== 0;
-          // A single continuous slider can't represent the disjoint valid domain
-          // [p10, p90] ∪ {0} when the envelope is entirely one sign. Restrict the
-          // slider to [p10, p90]; the Remove button is the only path to 0. Disable
-          // the slider whenever the current value sits outside [p10, p90].
-          const sliderOutOfRange = row.value < p10 || row.value > p90;
-          return (
-            <div key={row.factor} className={`adjust-row${changedFromCanonical ? " changed" : ""}`}>
-              <div className="adjust-row-head">
-                <strong>{factorDisplayName(factorMeta, row.factor)}</strong>
-                <span className="muted">
-                  {lowEvidence
-                    ? `n=${count} analog observation${count === 1 ? "" : "s"} — keep or remove`
-                    : `envelope ${formatBefore(p10, 2)} to ${formatBefore(p90, 2)}`}
-                </span>
-              </div>
-              <div className="adjust-row-controls">
-                <input
-                  type="range"
-                  min={p10}
-                  max={p90}
-                  step={0.001}
-                  value={row.value}
-                  onChange={(event) => setValue(index, Number(event.target.value))}
-                  disabled={isAdjusting || sliderOutOfRange || lowEvidence}
-                  aria-label={`${factorDisplayName(factorMeta, row.factor)} shock (slider)`}
-                />
-                <input
-                  type="number"
-                  step={0.001}
-                  value={row.value}
-                  onChange={(event) => setValue(index, Number(event.target.value))}
-                  onBlur={() =>
-                    setValue(
-                      index,
-                      row.value === 0 ? 0 : Math.min(p90, Math.max(p10, row.value))
-                    )
-                  }
-                  disabled={isAdjusting || lowEvidence}
-                  aria-label={`${factorDisplayName(factorMeta, row.factor)} shock value`}
-                />
-                <button
-                  className="ghost-button"
-                  onClick={() => setValue(index, 0)}
-                  disabled={isAdjusting || isRemoved}
-                  title="Remove this factor from the scenario"
-                >
-                  <X size={13} /> Remove
-                </button>
-              </div>
-              <div className="adjust-row-meta">
-                <span>
-                  Canonical {formatPercent(canonical, 2)} {"->"} Current {formatPercent(row.value, 2)}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="button-row">
-        <button className="primary-button" onClick={applyManual} disabled={isAdjusting}>
-          {isAdjusting ? "Recalculating..." : "Recalculate P&L"}
-        </button>
-        <button className="ghost-button" onClick={resetAll} disabled={isAdjusting}>
-          Reset to canonical
-        </button>
       </div>
 
       <div className="adjust-prompt">
@@ -258,6 +211,163 @@ export function AdjustmentPanel({
           Apply adjustment
         </button>
       </div>
+
+      {preview.editedCount > 0 ? (
+        <div className="adjust-preview" role="status">
+          {preview.total != null ? (
+            <span>
+              After your edits:{" "}
+              <strong className={previewTone}>{formatPercent(preview.total)}</strong>{" "}
+              <span className="muted">preview — Recalculate for exact attribution</span>
+            </span>
+          ) : (
+            <span className="muted">
+              Preview unavailable for factors re-tuned from 0 — Recalculate for the exact result.
+            </span>
+          )}
+        </div>
+      ) : null}
+
+      <div className="button-row adjust-actions">
+        <button className="primary-button" onClick={applyManual} disabled={isAdjusting}>
+          {isAdjusting ? "Recalculating..." : "Recalculate P&L"}
+        </button>
+        <button className="ghost-button" onClick={resetAll} disabled={isAdjusting}>
+          Reset to canonical
+        </button>
+        {changedFromCanonical > 0 ? (
+          <span className="muted adjust-changed-count">
+            {changedFromCanonical} of {rows.length} changed
+          </span>
+        ) : null}
+      </div>
+
+      {partition.tunable.length > 0 ? (
+        <>
+          <h4 className="adjust-section-title">Fine-tune banded shocks</h4>
+          <div className="adjust-tunable">
+            {partition.tunable.map(({ row, index, p10, p90 }) => {
+              const canonical = canonicalShocks.get(row.factor) ?? row.value;
+              const changed = Math.abs(row.value - canonical) > 1e-9;
+              const isRemoved = row.value === 0 && canonical !== 0;
+              // A single continuous slider can't represent the disjoint valid
+              // domain [p10, p90] ∪ {0} when the envelope is entirely one
+              // sign. Restrict the slider to [p10, p90]; Remove is the only
+              // path to 0, and the slider disables while the value sits
+              // outside the band.
+              const sliderOutOfRange = row.value < p10 || row.value > p90;
+              return (
+                <div key={row.factor} className={`adjust-row${changed ? " changed" : ""}`}>
+                  <div className="adjust-row-head">
+                    <strong>{factorDisplayName(factorMeta, row.factor)}</strong>
+                    <span className="muted">
+                      envelope {formatPercent(p10, 2)} to {formatPercent(p90, 2)}
+                    </span>
+                  </div>
+                  <div className="adjust-row-controls">
+                    <input
+                      type="range"
+                      min={p10}
+                      max={p90}
+                      step={0.001}
+                      value={row.value}
+                      onChange={(event) => setValue(index, Number(event.target.value))}
+                      disabled={isAdjusting || sliderOutOfRange}
+                      aria-label={`${factorDisplayName(factorMeta, row.factor)} shock (slider)`}
+                    />
+                    <span className="pct-input">
+                      <input
+                        type="number"
+                        step={0.1}
+                        value={toPercentInput(row.value)}
+                        onChange={(event) => setValue(index, Number(event.target.value) / 100)}
+                        onBlur={() =>
+                          setValue(
+                            index,
+                            row.value === 0 ? 0 : Math.min(p90, Math.max(p10, row.value))
+                          )
+                        }
+                        disabled={isAdjusting}
+                        aria-label={`${factorDisplayName(factorMeta, row.factor)} shock value (percent)`}
+                      />
+                      <span aria-hidden="true">%</span>
+                    </span>
+                    <button
+                      className="ghost-button"
+                      onClick={() => setValue(index, isRemoved ? canonical : 0)}
+                      disabled={isAdjusting}
+                      title={
+                        isRemoved
+                          ? "Restore this factor's proposed shock"
+                          : "Remove this factor from the scenario"
+                      }
+                    >
+                      {isRemoved ? (
+                        <>
+                          <RotateCcw size={13} /> Restore
+                        </>
+                      ) : (
+                        <>
+                          <X size={13} /> Remove
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {changed ? (
+                    <div className="adjust-row-meta">
+                      <span>
+                        Canonical {formatPercent(canonical, 2)} {"->"} Current{" "}
+                        {formatPercent(row.value, 2)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+
+      {partition.keepOrRemove.length > 0 ? (
+        <div className="keep-remove">
+          <h4 className="adjust-section-title">Keep or remove</h4>
+          <p className="muted">
+            These shocks have too few analog observations to re-tune (server rule): keep them as
+            proposed, or remove them.
+          </p>
+          <div className="keep-remove-chips">
+            {partition.keepOrRemove.map(({ row, index }) => {
+              const canonical = canonicalShocks.get(row.factor) ?? row.value;
+              const isRemoved = row.value === 0 && canonical !== 0;
+              const label = factorDisplayName(factorMeta, row.factor);
+              const inert = canonical === 0;
+              return (
+                <button
+                  key={row.factor}
+                  type="button"
+                  className={`kr-chip${isRemoved ? " removed" : ""}`}
+                  aria-pressed={isRemoved}
+                  onClick={() => setValue(index, isRemoved ? canonical : 0)}
+                  disabled={isAdjusting || inert}
+                  title={
+                    inert
+                      ? "This factor's proposed shock is already 0"
+                      : isRemoved
+                        ? `Restore ${label} (${formatPercent(canonical, 2)})`
+                        : `Remove ${label} from the scenario`
+                  }
+                >
+                  <span className="kr-chip-label">{label}</span>
+                  <span className="kr-chip-value">{formatPercent(canonical, 2)}</span>
+                  <span className="kr-chip-x" aria-hidden="true">
+                    {isRemoved ? <RotateCcw size={12} /> : <X size={12} />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <ErrorNotice

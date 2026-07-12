@@ -1674,15 +1674,99 @@ a {
   }
 }
 
-/* Adjustment panel */
-.adjustment-card {
-  margin-top: 18px;
+/* Adjustment panel (Phase 31g: prompt-first, preview strip, tunable grid +
+   keep-or-remove chips — the panel lives in the "Adjust" results sub-tab) */
+.adjust-section-title {
+  margin: 18px 0 4px;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
 }
-.adjust-sliders {
+/* Tunable slider rows flow multi-column on wide screens instead of one long
+   stack. min(360px, 100%) keeps the track from forcing overflow on phones. */
+.adjust-tunable {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
+  gap: 12px;
+  margin: 8px 0 6px 0;
+}
+.adjust-preview {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent-2-line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-2-soft);
+  font-size: 0.85rem;
+}
+.adjust-preview strong.up {
+  color: var(--up);
+}
+.adjust-preview strong.down {
+  color: var(--down);
+}
+.adjust-actions {
+  align-items: center;
+}
+.adjust-changed-count {
+  font-size: 0.78rem;
+}
+.pct-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.keep-remove-chips {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 16px 0 6px 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.kr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--tint-soft);
+  color: var(--text-2);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+.kr-chip:hover:not(:disabled) {
+  border-color: var(--down-line);
+}
+.kr-chip .kr-chip-value {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.kr-chip .kr-chip-x {
+  display: inline-flex;
+  color: var(--muted);
+}
+.kr-chip.removed {
+  opacity: 0.65;
+  background: transparent;
+  border-style: dashed;
+}
+.kr-chip.removed .kr-chip-label,
+.kr-chip.removed .kr-chip-value {
+  text-decoration: line-through;
+}
+.kr-chip.removed:hover:not(:disabled) {
+  border-color: var(--accent-2-line-strong);
+  opacity: 1;
+}
+.kr-chip:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 .adjust-row {
   border: 1px solid var(--line);
@@ -1727,7 +1811,7 @@ a {
   color: var(--muted);
 }
 .adjust-prompt {
-  margin-top: 18px;
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2511,7 +2595,8 @@ a {
   .ghost-button,
   .unlock-row button,
   .segmented button,
-  .tablist [role="tab"] {
+  .tablist [role="tab"],
+  .kr-chip {
     min-height: 44px;
   }
   input:not([type="range"]),
