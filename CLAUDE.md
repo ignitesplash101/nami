@@ -110,7 +110,6 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–30 shipped; Phase 31 (retail-first redesign: dual theme, decomposed
-frontend, tabbed IA, fluid responsive, plain-first copy, this docs split) is
+Phases 0–31 shipped; Phase 32 (adaptive desktop and ultrawide composition) is
 the current arc. The full append-only log — one dated entry per phase with
 scope and rationale — lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

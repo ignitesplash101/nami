@@ -89,17 +89,20 @@ export function ScenarioPanel({
           />
         </label>
       </div>
-      {isAdmin ? (
-        <AsOfDatePicker
-          value={asOfDate}
-          latestClose={latestClose}
-          onChange={setAsOfDate}
-          disabled={isRunning}
-        />
-      ) : null}
-      <button className="primary-button" onClick={onRun} disabled={runDisabled}>
-        {isRunning ? "Running pipeline..." : "Run hypothetical stress"} <ArrowRight size={16} />
-      </button>
+      <div className="scenario-controls">
+        {isAdmin ? (
+          <AsOfDatePicker
+            value={asOfDate}
+            latestClose={latestClose}
+            onChange={setAsOfDate}
+            disabled={isRunning}
+          />
+        ) : null}
+        <button className="primary-button" onClick={onRun} disabled={runDisabled}>
+          {isRunning ? "Running pipeline..." : "Run hypothetical stress"}{" "}
+          <ArrowRight size={16} />
+        </button>
+      </div>
     </section>
   );
 }

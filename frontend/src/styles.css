@@ -94,6 +94,14 @@
      a future cap is a one-token change. */
   --workbench-max: 100%;
 
+  /* Full-bleed is a shell decision, not permission to stretch every child.
+     These measures keep authored text comfortable while analytical cards use
+     the available canvas in deliberate grids. */
+  --measure-prose: 75ch;
+  --measure-form: 72rem;
+  --analytics-chart-min: 620px;
+  --analytics-table-min: 440px;
+
   /* Chart-only alpha tints — read by charts.ts::chartTheme(); keep in sync
      with --text / --accent if those ever change. */
   --chart-grid: rgba(238, 242, 236, 0.08);
@@ -502,6 +510,8 @@ p {
   padding: 12px 14px;
   margin-bottom: 18px;
   background: var(--warn-soft);
+  width: fit-content;
+  max-width: min(100%, 110ch);
 }
 
 .error-banner,
@@ -693,6 +703,7 @@ input[type="range"]::-moz-range-thumb {
 .visitor-scenario-grid {
   grid-template-columns: 1fr;
   gap: 8px;
+  max-width: var(--measure-form);
 }
 
 .scenario-text {
@@ -705,6 +716,36 @@ input[type="range"]::-moz-range-thumb {
 .scenario-text-input.compact {
   min-height: 76px;
   max-height: 96px;
+}
+.scenario-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.scenario-controls .asof-picker {
+  margin-top: 0;
+}
+.rail-ops-button {
+  display: none;
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+/* State stays in App; this wrapper owns composition only. Input remains
+   before output in the DOM for reading and keyboard order. */
+.scenario-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+}
+.scenario-input-column,
+.scenario-output-column {
+  min-width: 0;
+}
+.scenario-input-column > :last-child,
+.scenario-output-column > :last-child {
+  margin-bottom: 0;
 }
 
 /* ============================================================================
@@ -885,6 +926,15 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   scroll-margin-top: var(--space-3);
+}
+.results-answer-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+.results-answer-band > :only-child {
+  grid-column: 1 / -1;
 }
 
 /* Prior results dim (NOT unmount) while a re-run streams — a class toggle on
@@ -1286,7 +1336,7 @@ td.num {
 .narrative p {
   color: var(--text);
   /* Prose readability cap — narrative columns get wide on big screens. */
-  max-width: 75ch;
+  max-width: var(--measure-prose);
 }
 
 .citation-list {
@@ -2014,6 +2064,7 @@ a {
   line-height: 1.4;
   margin: 0 0 14px;
   color: var(--text);
+  max-width: var(--measure-prose);
 }
 .readout-metrics {
   display: flex;
@@ -2690,10 +2741,45 @@ a {
   .topbar h1 {
     font-size: 1.35rem;
   }
-  /* Hide the duplicated portfolio-name chip on phone (it's in the rail drawer).
-     Keeps the topbar from wrapping to three rows on narrow phones. */
-  .status-strip span.portfolio-name {
+  /* Access and portfolio context, plus admin operations, already live in the
+     rail drawer. Keep the phone topbar to navigation + theme + methodology. */
+  .status-strip span.portfolio-name,
+  .status-strip span.access-mode-chip,
+  .ops-btn {
     display: none;
+  }
+  .rail-ops-button {
+    display: inline-flex;
+  }
+
+  .notice {
+    padding: 9px 11px;
+    margin-bottom: 14px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+
+  .scenario-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    margin-inline: -4px;
+    padding: 0 4px 4px;
+  }
+  .scenario-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .scenario-chips .chip {
+    flex: 0 0 auto;
+  }
+  .scenario-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .scenario-controls .primary-button {
+    width: 100%;
   }
 
   /* Card heading: stack the h3 above any inline button/toggle so the segmented
@@ -2873,8 +2959,21 @@ a {
   }
 }
 @media (min-width: 1600px) {
-  .results-tabs .tab-panel {
+  .scenario-workspace.is-first-run {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: stretch;
+  }
+  .scenario-workspace.is-first-run .scenario-output-column > .empty-results {
+    min-height: 100%;
+  }
+  .results-answer-band {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-5);
+  }
+  .results-tabs .tab-panel {
+    grid-template-columns:
+      minmax(var(--analytics-chart-min), 3fr)
+      minmax(var(--analytics-table-min), 2fr);
     gap: var(--space-5);
   }
   .results-tabs .tab-panel > * {
@@ -2898,6 +2997,36 @@ a {
      match the Drivers panel and break its waterfall + table pairing.) */
   .results-tabs .tab-panel > .table-card:first-child {
     grid-column: 1 / -1;
+  }
+}
+@media (min-width: 2400px) {
+  /* On true ultrawides, divide the composer itself: authored text keeps a
+     readable measure while run context occupies a compact control rail. */
+  .scenario-workspace.is-first-run .scenario-card {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 0.8fr);
+    column-gap: var(--space-6);
+    align-content: start;
+  }
+  .scenario-workspace.is-first-run .scenario-card > :first-child,
+  .scenario-workspace.is-first-run .scenario-chips {
+    grid-column: 1 / -1;
+  }
+  .scenario-workspace.is-first-run .scenario-grid {
+    grid-column: 1;
+  }
+  .scenario-workspace.is-first-run .scenario-controls {
+    grid-column: 2;
+    align-self: end;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scenario-workspace.is-first-run .scenario-controls .primary-button {
+    width: 100%;
+  }
+  .results-answer-band,
+  .results-tabs .tab-panel {
+    grid-template-columns: minmax(760px, 7fr) minmax(560px, 5fr);
   }
 }
 .results-toolbar-left {

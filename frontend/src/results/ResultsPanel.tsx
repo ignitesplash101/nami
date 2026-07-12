@@ -777,21 +777,23 @@ export function ResultsPanel({
       className={`results-stack${isStale ? " is-stale" : ""}`}
       aria-busy={isStale || undefined}
     >
-      <ScenarioReadout
-        result={result}
-        attributionMethod={readoutMethod}
-        factorMeta={factorMeta}
-        showDollars={showDollars}
-        nav={nav}
-        currency={currency}
-      />
-      <EvidenceBlock
-        result={result}
-        analogEvents={analog_events}
-        showDollars={showDollars}
-        nav={nav}
-        currency={currency}
-      />
+      <div className="results-answer-band">
+        <ScenarioReadout
+          result={result}
+          attributionMethod={readoutMethod}
+          factorMeta={factorMeta}
+          showDollars={showDollars}
+          nav={nav}
+          currency={currency}
+        />
+        <EvidenceBlock
+          result={result}
+          analogEvents={analog_events}
+          showDollars={showDollars}
+          nav={nav}
+          currency={currency}
+        />
+      </div>
       <div className="results-toolbar">
         <div className="results-toolbar-left">
           {canSave ? (

@@ -53,6 +53,13 @@ function resultFixture(): ScenarioResult {
       by_ticker_total: { AAPL: -0.06, MSFT: -0.02 }
     },
     narrative_shapley: null,
+    severity_ladder: {
+      worst_pnl: -0.12,
+      base_pnl: -0.08,
+      best_pnl: -0.03,
+      n_banded: 1,
+      n_held: 0
+    },
     adjustment_history: [],
     requested_as_of_date: null,
     narrative_mode: "grounded",
@@ -144,6 +151,9 @@ describe("first-screen UI cleanup", () => {
     expect(screen.queryByLabelText("Sample scenario")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Scenario text/)).toBeEnabled();
     expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
+    expect(document.querySelector(".scenario-controls")).toContainElement(
+      screen.getByRole("button", { name: /Run hypothetical stress/ })
+    );
   });
 
   it("renders a one-line onboarding empty state with a Your-book CTA", () => {
@@ -176,9 +186,15 @@ describe("first-screen UI cleanup", () => {
   it("keeps the answer band outside every tab panel; the waterfall lands in the default tab", () => {
     renderResults(envelopeFixture());
     // Answer layer (readout, evidence, toolbar) must never sit behind a tab.
-    expect(screen.getByLabelText("Impact summary").closest('[role="tabpanel"]')).toBeNull();
+    const answerBand = document.querySelector(".results-answer-band");
+    expect(answerBand).not.toBeNull();
+    expect(answerBand).toContainElement(screen.getByLabelText("Impact summary"));
+    expect(answerBand).toContainElement(screen.getByLabelText("Evidence and bounds"));
+    expect(answerBand?.closest('[role="tabpanel"]')).toBeNull();
     const toolbar = document.querySelector(".results-toolbar");
     expect(toolbar?.closest('[role="tabpanel"]')).toBeNull();
+    if (!answerBand || !toolbar) throw new Error("answer band and toolbar must render");
+    expect(answerBand.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The waterfall lives in the DEFAULT (visible) tab so a new result lands answered.
     const waterfallPanel = document
       .querySelector(".waterfall-card")

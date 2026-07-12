@@ -30,6 +30,7 @@ import type { HoldingRow, PortfolioMode, ScenarioDraftMode } from "./holdings";
 import { BookArea } from "./panels/BookArea";
 import { RailContent } from "./panels/RailContent";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
+import { ScenarioWorkspace } from "./panels/ScenarioWorkspace";
 import { ResultsPanel } from "./results/ResultsPanel";
 import type { ResultsTabKey, ValuationSort } from "./results/ResultsPanel";
 import { Tabs } from "./Tabs";
@@ -510,10 +511,11 @@ export default function App() {
       setCustomUnits={setCustomUnits}
       customBenchmark={customBenchmark}
       setCustomBenchmark={setCustomBenchmark}
+      onOpenOperations={openOpsDrawer}
     />
   );
 
-  const scenarioArea = (
+  const scenarioInput = (
     <>
       <ScenarioPanel
         access={access}
@@ -555,43 +557,55 @@ export default function App() {
           onCancel={handleCancelRun}
         />
       ) : null}
+    </>
+  );
 
-      <ResultsPanel
-        envelope={resultEnvelope}
-        attributionMethod={attributionMethod}
-        setAttributionMethod={setAttributionMethod}
-        factorMeta={factorMeta}
-        displayMode={displayMode}
-        setDisplayMode={setDisplayMode}
-        navInput={navInput}
-        setNavInput={setNavInput}
-        valuationSort={valuationSort}
-        setValuationSort={setValuationSort}
-        isRunning={isRunning}
-        isStale={isRunning && resultEnvelope != null}
-        scrollRef={resultsRef}
-        onOpenBook={() => setActiveArea("book")}
-        resultsTab={resultsTab}
-        onResultsTabChange={setResultsTab}
-        canAdjust={Boolean(access?.permissions.free_text_scenario)}
-        canonicalSnapshot={canonicalSnapshot}
-        onAdjustResult={handleAdjustmentResult}
-        onPrefillRerun={handlePrefillRerun}
-        onForbidden={() => void refreshAccess().catch(() => {})}
-        canDecompose={Boolean(isAdmin && resultEnvelope)}
-        isDecomposing={isDecomposing}
-        decomposeProgress={decomposeProgress}
-        onDecompose={handleDecompose}
-        onCancelDecompose={handleCancelDecompose}
-        onOpenMethodology={openMethodology}
-        canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
-        onSave={saveDialog.open}
-        onPin={() => setPinnedEnvelope(resultEnvelope)}
-        isPinned={Boolean(
-          pinnedEnvelope &&
-            resultEnvelope &&
-            sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
-        )}
+  const scenarioOutput = (
+    <ResultsPanel
+      envelope={resultEnvelope}
+      attributionMethod={attributionMethod}
+      setAttributionMethod={setAttributionMethod}
+      factorMeta={factorMeta}
+      displayMode={displayMode}
+      setDisplayMode={setDisplayMode}
+      navInput={navInput}
+      setNavInput={setNavInput}
+      valuationSort={valuationSort}
+      setValuationSort={setValuationSort}
+      isRunning={isRunning}
+      isStale={isRunning && resultEnvelope != null}
+      scrollRef={resultsRef}
+      onOpenBook={() => setActiveArea("book")}
+      resultsTab={resultsTab}
+      onResultsTabChange={setResultsTab}
+      canAdjust={Boolean(access?.permissions.free_text_scenario)}
+      canonicalSnapshot={canonicalSnapshot}
+      onAdjustResult={handleAdjustmentResult}
+      onPrefillRerun={handlePrefillRerun}
+      onForbidden={() => void refreshAccess().catch(() => {})}
+      canDecompose={Boolean(isAdmin && resultEnvelope)}
+      isDecomposing={isDecomposing}
+      decomposeProgress={decomposeProgress}
+      onDecompose={handleDecompose}
+      onCancelDecompose={handleCancelDecompose}
+      onOpenMethodology={openMethodology}
+      canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
+      onSave={saveDialog.open}
+      onPin={() => setPinnedEnvelope(resultEnvelope)}
+      isPinned={Boolean(
+        pinnedEnvelope &&
+          resultEnvelope &&
+          sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
+      )}
+    />
+  );
+
+  const scenarioArea = (
+    <>
+      <ScenarioWorkspace
+        hasResults={resultEnvelope != null}
+        input={scenarioInput}
+        output={scenarioOutput}
       />
 
       {pinnedEnvelope &&
@@ -714,7 +728,7 @@ export default function App() {
             <h1>Portfolio scenario explorer</h1>
           </div>
           <div className="status-strip">
-            <span className="status-chip">
+            <span className="status-chip access-mode-chip">
               {access ? (isAdmin ? "admin" : "Demo mode") : "loading"}
             </span>
             <span className="status-chip portfolio-name" title={selectedPortfolio?.name}>
@@ -722,7 +736,7 @@ export default function App() {
             </span>
             {isAdmin ? (
               <button
-                className="methodology-btn"
+                className="methodology-btn ops-btn"
                 onClick={openOpsDrawer}
                 title="Operations console"
                 aria-label="Open operations console"

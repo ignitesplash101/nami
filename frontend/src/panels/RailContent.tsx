@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { Activity } from "lucide-react";
 import { AccessPanel } from "./AccessPanel";
 import { PortfolioPanel } from "./PortfolioPanel";
 import type { HoldingRow, HoldingUnits, PortfolioMode } from "../holdings";
@@ -23,7 +24,8 @@ export function RailContent({
   customUnits,
   setCustomUnits,
   customBenchmark,
-  setCustomBenchmark
+  setCustomBenchmark,
+  onOpenOperations
 }: {
   access: AccessResponse | null;
   onAccessChange: (access: AccessResponse, opts?: { intentional?: boolean }) => void;
@@ -41,6 +43,7 @@ export function RailContent({
   setCustomUnits: (units: HoldingUnits) => void;
   customBenchmark: string;
   setCustomBenchmark: (ticker: string) => void;
+  onOpenOperations?: () => void;
 }) {
   return (
     <>
@@ -52,6 +55,16 @@ export function RailContent({
         <div className="brand-crest" aria-hidden="true" />
       </div>
       <AccessPanel access={access} onAccessChange={onAccessChange} passcodeInputRef={passcodeInputRef} />
+      {access?.access_mode === "admin" && onOpenOperations ? (
+        <button
+          type="button"
+          className="ghost-button rail-ops-button"
+          onClick={onOpenOperations}
+          aria-label="Open operations console"
+        >
+          <Activity size={15} /> Operations console
+        </button>
+      ) : null}
       <PortfolioPanel
         access={access}
         portfolios={portfolios}
