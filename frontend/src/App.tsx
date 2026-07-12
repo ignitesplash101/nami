@@ -27,10 +27,13 @@ import {
 import { factorMap } from "./factors";
 import { defaultCustomRows, holdingsFromRows } from "./holdings";
 import type { HoldingRow, PortfolioMode, ScenarioDraftMode } from "./holdings";
+import { BookArea } from "./panels/BookArea";
 import { RailContent } from "./panels/RailContent";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { ResultsPanel } from "./results/ResultsPanel";
-import type { ValuationSort } from "./results/ResultsPanel";
+import type { ResultsTabKey, ValuationSort } from "./results/ResultsPanel";
+import { Tabs } from "./Tabs";
+import type { TabItem } from "./Tabs";
 import { useAccessSession } from "./state/useAccessSession";
 import { useFreeAnalytics } from "./state/useFreeAnalytics";
 import { useOverlayManager } from "./state/useOverlayManager";
@@ -62,6 +65,16 @@ import type {
 const MethodologyDrawer = lazy(() =>
   import("./MethodologyDrawer").then((m) => ({ default: m.MethodologyDrawer }))
 );
+
+/** Top-level workbench areas. Persistent chrome (topbar, disclaimer, banners,
+ * rail, footer) stays OUTSIDE the tabs; each area owns one job. */
+type AreaKey = "scenario" | "book" | "library";
+
+function initialArea(): AreaKey {
+  if (typeof window === "undefined") return "scenario";
+  const view = new URLSearchParams(window.location.search).get("view");
+  return view === "book" ? "book" : view === "library" ? "library" : "scenario";
+}
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
@@ -105,6 +118,10 @@ export default function App() {
   const [attributionMethod, setAttributionMethod] = useState<AttributionMethod>("naive");
   const [error, setError] = useState<ApiError | string | null>(null);
   const [bootSerial, setBootSerial] = useState(0);
+  // Top-level area + results sub-tab; both persist across runs. The area
+  // round-trips through ?view= so Book/Library views are linkable.
+  const [activeArea, setActiveArea] = useState<AreaKey>(initialArea);
+  const [resultsTab, setResultsTab] = useState<ResultsTabKey>("drivers");
   const lastFailedActionRef = useRef<"run" | "decompose" | "boot" | "profile" | "replay" | null>(
     null
   );
@@ -288,6 +305,20 @@ export default function App() {
     resultsRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   }, [runSerial]);
 
+  // Keep ?view= linkable without a router: scenario is the clean default URL.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeArea === "scenario") url.searchParams.delete("view");
+    else url.searchParams.set("view", activeArea);
+    window.history.replaceState(null, "", url);
+  }, [activeArea]);
+
+  // A visitor can deep-link ?view=library but never see it — snap back once
+  // access resolves (the Library tab isn't rendered for visitors at all).
+  useEffect(() => {
+    if (access && !isAdmin && activeArea === "library") setActiveArea("scenario");
+  }, [access, isAdmin, activeArea]);
+
   const selectedPortfolio = useMemo(
     () => portfolios.find((portfolio) => portfolio.key === portfolioKey) ?? portfolios[0],
     [portfolioKey, portfolios]
@@ -406,7 +437,17 @@ export default function App() {
   // Palette actions are a thin accelerator over already-visible controls. Built
   // fresh each render so the closures read current state (cheap; small list).
   const commandActions: CommandAction[] = [
-    { id: "run", label: "Run scenario", hint: "Enter", run: () => void handleRun() },
+    {
+      id: "run",
+      label: "Run scenario",
+      hint: "Enter",
+      run: () => {
+        setActiveArea("scenario");
+        void handleRun();
+      }
+    },
+    { id: "area-scenario", label: "Go to Scenario", run: () => setActiveArea("scenario") },
+    { id: "area-book", label: "Go to Your book", run: () => setActiveArea("book") },
     { id: "setup", label: "Open portfolio & access setup", run: openRailDrawer },
     { id: "methodology", label: "Open methodology", run: () => openMethodology() },
     {
@@ -433,6 +474,11 @@ export default function App() {
     });
   }
   if (isAdmin) {
+    commandActions.push({
+      id: "area-library",
+      label: "Go to Library",
+      run: () => setActiveArea("library")
+    });
     commandActions.push({
       id: "ops",
       label: "Open operations console",
@@ -468,6 +514,198 @@ export default function App() {
     />
   );
 
+  const scenarioArea = (
+    <>
+      <ScenarioPanel
+        access={access}
+        scenarios={scenarios}
+        scenarioKey={scenarioKey}
+        scenarioDraftMode={scenarioDraftMode}
+        onSelectScenario={handleScenarioSeed}
+        onSetCustomMode={() => setScenarioDraftMode("custom")}
+        scenarioText={scenarioText}
+        setScenarioText={handleScenarioTextChange}
+        selectedScenario={selectedScenario}
+        isRunning={isRunning}
+        onRun={handleRun}
+        asOfDate={asOfDate}
+        setAsOfDate={setAsOfDate}
+        latestClose={access?.latest_market_date ?? ""}
+      />
+
+      {resultEnvelope?.result.narrative_mode === "analog_only" ? (
+        <BackdatedModeBanner
+          effectiveDate={resultEnvelope.result.market_date}
+          requestedDate={
+            resultEnvelope.result.requested_as_of_date ?? resultEnvelope.result.market_date
+          }
+          weightsAsOf={
+            resultEnvelope.result.portfolio_key !== "custom"
+              ? access?.sample_weights_as_of ?? null
+              : null
+          }
+        />
+      ) : null}
+
+      {isRunning ? (
+        <RunProgress
+          currentStage={currentStage}
+          stageStatus={stageStatus}
+          completedStages={completedStages}
+          cacheHit={cacheHit}
+          onCancel={handleCancelRun}
+        />
+      ) : null}
+
+      <ResultsPanel
+        envelope={resultEnvelope}
+        attributionMethod={attributionMethod}
+        setAttributionMethod={setAttributionMethod}
+        factorMeta={factorMeta}
+        displayMode={displayMode}
+        setDisplayMode={setDisplayMode}
+        navInput={navInput}
+        setNavInput={setNavInput}
+        valuationSort={valuationSort}
+        setValuationSort={setValuationSort}
+        isRunning={isRunning}
+        isStale={isRunning && resultEnvelope != null}
+        scrollRef={resultsRef}
+        onOpenBook={() => setActiveArea("book")}
+        resultsTab={resultsTab}
+        onResultsTabChange={setResultsTab}
+        canDecompose={Boolean(isAdmin && resultEnvelope)}
+        isDecomposing={isDecomposing}
+        decomposeProgress={decomposeProgress}
+        onDecompose={handleDecompose}
+        onCancelDecompose={handleCancelDecompose}
+        onOpenMethodology={openMethodology}
+        canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
+        onSave={saveDialog.open}
+        onPin={() => setPinnedEnvelope(resultEnvelope)}
+        isPinned={Boolean(
+          pinnedEnvelope &&
+            resultEnvelope &&
+            sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
+        )}
+      />
+
+      {pinnedEnvelope &&
+      resultEnvelope &&
+      !sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result) ? (
+        <ComparisonPanel
+          pinned={pinnedEnvelope}
+          current={resultEnvelope}
+          factorMeta={factorMeta}
+          onUnpin={() => setPinnedEnvelope(null)}
+        />
+      ) : null}
+
+      {resultEnvelope &&
+      canonicalSnapshot &&
+      access?.permissions.free_text_scenario &&
+      resultEnvelope.cache_key ? (
+        <CollapsibleCard
+          className="panel-shell"
+          eyebrow="Iterate"
+          title="Adjust factor shocks"
+          summary={`${resultEnvelope.result.factor_shocks.length} factor sliders + prompt edit`}
+        >
+          <AdjustmentPanel
+            envelope={resultEnvelope}
+            canonicalSnapshot={canonicalSnapshot}
+            factorMeta={factorMeta}
+            onResult={handleAdjustmentResult}
+            prefillRerun={handlePrefillRerun}
+            onForbidden={() => void refreshAccess().catch(() => {})}
+          />
+        </CollapsibleCard>
+      ) : null}
+    </>
+  );
+
+  const bookArea = (
+    <BookArea
+      selectedPortfolio={selectedPortfolio}
+      isCustomBook={portfolioMode === "custom"}
+      customName={customName}
+      profile={bookProfile}
+      replay={eventsReplay}
+      profileBusy={profileBusy}
+      replayBusy={replayBusy}
+      onProfile={handleProfileBook}
+      onReplay={handleEventsReplay}
+      unavailableReason={
+        portfolioMode === "custom" && customUnits === "shares"
+          ? "The free book analytics need weights — switch the custom editor to Weights."
+          : null
+      }
+      factorMeta={factorMeta}
+    />
+  );
+
+  const libraryArea = (
+    <>
+      <CollapsibleCard
+        className="panel-shell"
+        eyebrow="Library"
+        title="Saved scenarios"
+        summary="browse, reopen, tag-filter"
+      >
+        <SavedScenariosPanel
+          key={`saved-${adminDataEpoch}`}
+          reloadKey={savedReloadKey}
+          onOpen={(env) => {
+            setResultEnvelope(env);
+            setCanonicalSnapshot(env.result);
+            setAttributionMethod(preferredAttributionMethod(env.result));
+            // The opened result renders in the Scenario area — switch so it's visible.
+            setActiveArea("scenario");
+          }}
+          onForbidden={() => void refreshAccess().catch(() => {})}
+        />
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        className="panel-shell"
+        eyebrow="Library"
+        title="Saved portfolios & snapshots"
+        summary="named books · dated snapshots"
+      >
+        <PortfolioHistoryPanel
+          key={`portfolio-history-${adminDataEpoch}`}
+          onForbidden={() => void refreshAccess().catch(() => {})}
+          currentHoldings={portfolioMode === "custom" ? holdingsFromRows(customRows) : {}}
+          snapshotDisabledReason={
+            portfolioMode === "custom" && customUnits === "shares"
+              ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
+              : undefined
+          }
+          onLoadSnapshot={(snap) => {
+            setPortfolioMode("custom");
+            setCustomName(`Snapshot ${snap.as_of_date}`);
+            setCustomRows(
+              Object.entries(snap.holdings).map(([ticker, weight], i) => ({
+                id: `snap-${snap.id}-${i}`,
+                ticker,
+                weight: String(weight)
+              }))
+            );
+          }}
+        />
+      </CollapsibleCard>
+    </>
+  );
+
+  const areaItems: TabItem<AreaKey>[] = [
+    { key: "scenario", label: "Scenario", content: scenarioArea },
+    { key: "book", label: "Your book", content: bookArea },
+    ...(isAdmin ? [{ key: "library" as const, label: "Library", content: libraryArea }] : [])
+  ];
+  const effectiveArea: AreaKey = areaItems.some((item) => item.key === activeArea)
+    ? activeArea
+    : "scenario";
+
   return (
     <main className="app-shell">
       <a className="skip-link" href="#workbench">
@@ -493,7 +731,9 @@ export default function App() {
             <h1>Hypothetical stress workbench</h1>
           </div>
           <div className="status-strip">
-            <span className="status-chip">{access?.access_mode ?? "loading"}</span>
+            <span className="status-chip">
+              {access ? (isAdmin ? "admin" : "Demo mode") : "loading"}
+            </span>
             <span className="status-chip portfolio-name" title={selectedPortfolio?.name}>
               {selectedPortfolio?.name ?? "No portfolio"}
             </span>
@@ -552,174 +792,14 @@ export default function App() {
           <ErrorNotice error={error} onRetry={retryLastAction} onUnlock={focusUnlock} />
         ) : null}
 
-        <ScenarioPanel
-          access={access}
-          scenarios={scenarios}
-          scenarioKey={scenarioKey}
-          scenarioDraftMode={scenarioDraftMode}
-          onSelectScenario={handleScenarioSeed}
-          onSetCustomMode={() => setScenarioDraftMode("custom")}
-          scenarioText={scenarioText}
-          setScenarioText={handleScenarioTextChange}
-          selectedScenario={selectedScenario}
-          isRunning={isRunning}
-          onRun={handleRun}
-          asOfDate={asOfDate}
-          setAsOfDate={setAsOfDate}
-          latestClose={access?.latest_market_date ?? ""}
+        <Tabs
+          className="area-tabs"
+          idBase="area"
+          ariaLabel="Workbench areas"
+          items={areaItems}
+          active={effectiveArea}
+          onChange={setActiveArea}
         />
-
-        {resultEnvelope?.result.narrative_mode === "analog_only" ? (
-          <BackdatedModeBanner
-            effectiveDate={resultEnvelope.result.market_date}
-            requestedDate={
-              resultEnvelope.result.requested_as_of_date ?? resultEnvelope.result.market_date
-            }
-            weightsAsOf={
-              resultEnvelope.result.portfolio_key !== "custom"
-                ? access?.sample_weights_as_of ?? null
-                : null
-            }
-          />
-        ) : null}
-
-        {isRunning ? (
-          <RunProgress
-            currentStage={currentStage}
-            stageStatus={stageStatus}
-            completedStages={completedStages}
-            cacheHit={cacheHit}
-            onCancel={handleCancelRun}
-          />
-        ) : null}
-
-        <ResultsPanel
-          envelope={resultEnvelope}
-          attributionMethod={attributionMethod}
-          setAttributionMethod={setAttributionMethod}
-          factorMeta={factorMeta}
-          displayMode={displayMode}
-          setDisplayMode={setDisplayMode}
-          navInput={navInput}
-          setNavInput={setNavInput}
-          valuationSort={valuationSort}
-          setValuationSort={setValuationSort}
-          isRunning={isRunning}
-          isStale={isRunning && resultEnvelope != null}
-          scrollRef={resultsRef}
-          sampleScenarios={scenarios}
-          onSeedScenario={handleScenarioSeed}
-          bookProfile={bookProfile}
-          profileBusy={profileBusy}
-          onProfileBook={handleProfileBook}
-          eventsReplay={eventsReplay}
-          replayBusy={replayBusy}
-          onEventsReplay={handleEventsReplay}
-          profileUnavailableReason={
-            portfolioMode === "custom" && customUnits === "shares"
-              ? "The free book analytics need weights — switch the custom editor to Weights."
-              : null
-          }
-          canDecompose={Boolean(isAdmin && resultEnvelope)}
-          isDecomposing={isDecomposing}
-          decomposeProgress={decomposeProgress}
-          onDecompose={handleDecompose}
-          onCancelDecompose={handleCancelDecompose}
-          onOpenMethodology={openMethodology}
-          canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
-          onSave={saveDialog.open}
-          onPin={() => setPinnedEnvelope(resultEnvelope)}
-          isPinned={Boolean(
-            pinnedEnvelope &&
-              resultEnvelope &&
-              sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
-          )}
-        />
-
-        {pinnedEnvelope &&
-        resultEnvelope &&
-        !sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result) ? (
-          <ComparisonPanel
-            pinned={pinnedEnvelope}
-            current={resultEnvelope}
-            factorMeta={factorMeta}
-            onUnpin={() => setPinnedEnvelope(null)}
-          />
-        ) : null}
-
-        {resultEnvelope &&
-        canonicalSnapshot &&
-        access?.permissions.free_text_scenario &&
-        resultEnvelope.cache_key ? (
-          <CollapsibleCard
-            className="panel-shell"
-            eyebrow="Iterate"
-            title="Adjust factor shocks"
-            summary={`${resultEnvelope.result.factor_shocks.length} factor sliders + prompt edit`}
-          >
-            <AdjustmentPanel
-              envelope={resultEnvelope}
-              canonicalSnapshot={canonicalSnapshot}
-              factorMeta={factorMeta}
-              onResult={handleAdjustmentResult}
-              prefillRerun={handlePrefillRerun}
-              onForbidden={() => void refreshAccess().catch(() => {})}
-            />
-          </CollapsibleCard>
-        ) : null}
-
-        {isAdmin ? (
-          <CollapsibleCard
-            className="panel-shell"
-            eyebrow="Library"
-            title="Saved scenarios"
-            summary="browse, reopen, tag-filter"
-          >
-            <SavedScenariosPanel
-              key={`saved-${adminDataEpoch}`}
-              reloadKey={savedReloadKey}
-              onOpen={(env) => {
-                setResultEnvelope(env);
-                setCanonicalSnapshot(env.result);
-                setAttributionMethod(preferredAttributionMethod(env.result));
-              }}
-              onForbidden={() => void refreshAccess().catch(() => {})}
-            />
-          </CollapsibleCard>
-        ) : null}
-
-        {isAdmin ? (
-          <CollapsibleCard
-            className="panel-shell"
-            eyebrow="Library"
-            title="Saved portfolios & snapshots"
-            summary="named books · dated snapshots"
-          >
-            <PortfolioHistoryPanel
-              key={`portfolio-history-${adminDataEpoch}`}
-              onForbidden={() => void refreshAccess().catch(() => {})}
-              currentHoldings={
-                portfolioMode === "custom" ? holdingsFromRows(customRows) : {}
-              }
-              snapshotDisabledReason={
-                portfolioMode === "custom" && customUnits === "shares"
-                  ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
-                  : undefined
-              }
-              onLoadSnapshot={(snap) => {
-                setPortfolioMode("custom");
-                setCustomName(`Snapshot ${snap.as_of_date}`);
-                setCustomRows(
-                  Object.entries(snap.holdings).map(([ticker, weight], i) => ({
-                    id: `snap-${snap.id}-${i}`,
-                    ticker,
-                    weight: String(weight)
-                  }))
-                );
-              }}
-            />
-          </CollapsibleCard>
-        ) : null}
 
         <footer className="app-footer">
           nami — scenario explorer · educational/research use only

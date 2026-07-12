@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ResultsPanel } from "./results/ResultsPanel";
 import type { ScenarioResult, ScenarioRunResponse } from "./types";
@@ -106,6 +106,8 @@ describe("numeric table system", () => {
 
   it("exposes aria-sort on valuation headers and toggles via SortableTh", () => {
     const { setValuationSort } = renderResults();
+    // The valuation table lives in the Positions sub-tab (hidden by default).
+    fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
     const deltaHeader = screen.getByRole("button", { name: /Δ\$/ }).closest("th");
     expect(deltaHeader).toHaveAttribute("aria-sort", "ascending");
     expect(deltaHeader).toHaveClass("sortable", "num");

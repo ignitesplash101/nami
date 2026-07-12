@@ -1,0 +1,58 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { describe, expect, it } from "vitest";
+import { Tabs } from "./Tabs";
+import type { TabItem } from "./Tabs";
+
+type Key = "one" | "two" | "three";
+
+const ITEMS: TabItem<Key>[] = [
+  { key: "one", label: "One", content: <p>first panel</p> },
+  { key: "two", label: "Two", content: <p>second panel</p> },
+  { key: "three", label: "Three", content: <p>third panel</p> }
+];
+
+function Harness() {
+  const [active, setActive] = useState<Key>("one");
+  return (
+    <Tabs items={ITEMS} active={active} onChange={setActive} ariaLabel="Demo tabs" idBase="demo" />
+  );
+}
+
+describe("Tabs", () => {
+  it("wires tablist/tab/tabpanel roles with aria-controls and roving tabIndex", () => {
+    render(<Harness />);
+    expect(screen.getByRole("tablist", { name: "Demo tabs" })).toBeInTheDocument();
+    const one = screen.getByRole("tab", { name: "One" });
+    const two = screen.getByRole("tab", { name: "Two" });
+    expect(one).toHaveAttribute("aria-selected", "true");
+    expect(one).toHaveAttribute("aria-controls", "demo-panel-one");
+    expect(one).toHaveAttribute("tabindex", "0");
+    expect(two).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("keeps inactive panels MOUNTED but hidden so child state survives", () => {
+    render(<Harness />);
+    // hidden content stays in the DOM (queryable by text, absent from a11y tree)
+    expect(screen.getByText("second panel")).toBeInTheDocument();
+    const panelTwo = document.getElementById("demo-panel-two");
+    expect(panelTwo).toHaveAttribute("hidden");
+    fireEvent.click(screen.getByRole("tab", { name: "Two" }));
+    expect(panelTwo).not.toHaveAttribute("hidden");
+    expect(document.getElementById("demo-panel-one")).toHaveAttribute("hidden");
+  });
+
+  it("moves AND selects with arrow keys (automatic activation), wrapping at ends", () => {
+    render(<Harness />);
+    const tablist = screen.getByRole("tablist");
+    fireEvent.keyDown(tablist, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Two" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: "Three" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tablist, { key: "Home" });
+    expect(screen.getByRole("tab", { name: "One" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tablist, { key: "End" });
+    expect(screen.getByRole("tab", { name: "Three" })).toHaveAttribute("aria-selected", "true");
+  });
+});
