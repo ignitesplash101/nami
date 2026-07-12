@@ -48,13 +48,15 @@
   --down-soft: rgba(232, 97, 90, 0.1);
   --warn-soft: rgba(230, 181, 102, 0.1);
 
-  /* Type scale (1.25 major third) */
-  --step--1: 0.875rem;
-  --step-0: 1rem;
-  --step-1: 1.25rem;
-  --step-2: 1.563rem;
-  --step-3: 1.953rem;
-  --step-4: 2.441rem;
+  /* Type scale — 1.25 major third at the wide end, FLUID between 360px and
+     1440px viewports (Phase 31d) so headings interpolate instead of jumping
+     at breakpoints. Consumers keep using var(--step-N) unchanged. */
+  --step--1: clamp(0.8125rem, 0.7917rem + 0.0926vw, 0.875rem);
+  --step-0: clamp(0.9375rem, 0.9167rem + 0.0926vw, 1rem);
+  --step-1: clamp(1.125rem, 1.0833rem + 0.185vw, 1.25rem);
+  --step-2: clamp(1.35rem, 1.279rem + 0.316vw, 1.563rem);
+  --step-3: clamp(1.62rem, 1.509rem + 0.493vw, 1.953rem);
+  --step-4: clamp(1.94rem, 1.773rem + 0.742vw, 2.441rem);
 
   /* Form */
   --radius: 10px;
@@ -68,14 +70,16 @@
   --dur: 260ms;
   --dur-slow: 520ms;
 
-  /* Spacing scale — apply to NEW/EDITED rules only; no mass refactor. */
+  /* Spacing scale — apply to NEW/EDITED rules only; no mass refactor.
+     The structural steps (5-7) are fluid so container padding/gaps breathe
+     with the viewport instead of stepping at breakpoints (Phase 31d). */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 32px;
+  --space-5: clamp(16px, 0.55vw + 14px, 20px);
+  --space-6: clamp(18px, 0.83vw + 15px, 24px);
+  --space-7: clamp(22px, 1.4vw + 17px, 32px);
 
   /* Layering (toasts sit above the overlay tier) */
   --z-sticky: 10;
@@ -271,7 +275,10 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 360px minmax(720px, 1fr);
+  /* Fluid rail: compresses toward 300px on small desktops (giving the
+     workbench room in the 1080-1439 band) and caps at 380px on wide screens.
+     300 + 720 = 1020 < 1080, so the drawer-collapse boundary stays 1080px. */
+  grid-template-columns: clamp(300px, 24vw, 380px) minmax(720px, 1fr);
   min-height: 100vh;
   min-height: 100dvh;
 }
@@ -893,6 +900,7 @@ input[type="range"]::-moz-range-thumb {
   margin: var(--space-2) 0 0;
   color: var(--muted);
   font-size: 0.88rem;
+  max-width: 70ch;
   line-height: 1.6;
   max-width: 62ch;
 }
@@ -2484,6 +2492,15 @@ a {
   }
 }
 
+/* Tablet band (Phase 31d): between the drawer collapse (≤1079.98) and the
+   desktop rail, don't stretch ONE narrow column across 720-1080px — pair the
+   pairable. Placed after the ≤1079.98 block so it wins on source order. */
+@media (min-width: 720px) and (max-width: 1079.98px) {
+  .two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .workbench {
     padding: 16px 14px 32px;
@@ -2653,11 +2670,15 @@ a {
 /* Wide screens USE the width INSIDE each results tab (Phase 31c reshaped the
    old results-stack pairing): Drivers pairs the waterfall with the factor
    table (3fr/2fr); Positions pairs the exposure breakdown with the name-level
-   table. DOM order is preserved; anything unpaired spans the full row. */
+   table. DOM order is preserved; anything unpaired spans the full row.
+   The pairing starts at 1280px (the fluid 300px rail leaves the workbench
+   ~900px there — Phase 31d softened the old 1080-1439 single-column band). */
 @media (min-width: 1440px) {
   .workbench {
     padding: var(--space-7) 40px 56px;
   }
+}
+@media (min-width: 1280px) {
   .results-tabs .tab-panel {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: var(--space-5);
@@ -2677,9 +2698,11 @@ a {
   .results-tabs .tab-panel > .exposure-card + .table-card {
     grid-column: 2;
   }
-  /* If the exposure card didn't render (empty breakdown), let the name-level
-     table reclaim the full row rather than leave a hole. */
-  .results-tabs .tab-panel:not(:has(> .exposure-card)) > .table-card {
+  /* If the exposure card didn't render (empty breakdown), the name-level
+     table becomes the panel's FIRST child — let it reclaim the full row.
+     (Scoped by position, NOT :not(:has(.exposure-card)): that would also
+     match the Drivers panel and break its waterfall + table pairing.) */
+  .results-tabs .tab-panel > .table-card:first-child {
     grid-column: 1 / -1;
   }
 }
