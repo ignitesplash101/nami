@@ -13,13 +13,16 @@ import {
   Lock,
   LogOut,
   Menu,
+  Moon,
   Pin,
   Save,
   Shield,
+  Sun,
   Table2,
   Unlock,
   Upload
 } from "lucide-react";
+import { useTheme } from "./theme";
 import {
   ApiError,
   decomposeScenarioStream,
@@ -180,6 +183,7 @@ function parseCsv(text: string): HoldingRow[] {
 }
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
   const [access, setAccess] = useState<AccessResponse | null>(null);
   const [portfolios, setPortfolios] = useState<SamplePortfolio[]>([]);
   const [scenarios, setScenarios] = useState<SampleScenario[]>([]);
@@ -681,7 +685,12 @@ export default function App() {
   const commandActions: CommandAction[] = [
     { id: "run", label: "Run scenario", hint: "Enter", run: () => void handleRun() },
     { id: "setup", label: "Open portfolio & access setup", run: openRailDrawer },
-    { id: "methodology", label: "Open methodology", run: () => openMethodology() }
+    { id: "methodology", label: "Open methodology", run: () => openMethodology() },
+    {
+      id: "theme",
+      label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
+      run: toggleTheme
+    }
   ];
   if (resultEnvelope) {
     commandActions.push({
@@ -790,6 +799,14 @@ export default function App() {
               aria-label="Open command palette"
             >
               <Command size={16} />
+            </button>
+            <button
+              className="methodology-btn"
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
             <button
               className="methodology-btn"

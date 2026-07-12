@@ -70,13 +70,17 @@ const CHART_THEME_FALLBACK: ChartTheme = {
 };
 
 let cachedChartTheme: ChartTheme | null = null;
+let cachedChartThemeKey: string | null = null;
 
-/** Reads the design tokens from :root ONCE (memoized — there is no runtime
- * theme switching today). Unset properties fall back per-key to the current
- * literals so charts render identically without a stylesheet. */
+/** Reads the design tokens from :root, memoized PER THEME — the cache key is
+ * `<html data-theme>`, so a theme toggle self-invalidates on the next read
+ * (useTheme() re-renders the chart consumers, which call this again). Unset
+ * properties fall back per-key to the dark literals so charts render
+ * identically without a stylesheet. */
 export function chartTheme(): ChartTheme {
-  if (cachedChartTheme) return cachedChartTheme;
   if (typeof document === "undefined") return CHART_THEME_FALLBACK;
+  const themeKey = document.documentElement.dataset.theme ?? "dark";
+  if (cachedChartTheme && cachedChartThemeKey === themeKey) return cachedChartTheme;
   const styles = getComputedStyle(document.documentElement);
   const read = (name: string, fallback: string): string =>
     styles.getPropertyValue(name).trim() || fallback;
@@ -89,11 +93,13 @@ export function chartTheme(): ChartTheme {
     grid: read("--chart-grid", CHART_THEME_FALLBACK.grid),
     connector: read("--chart-connector", CHART_THEME_FALLBACK.connector)
   };
+  cachedChartThemeKey = themeKey;
   return cachedChartTheme;
 }
 
 export function resetChartThemeForTests(): void {
   cachedChartTheme = null;
+  cachedChartThemeKey = null;
 }
 
 export function preferredAttributionMethod(result: ScenarioResult): AttributionMethod {

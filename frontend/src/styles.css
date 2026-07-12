@@ -4,13 +4,17 @@
  * with the --font-* tokens below. */
 
 /* ============================================================================
- * nami — "Hokusai Deep" design system.
+ * nami — dual-theme design system.
  *
- * A research-instrument identity built around 波 (wave): a shock that PROPAGATES
- * through a portfolio. Prussian-indigo ground, warm rice-paper text, a foam-sand
- * primary accent and a wave-crest-blue secondary. Color lives entirely in tokens
- * below; the legacy token names are kept as aliases so existing rules need no
- * change. New code should prefer the semantic tokens (--accent, --up, --down…).
+ * An identity built around 波 (wave): a shock that PROPAGATES through a
+ * portfolio, grounded in the Great Wave's actual print material.
+ *   dark  = "Hokusai Deep": Prussian-indigo ground, warm rice-paper text.
+ *   light = "Hokusai Air":  warm washi cream ground, Prussian-blue ink text.
+ * :root below is the dark base; :root[data-theme="light"] overrides every
+ * color-bearing token. The boot script in index.html sets data-theme before
+ * first paint, so there is NO prefers-color-scheme branch in CSS — one source
+ * of truth. Color lives entirely in tokens; never hard-code hex/rgba in rules
+ * (a literal renders in ONE theme only). Legacy token names are aliases.
  * ========================================================================== */
 :root {
   color-scheme: dark;
@@ -35,6 +39,7 @@
   --accent: #e9d8a6;      /* foam / sand — primary accent + CTA */
   --accent-2: #7fb5d6;    /* wave-crest blue — totals, links, active state */
   --warn: #e6b566;        /* warnings / disclaimers / backdated banner */
+  --accent-ink: var(--accent); /* sand as FOREGROUND (text/icons); darker in light for contrast */
 
   /* Tinted washes */
   --accent-soft: rgba(233, 216, 166, 0.1);
@@ -96,6 +101,29 @@
   --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
+  /* Purpose tints — formerly hard-coded literals; each has a light override. */
+  --wash-1: rgba(127, 181, 214, 0.1);   /* body radial wash (crest) */
+  --wash-2: rgba(233, 216, 166, 0.05);  /* body radial wash (sand) */
+  --rail-veil: rgba(8, 20, 32, 0.88);   /* rail translucent ground */
+  --panel-veil: rgba(16, 37, 55, 0.78); /* error banner / boundary panel */
+  --backdrop: rgba(4, 10, 18, 0.62);    /* drawer/dialog backdrop */
+  --tint-soft: rgba(238, 242, 236, 0.05);   /* chip/button resting wash */
+  --tint-strong: rgba(238, 242, 236, 0.1);  /* hover wash */
+  --tint-solid: rgba(238, 242, 236, 0.18);  /* progress dots, solid tint */
+  --card-sheen: linear-gradient(180deg, rgba(238, 242, 236, 0.07), rgba(238, 242, 236, 0.03));
+  --inset: rgba(10, 22, 34, 0.5);       /* inset panels (rows, lists, progress) */
+  --inset-soft: rgba(5, 18, 29, 0.28);  /* lighter inset (details summary) */
+  --code-block-bg: rgba(0, 0, 0, 0.3);
+  --code-chip-bg: rgba(255, 255, 255, 0.07);
+  --accent-2-line: rgba(127, 181, 214, 0.3);
+  --accent-2-line-strong: rgba(127, 181, 214, 0.5);
+  --accent-glow: rgba(233, 216, 166, 0.22); /* CTA hover shadow color */
+  --warn-line: rgba(230, 181, 102, 0.35);
+  --warn-text: #f5e2bf;
+  --down-line: rgba(232, 97, 90, 0.45);
+  --down-text: #f6bdb9;
+  --shadow-drawer: rgba(0, 0, 0, 0.4);  /* drawer edge shadow color */
+
   /* Back-compat aliases — existing rules keep working unchanged. */
   --panel: var(--surface);
   --panel-2: var(--surface-2);
@@ -105,6 +133,71 @@
   --amber: var(--warn);
 }
 
+/* ============================================================================
+ * "Hokusai Air" — the light theme. Same print, other side: Prussian-blue ink
+ * on warm washi cream. Foreground tokens are darkened for AA contrast on the
+ * cream ground (text ≥ 4.5:1, UI ≥ 3:1); the CTA stays sand-fill + ink-text
+ * in both themes. Keep every color-bearing token from :root overridden here.
+ * ========================================================================== */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f4efe3;          /* washi cream ground */
+  --surface: #fbf7ec;
+  --surface-2: #ece5d2;
+  --sunken: #e9e1cc;
+  --line: rgba(27, 58, 87, 0.16);
+  --line-strong: rgba(27, 58, 87, 0.28);
+
+  --text: #1b3a57;        /* warm Prussian ink */
+  --text-2: rgba(27, 58, 87, 0.82);
+  --muted: #52677c;
+  /* --ink stays near-black: text on sand fills reads in both themes */
+
+  --up: #1d7a4d;
+  --down: #b83a30;
+  --accent: #d9c07a;      /* deeper sand so the CTA fill reads on cream */
+  --accent-2: #2e6e97;    /* crest blue darkened to text-grade contrast */
+  --warn: #7c5e14;
+  --accent-ink: #8a6a1c;
+
+  --accent-soft: rgba(217, 192, 122, 0.2);
+  --accent-2-soft: rgba(46, 110, 151, 0.12);
+  --up-soft: rgba(29, 122, 77, 0.12);
+  --down-soft: rgba(184, 58, 48, 0.1);
+  --warn-soft: rgba(155, 116, 30, 0.12);
+
+  --shadow: 0 8px 28px rgba(27, 58, 87, 0.12);
+  --shadow-strong: 0 20px 60px rgba(27, 58, 87, 0.22);
+
+  --chart-grid: rgba(27, 58, 87, 0.1);
+  --chart-connector: rgba(138, 106, 28, 0.35);
+
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-ink);
+
+  --wash-1: rgba(46, 110, 151, 0.08);
+  --wash-2: rgba(217, 192, 122, 0.14);
+  --rail-veil: rgba(251, 247, 236, 0.9);
+  --panel-veil: rgba(251, 247, 236, 0.86);
+  --backdrop: rgba(27, 58, 87, 0.35);
+  --tint-soft: rgba(27, 58, 87, 0.05);
+  --tint-strong: rgba(27, 58, 87, 0.1);
+  --tint-solid: rgba(27, 58, 87, 0.22);
+  --card-sheen: linear-gradient(180deg, rgba(27, 58, 87, 0.05), rgba(27, 58, 87, 0.02));
+  --inset: rgba(27, 58, 87, 0.06);
+  --inset-soft: rgba(27, 58, 87, 0.04);
+  --code-block-bg: rgba(27, 58, 87, 0.08);
+  --code-chip-bg: rgba(27, 58, 87, 0.08);
+  --accent-2-line: rgba(46, 110, 151, 0.4);
+  --accent-2-line-strong: rgba(46, 110, 151, 0.6);
+  --accent-glow: rgba(138, 106, 28, 0.25);
+  --warn-line: rgba(124, 94, 20, 0.4);
+  --warn-text: #6b5210;
+  --down-line: rgba(184, 58, 48, 0.45);
+  --down-text: #96271f;
+  --shadow-drawer: rgba(27, 58, 87, 0.28);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -112,8 +205,8 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 78% -6%, rgba(127, 181, 214, 0.1), transparent 30rem),
-    radial-gradient(circle at -5% 102%, rgba(233, 216, 166, 0.05), transparent 34rem),
+    radial-gradient(circle at 78% -6%, var(--wash-1), transparent 30rem),
+    radial-gradient(circle at -5% 102%, var(--wash-2), transparent 34rem),
     var(--bg);
   color: var(--text);
   font-family: var(--font-body);
@@ -190,7 +283,7 @@ button:disabled {
   height: 100dvh;
   overflow: auto;
   border-right: 1px solid var(--line);
-  background: rgba(8, 20, 32, 0.88);
+  background: var(--rail-veil);
   padding: 24px;
 }
 
@@ -246,9 +339,15 @@ button:disabled {
 .brand-crest {
   height: 8px;
   margin-top: 16px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q 12 -2 24 4 T 48 4' fill='none' stroke='%23e9d8a6' stroke-width='1.4'/%3E%3C/svg%3E");
-  background-repeat: repeat-x;
-  background-size: 48px 8px;
+  /* Wave geometry as a mask + background-color so the crest themes with
+     --accent-ink instead of baking a sand literal into the data-URI. */
+  background-color: var(--accent-ink);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q 12 -2 24 4 T 48 4' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q 12 -2 24 4 T 48 4' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  -webkit-mask-size: 48px 8px;
+  mask-size: 48px 8px;
   opacity: 0.5;
 }
 
@@ -300,7 +399,7 @@ p {
 .error-banner,
 .error-boundary-panel {
   border: 1px solid var(--line);
-  background: rgba(16, 37, 55, 0.78);
+  background: var(--panel-veil);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
@@ -342,7 +441,7 @@ p {
 }
 
 .access-panel {
-  border-color: rgba(127, 181, 214, 0.3);
+  border-color: var(--accent-2-line);
 }
 
 .topbar {
@@ -365,7 +464,7 @@ p {
 .status-strip span,
 .mini-holdings span {
   border: 1px solid var(--line);
-  background: rgba(238, 242, 236, 0.05);
+  background: var(--tint-soft);
   color: var(--muted);
   padding: 6px 9px;
   border-radius: var(--radius-sm);
@@ -380,8 +479,8 @@ p {
 }
 
 .notice {
-  border-color: rgba(230, 181, 102, 0.35);
-  color: #f5e2bf;
+  border-color: var(--warn-line);
+  color: var(--warn-text);
   padding: 12px 14px;
   margin-bottom: 18px;
   background: var(--warn-soft);
@@ -389,9 +488,9 @@ p {
 
 .error-banner,
 .inline-error {
-  border: 1px solid rgba(232, 97, 90, 0.45);
+  border: 1px solid var(--down-line);
   border-radius: var(--radius);
-  color: #f6bdb9;
+  color: var(--down-text);
   background: var(--down-soft);
   padding: 10px 12px;
   margin: 12px 0;
@@ -473,19 +572,19 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 700;
 }
 .primary-button:not(:disabled):hover {
-  box-shadow: 0 6px 20px rgba(233, 216, 166, 0.22);
+  box-shadow: 0 6px 20px var(--accent-glow);
   transform: translateY(-1px);
 }
 
 .ghost-button,
 .unlock-row button {
   border: 1px solid var(--line);
-  background: rgba(238, 242, 236, 0.06);
+  background: var(--tint-soft);
 }
 .ghost-button:not(:disabled):hover,
 .unlock-row button:not(:disabled):hover {
   border-color: var(--line-strong);
-  background: rgba(238, 242, 236, 0.1);
+  background: var(--tint-strong);
 }
 
 .segmented {
@@ -529,7 +628,7 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   gap: 8px;
   padding: 10px;
-  border: 1px dashed rgba(127, 181, 214, 0.32);
+  border: 1px dashed var(--accent-2-line);
   border-radius: var(--radius-sm);
   color: var(--muted);
 }
@@ -655,7 +754,7 @@ input[type="range"]::-moz-range-thumb {
 
 .metric {
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(238, 242, 236, 0.07), rgba(238, 242, 236, 0.03));
+  background: var(--card-sheen);
   border-radius: var(--radius);
   padding: 14px;
 }
@@ -1044,7 +1143,7 @@ a {
   position: fixed;
   inset: 0;
   z-index: var(--z-backdrop);
-  background: rgba(4, 10, 18, 0.62);
+  background: var(--backdrop);
   backdrop-filter: blur(4px);
   animation: fadeIn 0.2s ease-out;
 }
@@ -1061,7 +1160,7 @@ a {
   width: min(560px, 100vw);
   background: var(--panel);
   border-left: 1px solid var(--line);
-  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.4);
+  box-shadow: -20px 0 60px var(--shadow-drawer);
   z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
@@ -1213,7 +1312,7 @@ a {
   line-height: 1.6;
 }
 .section-content pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--code-block-bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
@@ -1278,7 +1377,7 @@ a {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
-  background: rgba(5, 18, 29, 0.28);
+  background: var(--inset-soft);
 }
 .advanced-diagnostics summary {
   cursor: pointer;
@@ -1343,7 +1442,7 @@ a {
  * per-item treatment is wrap-safe (the list goes vertical on phones).
  * ========================================================================== */
 .run-progress {
-  background: rgba(13, 32, 50, 0.6);
+  background: var(--inset);
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 16px 20px;
@@ -1369,7 +1468,7 @@ a {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: rgba(238, 242, 236, 0.18);
+  background: var(--tint-solid);
   display: inline-block;
 }
 .run-progress li.active .dot {
@@ -1431,10 +1530,10 @@ a {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px 14px;
-  background: rgba(10, 22, 34, 0.5);
+  background: var(--inset);
 }
 .adjust-row.changed {
-  border-color: rgba(127, 181, 214, 0.5);
+  border-color: var(--accent-2-line-strong);
   background: var(--accent-2-soft);
 }
 .adjust-row-head {
@@ -1553,7 +1652,7 @@ a {
   width: min(360px, 100vw);
   background: var(--panel);
   border-right: 1px solid var(--line);
-  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.4);
+  box-shadow: 20px 0 60px var(--shadow-drawer);
   z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
@@ -2205,7 +2304,7 @@ a {
   font-size: 0.78rem;
 }
 .ops-danger {
-  border: 1px solid rgba(232, 97, 90, 0.45);
+  border: 1px solid var(--down-line);
   border-radius: var(--radius);
   background: var(--down-soft);
   padding: var(--space-3);
@@ -2409,9 +2508,9 @@ a {
 
 /* Backdated-mode banner */
 .backdated-banner {
-  border: 1px solid rgba(230, 181, 102, 0.4);
+  border: 1px solid var(--warn-line);
   background: var(--warn-soft);
-  color: #f4e2c0;
+  color: var(--warn-text);
   padding: 14px 16px;
   border-radius: var(--radius);
   margin: 14px 0;
@@ -2427,7 +2526,7 @@ a {
   line-height: 1.5;
 }
 .backdated-banner code {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--code-chip-bg);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -2525,10 +2624,10 @@ th.sortable button {
     background var(--dur-fast) var(--ease);
 }
 th.sortable button:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 th.sortable.sorted button {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 th.sortable .sort-arrow {
   font-size: 0.7em;
@@ -2572,7 +2671,7 @@ th.sortable.num button {
   letter-spacing: 0.02em;
 }
 .reproducibility-chip code {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--code-chip-bg);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -2586,7 +2685,7 @@ th.sortable.num button {
   width: min(440px, 100vw);
   background: var(--panel);
   border-left: 1px solid var(--line);
-  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.4);
+  box-shadow: -20px 0 60px var(--shadow-drawer);
   z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
@@ -2621,7 +2720,7 @@ th.sortable.num button {
   margin-bottom: 14px;
 }
 .saved-tag-filter button {
-  background: rgba(238, 242, 236, 0.05);
+  background: var(--tint-soft);
   color: var(--muted);
   border: 1px solid var(--line);
   padding: 4px 10px;
@@ -2644,7 +2743,7 @@ th.sortable.num button {
 }
 .saved-list li {
   border: 1px solid var(--line);
-  background: rgba(10, 22, 34, 0.5);
+  background: var(--inset);
   border-radius: var(--radius);
   padding: 12px 14px;
 }
@@ -2694,8 +2793,8 @@ th.sortable.num button {
   font-size: 0.75rem;
 }
 .ghost-button.danger {
-  color: #f6bdb9;
-  border-color: rgba(232, 97, 90, 0.4);
+  color: var(--down-text);
+  border-color: var(--down-line);
 }
 
 /* Portfolio history panel */
@@ -2745,7 +2844,7 @@ th.sortable.num button {
   font-size: 0.8125rem;
 }
 .snap-date code {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--code-chip-bg);
   padding: 1px 6px;
   border-radius: 4px;
   font-weight: 600;
