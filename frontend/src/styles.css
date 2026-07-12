@@ -87,10 +87,12 @@
   --z-overlay: 101;
   --z-toast: 120;
 
-  /* Workbench upper bound: fills 1920px screens completely (1560px track);
-     only ultrawides center with gutters. Width is USED via the >=1440px
-     results grid below, not wasted on stretched single columns. */
-  --workbench-max: 1800px;
+  /* Workbench upper bound: 100% = full-bleed on every monitor (user call,
+     2026-07-12 — no centered gutters on ultrawides). The rail stays capped at
+     380px; prose stays readable via per-element ch caps, and the ≥1600px
+     tab-panel pairing puts the width to work. Keep the max-width mechanism —
+     a future cap is a one-token change. */
+  --workbench-max: 100%;
 
   /* Chart-only alpha tints — read by charts.ts::chartTheme(); keep in sync
      with --text / --accent if those ever change. */
@@ -122,6 +124,10 @@
   --accent-2-line: rgba(127, 181, 214, 0.3);
   --accent-2-line-strong: rgba(127, 181, 214, 0.5);
   --accent-glow: rgba(233, 216, 166, 0.22); /* CTA hover shadow color */
+  /* Form fields. Dark: fields sit "sunken" below the panel. Light: fields
+     must be LIGHTER than the cards around them or they read as tan slabs. */
+  --field: var(--sunken);
+  --field-line: var(--line);
   --warn-line: rgba(230, 181, 102, 0.35);
   --warn-text: #f5e2bf;
   --down-line: rgba(232, 97, 90, 0.45);
@@ -150,8 +156,8 @@
   --surface: #fbf7ec;
   --surface-2: #ece5d2;
   --sunken: #e9e1cc;
-  --line: rgba(27, 58, 87, 0.16);
-  --line-strong: rgba(27, 58, 87, 0.28);
+  --line: rgba(27, 58, 87, 0.18);
+  --line-strong: rgba(27, 58, 87, 0.34);
 
   --text: #1b3a57;        /* warm Prussian ink */
   --text-2: rgba(27, 58, 87, 0.82);
@@ -171,7 +177,7 @@
   --down-soft: rgba(184, 58, 48, 0.1);
   --warn-soft: rgba(155, 116, 30, 0.12);
 
-  --shadow: 0 8px 28px rgba(27, 58, 87, 0.12);
+  --shadow: 0 8px 28px rgba(27, 58, 87, 0.16);
   --shadow-strong: 0 20px 60px rgba(27, 58, 87, 0.22);
 
   --chart-grid: rgba(27, 58, 87, 0.1);
@@ -200,6 +206,8 @@
   --down-line: rgba(184, 58, 48, 0.45);
   --down-text: #96271f;
   --shadow-drawer: rgba(27, 58, 87, 0.28);
+  --field: #fffdf6;
+  --field-line: rgba(27, 58, 87, 0.28);
 }
 
 * {
@@ -460,12 +468,15 @@ p {
 .topbar h1 {
   font-size: var(--step-3);
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .status-strip {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .status-strip span,
@@ -516,8 +527,8 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--line);
-  background: var(--sunken);
+  border: 1px solid var(--field-line);
+  background: var(--field);
   color: var(--text);
   outline: none;
   padding: 12px;
@@ -738,13 +749,13 @@ input[type="range"]::-moz-range-thumb {
   background: transparent;
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.9rem;
-  padding: 10px 16px;
+  font-size: 0.95rem;
+  padding: 12px 18px;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  border-bottom: 2px solid transparent;
+  border-bottom: 3px solid transparent;
   margin-bottom: -1px; /* the active underline sits ON the divider line */
   white-space: nowrap;
-  min-height: 42px;
+  min-height: 44px;
   cursor: pointer;
   transition:
     color var(--dur-fast) var(--ease),
@@ -757,12 +768,31 @@ input[type="range"]::-moz-range-thumb {
 .tablist [role="tab"].active {
   color: var(--text);
   border-bottom-color: var(--accent-2);
-  background: var(--accent-2-soft);
 }
-/* Area tabs are the app's primary navigation — slightly larger targets. */
+
+/* Area tabs are the app's PRIMARY navigation — a filled pill-nav (active =
+   crest-on-ink, the app's segmented convention), visually distinct from the
+   quieter underline results tabs. */
+.area-tabs .tablist {
+  border-bottom: none;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+}
 .area-tabs .tablist [role="tab"] {
   font-size: 0.95rem;
-  padding: 11px 18px;
+  padding: 10px 22px;
+  border-radius: 9px;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.area-tabs .tablist [role="tab"].active {
+  background: var(--accent-2);
+  color: var(--ink);
 }
 .tab-panel {
   display: grid;
@@ -853,7 +883,7 @@ input[type="range"]::-moz-range-thumb {
      mobile tables then force the whole workbench wider than a phone
      viewport (same trap the ≥1440px grid guards with minmax(0, Nfr)). */
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
+  gap: 14px;
   scroll-margin-top: var(--space-3);
 }
 
@@ -904,9 +934,6 @@ input[type="range"]::-moz-range-thumb {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-}
-.secondary-metric-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
 }
 
 .metric {
@@ -1800,8 +1827,8 @@ a {
 .adjust-row-controls input[type="number"] {
   width: 90px;
   padding: 4px 8px;
-  background: var(--sunken);
-  border: 1px solid var(--line);
+  background: var(--field);
+  border: 1px solid var(--field-line);
   color: var(--text);
   border-radius: var(--radius-sm);
 }
@@ -1823,6 +1850,10 @@ a {
 .adjust-prompt textarea {
   min-height: 72px;
   resize: vertical;
+}
+/* Auto-width action — full-bleed the button read as a disabled input strip. */
+.adjust-prompt .ghost-button {
+  align-self: flex-start;
 }
 .rerun-suggestion {
   margin-top: 12px;
@@ -1953,7 +1984,13 @@ a {
 .scenario-readout {
   border: 1px solid var(--line);
   border-left: 3px solid var(--accent);
-  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  /* Soft top sheen, not a full surface-2 slab — at full strength the light
+     theme rendered this card as a tan block behind red numbers. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-2) 55%, var(--surface)),
+    var(--surface)
+  );
   border-radius: var(--radius);
   padding: 18px 20px;
   box-shadow: var(--shadow);
@@ -2792,7 +2829,18 @@ a {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
+}
+.nav-stressed {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.nav-stressed.up {
+  color: var(--up);
+}
+.nav-stressed.down {
+  color: var(--down);
 }
 /* Desktop-only sticky toolbar (the file's first min-width query — the three
    max-width breakpoints below are untouched). Sticky scope is bounded by
@@ -2816,14 +2864,15 @@ a {
    old results-stack pairing): Drivers pairs the waterfall with the factor
    table (3fr/2fr); Positions pairs the exposure breakdown with the name-level
    table. DOM order is preserved; anything unpaired spans the full row.
-   The pairing starts at 1280px (the fluid 300px rail leaves the workbench
-   ~900px there — Phase 31d softened the old 1080-1439 single-column band). */
+   The pairing starts at 1600px (below that, the factor table's Reasoning
+   column renders cramped beside the waterfall — and with the full-bleed
+   workbench, a full-row card below 1600px genuinely fills the screen). */
 @media (min-width: 1440px) {
   .workbench {
     padding: var(--space-7) 40px 56px;
   }
 }
-@media (min-width: 1280px) {
+@media (min-width: 1600px) {
   .results-tabs .tab-panel {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: var(--space-5);

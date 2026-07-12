@@ -31,7 +31,7 @@ import {
 } from "./AttributionControl";
 import type { AttributionOption } from "./AttributionControl";
 import { ExposureBreakdown } from "./ExposureBreakdown";
-import { Metric, ExportCsvButton, SortableTh } from "./primitives";
+import { ExportCsvButton, SortableTh } from "./primitives";
 import { ScenarioReadout } from "./ScenarioReadout";
 import { WaterfallChart } from "./WaterfallChart";
 import type {
@@ -830,6 +830,13 @@ export function ResultsPanel({
               />
             </label>
           )}
+          {stressedNav != null ? (
+            <span
+              className={`nav-stressed ${result.portfolio_pnl.total_pnl >= 0 ? "up" : "down"}`}
+            >
+              → {formatCurrency(stressedNav, currency)} stressed
+            </span>
+          ) : null}
           {hasNav ? (
             <div className="segmented results-units" role="radiogroup" aria-label="P&L units">
               <button
@@ -870,19 +877,6 @@ export function ResultsPanel({
           </span>
         ) : null}
       </div>
-      {hasNav ? (
-        <div className="metric-grid secondary-metric-grid" aria-label="Portfolio value details">
-          <Metric
-            label="Portfolio NAV"
-            value={formatCurrency(nav ?? 0, currency)}
-            sub={
-              stressedNav != null
-                ? `-> ${formatCurrency(stressedNav, currency)} stressed`
-                : undefined
-            }
-          />
-        </div>
-      ) : null}
       <Tabs
         className="results-tabs"
         idBase="results"

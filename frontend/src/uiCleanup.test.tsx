@@ -196,6 +196,10 @@ describe("first-screen UI cleanup", () => {
     expect(screen.queryByText("Top contributor")).not.toBeInTheDocument();
     expect(screen.queryByText("Analogs")).not.toBeInTheDocument();
     expect(screen.queryByText("Citations")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Portfolio value details")).toHaveTextContent("Portfolio NAV");
+    // The stressed value lives inline in the toolbar, not in an orphan metric row.
+    expect(screen.queryByLabelText("Portfolio value details")).toBeNull();
+    const stressed = document.querySelector(".results-toolbar .nav-stressed");
+    expect(stressed).not.toBeNull();
+    expect(stressed).toHaveTextContent(/stressed/);
   });
 });
