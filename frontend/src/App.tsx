@@ -727,8 +727,8 @@ export default function App() {
             <Menu size={18} />
           </button>
           <div>
-            <p className="eyebrow">Live workbench</p>
-            <h1>Hypothetical stress workbench</h1>
+            <p className="eyebrow">What-if stress scenarios</p>
+            <h1>Portfolio scenario explorer</h1>
           </div>
           <div className="status-strip">
             <span className="status-chip">

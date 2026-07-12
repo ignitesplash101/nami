@@ -4,6 +4,8 @@ import {
   formatPercent,
   formatSignedCurrency
 } from "../charts";
+import { GLOSSARY } from "../copy/glossary";
+import { InfoTip } from "../copy/InfoTip";
 import type { AttributionMethod, FactorMetadataMap, ScenarioResult } from "../types";
 
 export function ScenarioReadout({
@@ -45,15 +47,15 @@ export function ScenarioReadout({
           <span className="readout-metric-label">Portfolio P&amp;L</span>
           <span className={`readout-metric-value ${toneClass}`}>{pnlText}</span>
           {readout.idioBand != null ? (
-            <span
-              className="readout-idio-band"
-              title="±1σ idiosyncratic dispersion around the factor-driven point estimate, scaled to the median selected-analog horizon. A dispersion floor under independence assumptions — not a confidence interval on the scenario."
-            >
+            <span className="readout-idio-band">
               ±{" "}
               {showDollars && nav != null
                 ? formatCurrency(nav * readout.idioBand, currency)
                 : formatPercent(readout.idioBand)}{" "}
-              idio (1σ)
+              single-name noise
+              <InfoTip label="About single-name noise">
+                {GLOSSARY.singleNameNoise.plain} {GLOSSARY.singleNameNoise.detail}
+              </InfoTip>
             </span>
           ) : null}
         </div>
@@ -72,7 +74,8 @@ export function ScenarioReadout({
         <div>
           <span className="readout-metric-label">Evidence</span>
           <span className="readout-metric-value">
-            {readout.analogCount} analogs · {readout.citationCount} citations
+            {readout.analogCount} historical events · {readout.citationCount} sources
+            <InfoTip label="About the evidence">{GLOSSARY.historicalEvents.plain}</InfoTip>
           </span>
         </div>
       </div>

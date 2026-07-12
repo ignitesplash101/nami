@@ -152,7 +152,7 @@ describe("first-screen UI cleanup", () => {
 
     expect(screen.getByLabelText("Scenario results")).toHaveClass("onboarding-empty");
     expect(screen.getByText("No scenario run yet")).toBeInTheDocument();
-    expect(screen.getByText(/Pick a book in the rail/)).toBeInTheDocument();
+    expect(screen.getByText(/Describe a market shock in plain English/)).toBeInTheDocument();
     // the duplicated seed chips are gone — the scenario card above is the selector
     expect(screen.queryByRole("group", { name: "Try a sample scenario" })).toBeNull();
 

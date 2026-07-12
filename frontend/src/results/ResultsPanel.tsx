@@ -154,8 +154,8 @@ export function ResultsPanel({
         <div>
           <h3>No scenario run yet</h3>
           <p className="empty-invite">
-            Pick a book in the rail, describe or seed a stress above, and run it — nami grounds a
-            narrative, derives factor shocks, and attributes modeled P&L.
+            Describe a market shock in plain English above — or tap an example — and run it. nami
+            models what it could do to this portfolio and shows the evidence behind every number.
           </p>
           {onOpenBook ? (
             <button type="button" className="ghost-button empty-book-cta" onClick={onOpenBook}>
@@ -374,7 +374,8 @@ export function ResultsPanel({
             <div className="card-heading">
               <div>
                 <p className="eyebrow">Attribution</p>
-                <h3>Systematic contribution waterfall</h3>
+                <h3>What drove the P&amp;L</h3>
+                <p className="muted card-subtitle">Systematic contribution waterfall</p>
               </div>
               <div
                 className="segmented"
@@ -654,7 +655,7 @@ export function ResultsPanel({
             content: (
               <CollapsibleCard
                 eyebrow="Experimental"
-                title="Fixed-context theme sensitivity"
+                title="Which themes matter most"
                 summary={
                   result.narrative_shapley
                     ? `${result.narrative_shapley.contributions.length} themes decomposed`

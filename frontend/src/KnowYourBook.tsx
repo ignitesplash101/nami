@@ -1,6 +1,8 @@
 import { Download } from "lucide-react";
 import { useState } from "react";
 import { buildBookProfileRows, formatPercent } from "./charts";
+import { GLOSSARY } from "./copy/glossary";
+import { InfoTip } from "./copy/InfoTip";
 import { csvFilename, downloadCsv } from "./csv";
 import { factorDisplayName } from "./factors";
 import { TableScroll } from "./TableScroll";
@@ -36,11 +38,12 @@ export function KnowYourBook({
   const ctaLabel = tab === "profile" ? "Profile this book" : "Replay every historical event";
 
   return (
-    <section className="result-card know-book" aria-label="Know this book">
+    <section className="result-card know-book" aria-label="Understand this book">
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Know this book — free, no LLM</p>
+          <p className="eyebrow">Understand this book — instant, free</p>
           <h3>Pre-run analytics</h3>
+          <p className="muted card-subtitle">Pure engine math, no LLM call.</p>
         </div>
         <div className="segmented" role="radiogroup" aria-label="Pre-run analytic">
           <button
@@ -117,9 +120,12 @@ function ProfileBody({
         ))}
       </div>
       <p className="hint">
-        Portfolio beta per factor (Σ weight × beta; top {rows.length} of {profile.n_factors} by
-        magnitude). ±{formatPercent(profile.idio_band_weekly)} weekly idio — a dispersion floor,
-        not a confidence interval.
+        How hard a 1% move in each factor would hit this book (top {rows.length} of{" "}
+        {profile.n_factors} by size)
+        <InfoTip label="About portfolio beta">
+          {GLOSSARY.portfolioBeta.detail} Shown ±{formatPercent(profile.idio_band_weekly)} weekly
+          idio — a dispersion floor, not a confidence interval.
+        </InfoTip>
       </p>
       <TableScroll>
         <table>
@@ -127,9 +133,17 @@ function ProfileBody({
             <tr>
               <th>Ticker</th>
               <th className="num">Weight</th>
-              <th className="num">R² adj</th>
+              <th className="num">
+                R² adj
+                <InfoTip label="About adjusted R-squared">{GLOSSARY.rSquaredAdj.plain}</InfoTip>
+              </th>
               <th className="num">Weeks</th>
-              <th className="num">Idio vol (wk)</th>
+              <th className="num">
+                Idio vol (wk)
+                <InfoTip label="About idiosyncratic volatility">
+                  {GLOSSARY.idioVolWeekly.plain}
+                </InfoTip>
+              </th>
             </tr>
           </thead>
           <tbody>

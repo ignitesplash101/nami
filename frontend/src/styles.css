@@ -779,6 +779,66 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
+
+/* ============================================================================
+ * InfoTip (Phase 31e) — tap-friendly ⓘ popover replacing hover-only title=
+ * attrs. Not a useOverlay consumer: no scroll lock, local listeners only.
+ * ========================================================================== */
+.infotip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.infotip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.infotip-btn:hover,
+.infotip-btn[aria-expanded="true"] {
+  color: var(--accent-2);
+  background: var(--tint-soft);
+}
+.infotip-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(320px, 78vw);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.55;
+  color: var(--text-2);
+  text-align: left;
+  white-space: normal;
+  z-index: var(--z-sticky);
+}
+
+/* Quant name kept as a quiet subtitle under a plain-language card heading. */
+.card-subtitle {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+}
 .book-header h3 {
   margin: 4px 0 6px;
 }

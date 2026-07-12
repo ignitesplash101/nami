@@ -85,7 +85,7 @@ export function ScenarioPanel({
             }}
             enterKeyHint="go"
             disabled={!canEditText}
-            placeholder="Describe a hypothetical market stress."
+            placeholder="Describe a market shock in plain English."
           />
         </label>
       </div>
