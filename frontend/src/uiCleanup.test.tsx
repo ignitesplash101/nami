@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ResultsPanel, ScenarioPanel } from "./App";
+import { ScenarioPanel } from "./panels/ScenarioPanel";
+import { ResultsPanel } from "./results/ResultsPanel";
 import type { AccessResponse, ScenarioResult, ScenarioRunResponse } from "./types";
 
 vi.mock("./PlotLazy", () => ({

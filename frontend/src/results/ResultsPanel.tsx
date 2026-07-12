@@ -1,0 +1,832 @@
+import { useState } from "react";
+import type { RefObject } from "react";
+import { BarChart3, Check, Copy, Pin, Save } from "lucide-react";
+import {
+  buildPositionValuations,
+  buildWaterfallData,
+  buildWaterfallDataDollars,
+  factorReasoningRows,
+  formatCurrency,
+  formatPercent,
+  formatSignedCurrency,
+  parseNav,
+  preferredAttributionMethod,
+  summarizeFactorTable,
+  summarizeNameTable
+} from "../charts";
+import { csvFilename, downloadCsv } from "../csv";
+import { factorDescription } from "../factors";
+import { formatFxRate, formatMarkPrice, formatShares } from "../format";
+import { nextEnabledMethod } from "../attributionNav";
+import { CollapsibleCard } from "../CollapsibleCard";
+import { EvidenceBlock } from "../EvidenceBlock";
+import { KnowYourBook } from "../KnowYourBook";
+import { TableScroll } from "../TableScroll";
+import { useMediaQuery } from "../useMediaQuery";
+import {
+  AdvancedAttributionDiagnostics,
+  RiskDiagnostics
+} from "./AttributionControl";
+import type { AttributionOption } from "./AttributionControl";
+import { ExposureBreakdown } from "./ExposureBreakdown";
+import { Metric, ExportCsvButton, SortableTh } from "./primitives";
+import { ScenarioReadout } from "./ScenarioReadout";
+import { WaterfallChart } from "./WaterfallChart";
+import type {
+  AttributionMethod,
+  BookProfile,
+  EventsReplay,
+  FactorMetadataMap,
+  SampleScenario,
+  ScenarioRunResponse
+} from "../types";
+
+export type ValuationSortKey =
+  | "ticker"
+  | "weight"
+  | "shares"
+  | "mark"
+  | "value"
+  | "stressed"
+  | "delta"
+  | "deltaPct";
+export interface ValuationSort {
+  key: ValuationSortKey;
+  dir: "asc" | "desc";
+}
+
+export function ResultsPanel({
+  envelope,
+  attributionMethod,
+  setAttributionMethod,
+  factorMeta,
+  displayMode,
+  setDisplayMode,
+  navInput,
+  setNavInput,
+  valuationSort,
+  setValuationSort,
+  isRunning = false,
+  isStale = false,
+  scrollRef,
+  sampleScenarios = [],
+  onSeedScenario,
+  bookProfile = null,
+  profileBusy = false,
+  onProfileBook,
+  eventsReplay = null,
+  replayBusy = false,
+  onEventsReplay,
+  profileUnavailableReason = null,
+  canDecompose,
+  isDecomposing,
+  decomposeProgress,
+  onDecompose,
+  onCancelDecompose,
+  onOpenMethodology,
+  canSave,
+  onSave,
+  onPin,
+  isPinned = false
+}: {
+  envelope: ScenarioRunResponse | null;
+  attributionMethod: AttributionMethod;
+  setAttributionMethod: (method: AttributionMethod) => void;
+  factorMeta: FactorMetadataMap;
+  displayMode: "pct" | "usd";
+  setDisplayMode: (mode: "pct" | "usd") => void;
+  navInput: string;
+  setNavInput: (value: string) => void;
+  valuationSort: ValuationSort;
+  setValuationSort: (sort: ValuationSort) => void;
+  isRunning?: boolean;
+  // Prior results stay on screen, dimmed + aria-busy, while a re-run streams.
+  isStale?: boolean;
+  scrollRef?: RefObject<HTMLElement>;
+  sampleScenarios?: SampleScenario[];
+  onSeedScenario?: (key: string) => void;
+  // Free pre-scenario analytics (render in the empty state only).
+  bookProfile?: BookProfile | null;
+  profileBusy?: boolean;
+  onProfileBook?: () => void;
+  eventsReplay?: EventsReplay | null;
+  replayBusy?: boolean;
+  onEventsReplay?: () => void;
+  profileUnavailableReason?: string | null;
+  canDecompose: boolean;
+  isDecomposing: boolean;
+  decomposeProgress: { done: number; total: number } | null;
+  onDecompose: () => void;
+  onCancelDecompose?: () => void;
+  onOpenMethodology: (section?: string) => void;
+  canSave: boolean;
+  // Pin & compare: pins the CURRENT envelope for the App-level ComparisonPanel.
+  onPin?: () => void;
+  isPinned?: boolean;
+  onSave: () => void;
+}) {
+  // Hooks live ABOVE the empty-state early return so the hook list is stable
+  // across the null→result transition (the old in-App version relied on the
+  // zero-hooks mount-dispatcher loophole; same rendered output, safer order).
+  const isPhone = useMediaQuery("(max-width: 640px)");
+  // Viewport-height bands: phone keeps the 320/-90°-ticks contract; short
+  // laptops drop to 360; tall monitors get 480 instead of wasting space.
+  const isShortViewport = useMediaQuery("(max-height: 720px)");
+  const isTallViewport = useMediaQuery("(min-height: 900px)");
+  const [reproCopied, setReproCopied] = useState(false);
+
+  if (!envelope) {
+    if (isRunning) {
+      // First-run shimmer skeleton (reduced motion freezes it to a two-tone block).
+      return (
+        <section
+          ref={scrollRef}
+          className="empty-results results-skeleton"
+          aria-label="Scenario results"
+          aria-busy="true"
+        >
+          <span className="visually-hidden">Running scenario…</span>
+          <div className="skeleton-block" style={{ height: 96 }} />
+          <div className="skeleton-block" style={{ height: 48 }} />
+          <div className="skeleton-block" style={{ height: 320 }} />
+          <div className="skeleton-block" style={{ height: 180 }} />
+        </section>
+      );
+    }
+    return (
+      <section ref={scrollRef} className="empty-results onboarding-empty" aria-label="Scenario results">
+        <BarChart3 size={18} aria-hidden="true" />
+        <div>
+          <h3>No scenario run yet</h3>
+          <p className="empty-invite">
+            Pick a book in the rail, describe or seed a stress above, and run it — nami grounds a
+            narrative, derives factor shocks, and attributes modeled P&L.
+          </p>
+          {onProfileBook && onEventsReplay ? (
+            <KnowYourBook
+              profile={bookProfile}
+              replay={eventsReplay}
+              profileBusy={profileBusy}
+              replayBusy={replayBusy}
+              onProfile={onProfileBook}
+              onReplay={onEventsReplay}
+              unavailableReason={profileUnavailableReason}
+              factorMeta={factorMeta}
+            />
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+  const { result, analog_events } = envelope;
+  const currency = result.reporting_currency ?? "USD";
+  // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
+  // NAV is a client-side notional knob — instant what-if, no re-run.
+  const isMarked = Boolean(result.position_quantities);
+  const nav = isMarked ? result.portfolio_nav ?? null : parseNav(navInput);
+  const hasNav = nav != null;
+  const stressedNav = nav != null ? nav * (1 + result.portfolio_pnl.total_pnl) : null;
+  const showDollars = hasNav && displayMode === "usd";
+  const valuations = nav != null ? buildPositionValuations(result, nav) : [];
+  const sortedValuations = [...valuations].sort((a, b) => {
+    const { key, dir } = valuationSort;
+    const sign = dir === "asc" ? 1 : -1;
+    if (key === "ticker") return sign * a.ticker.localeCompare(b.ticker);
+    const av = (a[key] as number | undefined) ?? 0;
+    const bv = (b[key] as number | undefined) ?? 0;
+    return sign * (av - bv);
+  });
+  const toggleSort = (key: ValuationSortKey) =>
+    setValuationSort(
+      valuationSort.key === key
+        ? { key, dir: valuationSort.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "ticker" ? "asc" : "desc" }
+    );
+  const sortHeader = (label: string, key: ValuationSortKey, numeric = true) => (
+    <SortableTh
+      label={label}
+      active={valuationSort.key === key}
+      dir={valuationSort.dir}
+      onToggle={() => toggleSort(key)}
+      numeric={numeric}
+    />
+  );
+  const waterfall =
+    showDollars && nav != null
+      ? buildWaterfallDataDollars(result, attributionMethod, nav, currency, factorMeta)
+      : buildWaterfallData(result, attributionMethod, factorMeta);
+  const factorRows = factorReasoningRows(result, attributionMethod, factorMeta);
+  // Semantic export filenames: nami_<portfolio>_<scenario>_<as-of>_<table>.csv
+  const exportName = (table: string) =>
+    csvFilename(
+      result.portfolio_key !== "custom" ? result.portfolio_key : result.portfolio_name,
+      result.scenario_text,
+      result.market_date,
+      table
+    );
+  const exportFactorShocks = () =>
+    downloadCsv(
+      exportName("factor-shocks"),
+      ["Factor", "Shock applied (decimal)", "Contribution to P&L (decimal)", "Reasoning"],
+      factorRows.map((row) => [row.factorLabel, row.shockApplied, row.contribution, row.reasoning])
+    );
+  const exportNameLevel = () =>
+    downloadCsv(
+      exportName("name-level-contribution"),
+      [
+        "Ticker",
+        "Weight (decimal)",
+        "Factor (decimal)",
+        "Periphery (decimal)",
+        "Total (decimal)"
+      ],
+      Object.entries(result.portfolio_pnl.by_ticker_total)
+        .sort((a, b) => a[1] - b[1])
+        .map(([ticker, total]) => [
+          ticker,
+          result.portfolio_holdings[ticker] ?? 0,
+          result.portfolio_pnl.by_ticker_factor[ticker] ?? 0,
+          result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0,
+          total
+        ])
+    );
+  const exportValuations = () =>
+    downloadCsv(
+      exportName("position-valuation"),
+      [
+        "Ticker",
+        "Weight (decimal)",
+        "Shares",
+        "Mark",
+        "Value (USD)",
+        "Stressed (USD)",
+        "Delta (USD)",
+        "Delta (decimal)"
+      ],
+      // Respects the on-screen sort so the file matches what the user sees.
+      sortedValuations.map((row) => [
+        row.ticker,
+        row.weight,
+        row.shares ?? null,
+        row.mark ?? null,
+        row.value,
+        row.stressed,
+        row.delta,
+        row.deltaPct
+      ])
+    );
+  const exportAnalogs = () =>
+    downloadCsv(
+      exportName("analogs"),
+      ["Event", "Start", "End", "Why relevant"],
+      result.analogs_selected.map((analog) => {
+        const event = analog_events[analog.event_id];
+        return [
+          event?.name ?? analog.event_id,
+          event?.start_date ?? null,
+          event?.end_date ?? null,
+          analog.why_relevant
+        ];
+      })
+    );
+  const readoutMethod = preferredAttributionMethod(result);
+  const hasConditional = Boolean(result.portfolio_pnl.by_factor_conditional_shapley);
+  const hasConditionalExplicit = Boolean(
+    result.portfolio_pnl.by_factor_conditional_shapley_explicit
+  );
+  const hasConditionalGrouped = Boolean(
+    result.portfolio_pnl.by_factor_conditional_shapley_grouped
+  );
+  const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
+    (acc, value) => acc + value,
+    0
+  );
+  const chartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
+  const reproducibility = envelope.reproducibility;
+
+  async function copyReproducibility() {
+    const repro = reproducibility;
+    if (!repro) return;
+    const text = `prompt ${repro.prompt_version} · model ${repro.model_id} · as-of ${repro.effective_as_of_date}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setReproCopied(true);
+      setTimeout(() => setReproCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (insecure origin) — no-op.
+    }
+  }
+
+  const attributionOptions: AttributionOption[] = [
+    {
+      method: "naive",
+      label: "Naive algebra",
+      title: "Direct algebraic attribution. Useful for audit/debug; assumes factor independence.",
+      disabled: false
+    },
+    {
+      method: "conditional",
+      label: "Full conditional diagnostic",
+      title:
+        "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors.",
+      disabled: !hasConditional
+    },
+    {
+      method: "conditional_explicit",
+      label: "Scenario shocks",
+      title:
+        "Production risk view restricted to factors explicitly shocked by the scenario. Unshocked factors stay at zero.",
+      disabled: !hasConditionalExplicit
+    },
+    {
+      method: "conditional_grouped",
+      label: "Group totals",
+      title:
+        "Waterfall group totals for market / sector / style / macro, with factor-level detail kept in the table.",
+      disabled: !hasConditionalGrouped
+    }
+  ];
+  const mainAttributionOptions = attributionOptions.filter(
+    (option) => option.method === "conditional_explicit" || option.method === "conditional_grouped"
+  );
+  const diagnosticOptions = attributionOptions
+    .filter((option) => option.method === "naive" || option.method === "conditional")
+    .map((option) =>
+      option.method === "naive"
+        ? {
+            ...option,
+            label: "Naive algebra",
+            title:
+              "Direct algebraic attribution. Useful for audit/debug; assumes factor independence."
+          }
+        : {
+            ...option,
+            label: "Full conditional diagnostic",
+            title:
+              "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors."
+          }
+    );
+
+  // Roving-radiogroup arrow nav: move to the next/prev ENABLED option and select it.
+  function moveAttribution(direction: 1 | -1) {
+    setAttributionMethod(nextEnabledMethod(mainAttributionOptions, attributionMethod, direction));
+  }
+
+  function moveDiagnosticAttribution(direction: 1 | -1) {
+    setAttributionMethod(nextEnabledMethod(diagnosticOptions, attributionMethod, direction));
+  }
+
+  return (
+    <section
+      ref={scrollRef}
+      className={`results-stack${isStale ? " is-stale" : ""}`}
+      aria-busy={isStale || undefined}
+    >
+      <ScenarioReadout
+        result={result}
+        attributionMethod={readoutMethod}
+        factorMeta={factorMeta}
+        showDollars={showDollars}
+        nav={nav}
+        currency={currency}
+      />
+      <EvidenceBlock
+        result={result}
+        analogEvents={analog_events}
+        showDollars={showDollars}
+        nav={nav}
+        currency={currency}
+      />
+      <div className="results-toolbar">
+        <div className="results-toolbar-left">
+          {canSave ? (
+            <button className="ghost-button" onClick={onSave}>
+              <Save size={14} /> Save scenario
+            </button>
+          ) : null}
+          {onPin ? (
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={onPin}
+              disabled={isPinned}
+              title="Hold this result and compare the next run, adjustment, or opened scenario against it"
+            >
+              <Pin size={14} /> {isPinned ? "Pinned" : "Pin to compare"}
+            </button>
+          ) : null}
+          {isMarked ? (
+            <span className="muted nav-marked" title="Marked to the as-of close + FX">
+              NAV <code>{formatCurrency(result.portfolio_nav ?? 0, currency)}</code> · marked
+            </span>
+          ) : (
+            <label className="nav-knob">
+              <span>Portfolio value</span>
+              <input
+                value={navInput}
+                onChange={(event) => {
+                  setNavInput(event.target.value);
+                  if (parseNav(event.target.value) != null) setDisplayMode("usd");
+                }}
+                onFocus={(event) => event.currentTarget.select()}
+                placeholder="e.g. $1,000,000"
+                inputMode="decimal"
+                aria-label="Portfolio value (USD) for the dollar view"
+              />
+            </label>
+          )}
+          {hasNav ? (
+            <div className="segmented results-units" role="radiogroup" aria-label="P&L units">
+              <button
+                role="radio"
+                aria-checked={!showDollars}
+                className={!showDollars ? "active" : ""}
+                onClick={() => setDisplayMode("pct")}
+                title="Show P&L as percentages"
+              >
+                %
+              </button>
+              <button
+                role="radio"
+                aria-checked={showDollars}
+                className={showDollars ? "active" : ""}
+                onClick={() => setDisplayMode("usd")}
+                title="Show P&L in dollars"
+              >
+                $
+              </button>
+            </div>
+          ) : null}
+        </div>
+        {envelope.reproducibility ? (
+          <span className="muted reproducibility-chip">
+            prompt {envelope.reproducibility.prompt_version} · model{" "}
+            {envelope.reproducibility.model_id} · as-of{" "}
+            <code>{envelope.reproducibility.effective_as_of_date}</code>
+            <button
+              type="button"
+              className="chip-copy-btn"
+              aria-label="Copy reproducibility details"
+              title="Copy reproducibility details"
+              onClick={copyReproducibility}
+            >
+              {reproCopied ? <Check size={12} /> : <Copy size={12} />}
+            </button>
+          </span>
+        ) : null}
+      </div>
+      {hasNav ? (
+        <div className="metric-grid secondary-metric-grid" aria-label="Portfolio value details">
+          <Metric
+            label="Portfolio NAV"
+            value={formatCurrency(nav ?? 0, currency)}
+            sub={
+              stressedNav != null
+                ? `-> ${formatCurrency(stressedNav, currency)} stressed`
+                : undefined
+            }
+          />
+        </div>
+      ) : null}
+
+      {/* ≥1440px the waterfall and exposure cards share a row (3fr/2fr) so wide
+          screens carry more analytics instead of stretched single columns. */}
+      <div className="result-card waterfall-card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">Attribution</p>
+            <h3>Systematic contribution waterfall</h3>
+          </div>
+          <div
+            className="segmented"
+            role="radiogroup"
+            aria-label="Attribution method"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                event.preventDefault();
+                moveAttribution(1);
+              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                event.preventDefault();
+                moveAttribution(-1);
+              }
+            }}
+          >
+            {mainAttributionOptions.map((option) => (
+              <button
+                key={option.method}
+                role="radio"
+                aria-checked={attributionMethod === option.method}
+                tabIndex={attributionMethod === option.method ? 0 : -1}
+                className={attributionMethod === option.method ? "active" : ""}
+                onClick={() => setAttributionMethod(option.method)}
+                disabled={option.disabled}
+                title={option.title}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="guide-link"
+          onClick={() => onOpenMethodology("factor-attribution")}
+        >
+          Which method should I use? Open the methodology comparison →
+        </button>
+        <AdvancedAttributionDiagnostics
+          options={diagnosticOptions}
+          attributionMethod={attributionMethod}
+          setAttributionMethod={setAttributionMethod}
+          moveAttribution={moveDiagnosticAttribution}
+        />
+        {attributionMethod === "conditional" ? (
+          <div className="risk-diagnostics" role="note">
+            <p className="eyebrow">Full conditional diagnostic</p>
+            <p className="muted">
+              Correlation credit, non-causal. Unshocked factors can receive positive or
+              negative P&amp;L through historical co-movement; do not read those bars as
+              explicit scenario shocks.
+            </p>
+          </div>
+        ) : null}
+        <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
+        <WaterfallChart
+          waterfall={waterfall}
+          showDollars={showDollars}
+          chartHeight={chartHeight}
+          isPhone={isPhone}
+        />
+      </div>
+
+      <ExposureBreakdown result={result} />
+
+      <div className="two-column">
+        <CollapsibleCard
+          className="table-card"
+          title="Factor shocks and attribution"
+          summary={summarizeFactorTable(result, factorMeta)}
+          action={<ExportCsvButton label="Export factor shocks as CSV" onClick={exportFactorShocks} />}
+        >
+          <TableScroll>
+          <table>
+            <thead>
+              <tr>
+                <th>Factor</th>
+                <th className="num">Shock</th>
+                <th className="num">P&L contrib</th>
+                <th>Reasoning</th>
+              </tr>
+            </thead>
+            <tbody>
+              {factorRows.map((row) => (
+                <tr key={row.factor} className={row.isCorrelationCredit ? "diagnostic-row" : ""}>
+                  <td>
+                    <button
+                      className="factor-link"
+                      onClick={() => onOpenMethodology("factor-universe")}
+                      title={factorDescription(factorMeta, row.factor)}
+                    >
+                      {row.factorLabel}
+                    </button>
+                  </td>
+                  <td className="num">{formatPercent(row.shockApplied)}</td>
+                  <td className="num">{formatPercent(row.contribution)}</td>
+                  <td>{row.reasoning}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </TableScroll>
+        </CollapsibleCard>
+        <CollapsibleCard
+          className="table-card"
+          title="Name-level contribution"
+          summary={summarizeNameTable(result)}
+          action={
+            <ExportCsvButton label="Export name-level contribution as CSV" onClick={exportNameLevel} />
+          }
+        >
+          <TableScroll>
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th className="num">Weight</th>
+                <th className="num">Factor</th>
+                <th className="num">Periphery</th>
+                <th className="num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(result.portfolio_pnl.by_ticker_total)
+                .sort((a, b) => a[1] - b[1])
+                .map(([ticker, total]) => (
+                  <tr key={ticker}>
+                    <td>{ticker}</td>
+                    <td className="num">{formatPercent(result.portfolio_holdings[ticker] ?? 0)}</td>
+                    <td className="num">
+                      {formatPercent(result.portfolio_pnl.by_ticker_factor[ticker] ?? 0)}
+                    </td>
+                    <td className="num">
+                      {formatPercent(result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0)}
+                    </td>
+                    <td className="num">{formatPercent(total)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          </TableScroll>
+        </CollapsibleCard>
+      </div>
+
+      {hasNav ? (
+        <CollapsibleCard
+          eyebrow="Valuation"
+          title="Position valuation — original → stressed"
+          summary={
+            stressedNav != null
+              ? `NAV ${formatCurrency(nav ?? 0, currency)} → ${formatCurrency(
+                  stressedNav,
+                  currency
+                )} stressed`
+              : undefined
+          }
+          action={
+            <ExportCsvButton label="Export position valuation as CSV" onClick={exportValuations} />
+          }
+        >
+          <TableScroll>
+            <table className="valuation-table">
+              <thead>
+                <tr>
+                  {sortHeader("Ticker", "ticker", false)}
+                  {sortHeader("Weight", "weight")}
+                  {isMarked ? sortHeader("Shares", "shares") : null}
+                  {isMarked ? sortHeader("Mark", "mark") : null}
+                  {sortHeader("Value", "value")}
+                  {sortHeader("Stressed", "stressed")}
+                  {sortHeader("Δ$", "delta")}
+                  {sortHeader("Δ%", "deltaPct")}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedValuations.map((row) => (
+                  <tr key={row.ticker}>
+                    <td>{row.ticker}</td>
+                    <td className="num">{formatPercent(row.weight, 1)}</td>
+                    {isMarked ? <td className="num">{formatShares(row.shares)}</td> : null}
+                    {isMarked ? <td className="num">{formatMarkPrice(row.mark)}</td> : null}
+                    <td className="num">{formatCurrency(row.value, currency)}</td>
+                    <td className="num">{formatCurrency(row.stressed, currency)}</td>
+                    <td className="num">{formatSignedCurrency(row.delta, currency)}</td>
+                    <td className="num">{formatPercent(row.deltaPct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+          {isMarked && result.fx_rates && Object.keys(result.fx_rates).length > 1 ? (
+            <p className="muted">
+              FX → USD:{" "}
+              {Object.entries(result.fx_rates)
+                .filter(([ccy]) => ccy !== "USD")
+                .map(
+                  ([ccy, rate]) =>
+                    `${formatFxRate(ccy, rate)} (${result.fx_date_by_currency?.[ccy] ?? "?"})`
+                )
+                .join(" · ")}
+            </p>
+          ) : (
+            <p className="muted">
+              Notional dollar view — sample weights × the portfolio value (positions are not marked).
+            </p>
+          )}
+        </CollapsibleCard>
+      ) : null}
+
+      <CollapsibleCard
+        className="narrative"
+        eyebrow="Narrative"
+        title="Narrative & analog evidence"
+        summary={
+          result.narrative.length > 90 ? `${result.narrative.slice(0, 89)}…` : result.narrative
+        }
+        action={
+          <ExportCsvButton label="Export historical analogs as CSV" onClick={exportAnalogs} />
+        }
+      >
+        <div className="two-column narrative-columns">
+          <div className="narrative-inner">
+            <h4>Grounded narrative</h4>
+            <p>{result.narrative}</p>
+            <div className="citation-list">
+              {result.citations.map((citation) => (
+                <a key={citation.url} href={citation.url} target="_blank" rel="noreferrer">
+                  {citation.title ?? citation.url}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div className="analogs-inner">
+            <h4>Historical analogs</h4>
+            <TableScroll>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Window</th>
+                    <th>Why relevant</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.analogs_selected.map((analog) => {
+                    const event = analog_events[analog.event_id];
+                    return (
+                      <tr key={analog.event_id}>
+                        <td>{event?.name ?? analog.event_id}</td>
+                        <td>{event ? `${event.start_date} -> ${event.end_date}` : "n/a"}</td>
+                        <td>{analog.why_relevant}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableScroll>
+          </div>
+        </div>
+      </CollapsibleCard>
+
+      {canDecompose ? (
+      <CollapsibleCard
+        eyebrow="Experimental"
+        title="Fixed-context theme sensitivity"
+        summary={
+          result.narrative_shapley
+            ? `${result.narrative_shapley.contributions.length} themes decomposed`
+            : "admin decomposition — pinned analogs, ~3–15 pipeline runs"
+        }
+        defaultOpen={Boolean(result.narrative_shapley) || isDecomposing}
+        action={
+          <div className="button-row">
+            <button
+              className="ghost-button"
+              onClick={onDecompose}
+              disabled={!canDecompose || isDecomposing}
+            >
+              {isDecomposing
+                ? decomposeProgress
+                  ? `Testing themes… ${decomposeProgress.done}/${decomposeProgress.total}`
+                  : "Testing themes…"
+                : "Run theme sensitivity"}
+            </button>
+            {isDecomposing && onCancelDecompose ? (
+              <button className="ghost-button" onClick={onCancelDecompose}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
+        }
+      >
+        {result.narrative_shapley ? (
+          <TableScroll>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Sub-narrative</th>
+                  <th className="num">Shapley P&L</th>
+                  {hasNav ? <th className="num">$</th> : null}
+                  <th className="num">Relative</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.narrative_shapley.contributions.map((contribution) => (
+                  <tr key={contribution.narrative_index}>
+                    <td>{contribution.narrative_index + 1}</td>
+                    <td>{contribution.narrative_text}</td>
+                    <td className="num">{formatPercent(contribution.shapley_value)}</td>
+                    {hasNav ? (
+                      <td className="num">
+                        {formatSignedCurrency(contribution.shapley_value * (nav ?? 0), currency)}
+                      </td>
+                    ) : null}
+                    <td className="num">{formatPercent(contribution.relative_contribution)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+        ) : (
+          <p className="muted">
+            ~3–15 pipeline runs (~30–90s). The marginal shock each theme adds
+            <em> within the original analog context</em> (analogs pinned, no re-grounding) — a
+            theme-sensitivity view, illustrative, not causal. Current periphery total:{" "}
+            {formatPercent(peripheryTotal)}.
+          </p>
+        )}
+      </CollapsibleCard>
+      ) : null}
+    </section>
+  );
+}

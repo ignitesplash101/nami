@@ -1,109 +1,60 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
-import { PlotLazy } from "./PlotLazy";
-import {
-  Activity,
-  ArrowRight,
-  BarChart3,
-  BookOpen,
-  Check,
-  Command,
-  Copy,
-  Download,
-  Lock,
-  LogOut,
-  Menu,
-  Moon,
-  Pin,
-  Save,
-  Shield,
-  Sun,
-  Table2,
-  Unlock,
-  Upload
-} from "lucide-react";
+import { Activity, BookOpen, Command, Menu, Moon, Sun } from "lucide-react";
 import { useTheme } from "./theme";
 import {
   ApiError,
-  decomposeScenarioStream,
   getAccess,
   getFactors,
   getMethodology,
   getSamplePortfolios,
   getSampleScenarios,
-  getTickerMetadata,
+  getSavedScenario,
   lock,
-  profileBook,
   purgeAllData,
-  replayEvents,
-  runScenarioStream,
-  toApiError,
-  unlock,
-  validatePortfolio
+  toApiError
 } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorNotice } from "./ErrorNotice";
 import { OpsDrawer } from "./OpsDrawer";
 import { scrollBehavior } from "./motion";
-import { createRunLifecycle } from "./runLifecycle";
 import { useToasts } from "./toast";
-import { nextSessionExpired, useAccessWatch } from "./useAccessWatch";
 import {
-  buildAnalogReplayRows,
-  buildPositionValuations,
-  buildReadout,
-  buildWaterfallData,
-  buildWaterfallDataDollars,
-  sameScenarioResult,
-  summarizeFactorTable,
-  summarizeNameTable,
-  chartTheme,
-  factorReasoningRows,
-  formatCurrency,
   formatPercent,
-  formatSignedCurrency,
-  groupByTag,
-  normalizeTicker,
   parseNav,
   preferredAttributionMethod,
+  sameScenarioResult
 } from "./charts";
-import { csvFilename, downloadCsv } from "./csv";
-import { factorDescription, factorDisplayName, factorMap } from "./factors";
-import { formatEvidence, formatFxRate, formatMarkPrice, formatShares } from "./format";
-import { TableScroll } from "./TableScroll";
+import { factorMap } from "./factors";
+import { defaultCustomRows, holdingsFromRows } from "./holdings";
+import type { HoldingRow, PortfolioMode, ScenarioDraftMode } from "./holdings";
+import { RailContent } from "./panels/RailContent";
+import { ScenarioPanel } from "./panels/ScenarioPanel";
+import { ResultsPanel } from "./results/ResultsPanel";
+import type { ValuationSort } from "./results/ResultsPanel";
+import { useAccessSession } from "./state/useAccessSession";
+import { useFreeAnalytics } from "./state/useFreeAnalytics";
+import { useOverlayManager } from "./state/useOverlayManager";
+import { useRunController } from "./state/useRunController";
 import { AdjustmentPanel } from "./AdjustmentPanel";
-import { AsOfDatePicker, BackdatedModeBanner } from "./AsOfDatePicker";
+import { BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
 import type { CommandAction } from "./CommandPalette";
-import { nextEnabledMethod } from "./attributionNav";
-import { getSavedScenario } from "./api";
 import { CollapsibleCard } from "./CollapsibleCard";
 import { ComparisonPanel } from "./ComparisonPanel";
-import { EvidenceBlock } from "./EvidenceBlock";
-import { KnowYourBook } from "./KnowYourBook";
 import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
 import { RunProgress, stageLabel } from "./RunProgress";
 import { SaveScenarioDialog } from "./SaveScenarioDialog";
 import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { useMediaQuery } from "./useMediaQuery";
-import { useMethodologyDrawer } from "./useMethodologyDrawer";
 import { useOverlay } from "./useOverlay";
 import type {
-  AccessResponse,
-  AnalogEvent,
   AttributionMethod,
-  BookProfile,
-  EventsReplay,
   FactorMetadataMap,
-  PortfolioSnapshotRecord,
-  RiskDiagnostic as RiskDiagnosticRecord,
   SamplePortfolio,
   SampleScenario,
   ScenarioResult,
-  ScenarioRunResponse,
-  SsePipelineStage,
-  TickerMetadata
+  ScenarioRunResponse
 } from "./types";
 
 // Lazy so react-markdown + the methodology renderer stay out of the first-load
@@ -112,79 +63,9 @@ const MethodologyDrawer = lazy(() =>
   import("./MethodologyDrawer").then((m) => ({ default: m.MethodologyDrawer }))
 );
 
-type WaterfallTrace = {
-  type: "waterfall";
-  orientation: "v";
-  x: string[];
-  y: number[];
-  measure: ("relative" | "total")[];
-  text: string[];
-  hovertext: string[];
-  hovertemplate: string;
-  textposition: "outside";
-  connector: { line: { color: string } };
-  increasing: { marker: { color: string } };
-  decreasing: { marker: { color: string } };
-  totals: { marker: { color: string } };
-};
-
-interface HoldingRow {
-  id: string;
-  ticker: string;
-  weight: string;
-}
-
-type PortfolioMode = "sample" | "custom";
-type ScenarioDraftMode = "sample" | "custom";
-
-type ValuationSortKey =
-  | "ticker"
-  | "weight"
-  | "shares"
-  | "mark"
-  | "value"
-  | "stressed"
-  | "delta"
-  | "deltaPct";
-interface ValuationSort {
-  key: ValuationSortKey;
-  dir: "asc" | "desc";
-}
-
-const defaultCustomRows: HoldingRow[] = [
-  { id: "row-aapl", ticker: "AAPL", weight: "0.5" },
-  { id: "row-msft", ticker: "MSFT", weight: "0.5" }
-];
-
-function holdingsFromRows(rows: HoldingRow[]): Record<string, number> {
-  const holdings: Record<string, number> = {};
-  for (const row of rows) {
-    const ticker = normalizeTicker(row.ticker);
-    if (!ticker) continue;
-    holdings[ticker] = Number(row.weight);
-  }
-  return holdings;
-}
-
-function parseCsv(text: string): HoldingRow[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const dataLines = lines[0]?.toLowerCase().includes("ticker") ? lines.slice(1) : lines;
-  return dataLines.map((line, index) => {
-    const [ticker, weight] = line.split(",").map((part) => part.trim());
-    return {
-      id: `csv-${index}-${ticker}`,
-      ticker: normalizeTicker(ticker ?? ""),
-      weight: weight ?? ""
-    };
-  });
-}
-
 export default function App() {
   const { theme, toggleTheme } = useTheme();
-  const [access, setAccess] = useState<AccessResponse | null>(null);
+  const { access, isAdmin, sessionExpired, applyAccess, refreshAccess } = useAccessSession();
   const [portfolios, setPortfolios] = useState<SamplePortfolio[]>([]);
   const [scenarios, setScenarios] = useState<SampleScenario[]>([]);
   const [factorMeta, setFactorMeta] = useState<FactorMetadataMap>({});
@@ -199,12 +80,6 @@ export default function App() {
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
   // Optional benchmark ticker for a custom book (sample books carry their own).
   const [customBenchmark, setCustomBenchmark] = useState("");
-  // Free pre-scenario surfaces (zero LLM). Cleared whenever the book
-  // selection changes so stale analytics can't describe a different portfolio.
-  const [bookProfile, setBookProfile] = useState<BookProfile | null>(null);
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [eventsReplay, setEventsReplay] = useState<EventsReplay | null>(null);
-  const [replayBusy, setReplayBusy] = useState(false);
   // Pin & compare: holds a full envelope for side-by-side comparison. No other
   // setter touches it, so it survives runs, adjustments, decompositions, and
   // saved-scenario opens until the user re-pins or clears it.
@@ -228,21 +103,8 @@ export default function App() {
   const saveDialog = useOverlay();
   const [methodology, setMethodology] = useState("");
   const [attributionMethod, setAttributionMethod] = useState<AttributionMethod>("naive");
-  const [isRunning, setIsRunning] = useState(false);
-  const [isDecomposing, setIsDecomposing] = useState(false);
-  const [decomposeProgress, setDecomposeProgress] = useState<{ done: number; total: number } | null>(
-    null
-  );
   const [error, setError] = useState<ApiError | string | null>(null);
-  const [currentStage, setCurrentStage] = useState<SsePipelineStage | null>(null);
-  const [stageStatus, setStageStatus] = useState<"start" | "done" | null>(null);
-  const [completedStages, setCompletedStages] = useState<Set<SsePipelineStage>>(new Set());
-  const [cacheHit, setCacheHit] = useState(false);
-  // True only when an admin session silently downgraded (cookie expiry) — a
-  // deliberate lock passes intentional=true through applyAccess and stays quiet.
-  const [sessionExpired, setSessionExpired] = useState(false);
   const [bootSerial, setBootSerial] = useState(0);
-  const accessModeRef = useRef<AccessResponse["access_mode"] | null>(null);
   const lastFailedActionRef = useRef<"run" | "decompose" | "boot" | "profile" | "replay" | null>(
     null
   );
@@ -250,13 +112,48 @@ export default function App() {
   // Guards the boot effect's default-selection seeding (see boot()) so a second
   // async wave can never clobber a selection the user has already made.
   const bootSeededRef = useRef(false);
-  // Separate lifecycles: cancelling/superseding a run must not abort an
-  // in-flight decomposition and vice versa.
-  const runLifecycle = useRef(createRunLifecycle()).current;
-  const decomposeLifecycle = useRef(createRunLifecycle()).current;
-  // Bumped only when a RUN completes (not adjustments or saved-scenario opens):
-  // the effect below scrolls the fresh results into view.
-  const [runSerial, setRunSerial] = useState(0);
+
+  // Run/decompose stream machinery: stage state, sequence guards, cancels.
+  // buildRunPayload / handleRunResult / reportError are hoisted declarations.
+  const {
+    isRunning,
+    isDecomposing,
+    decomposeProgress,
+    currentStage,
+    stageStatus,
+    completedStages,
+    cacheHit,
+    runSerial,
+    handleRun,
+    handleCancelRun,
+    handleDecompose,
+    handleCancelDecompose
+  } = useRunController({
+    buildRunPayload,
+    onRunResult: handleRunResult,
+    getDecomposeSource: () => resultEnvelope?.result ?? null,
+    onDecomposeResult: (response) => setResultEnvelope(response),
+    onError: (exc, action) => reportError(exc, action),
+    clearError: () => setError(null)
+  });
+
+  // Free pre-scenario surfaces (zero LLM); cleared on any book change.
+  const {
+    bookProfile,
+    profileBusy,
+    eventsReplay,
+    replayBusy,
+    handleProfileBook,
+    handleEventsReplay
+  } = useFreeAnalytics({
+    portfolioKey,
+    portfolioMode,
+    customRows,
+    customUnits,
+    customName,
+    onError: (exc, action) => reportError(exc, action),
+    clearError: () => setError(null)
+  });
 
   // Dynamic tab title: the headline P&L + a scenario snippet while a result is
   // on screen, so parked tabs stay identifiable. Reset when cleared.
@@ -285,17 +182,18 @@ export default function App() {
       : "";
   const resultsRef = useRef<HTMLElement>(null);
   const { push: pushToast } = useToasts();
-  const methodologyDrawer = useMethodologyDrawer();
-  // Latched on first open: the lazy chunk (react-markdown) fetches on demand,
-  // then the drawer stays mounted so its accordion state survives close/reopen.
-  const [methodologyMounted, setMethodologyMounted] = useState(false);
-  useEffect(() => {
-    if (methodologyDrawer.isOpen) setMethodologyMounted(true);
-  }, [methodologyDrawer.isOpen]);
-  const railDrawer = useOverlay();
-  const commandPalette = useOverlay();
-  const opsDrawer = useOverlay();
-  const purgeConfirm = useOverlay();
+  const {
+    methodologyDrawer,
+    methodologyMounted,
+    railDrawer,
+    commandPalette,
+    opsDrawer,
+    purgeConfirm,
+    openMethodology,
+    openRailDrawer,
+    openOpsDrawer,
+    requestPurge
+  } = useOverlayManager();
   const [purgeBusy, setPurgeBusy] = useState(false);
   // Bumped on purge success and passed as `key` to the saved-scenarios +
   // portfolio-history panels: the backend purge deletes portfolios/snapshots
@@ -303,35 +201,6 @@ export default function App() {
   // their local state instead of leaving deleted records on screen.
   const [adminDataEpoch, setAdminDataEpoch] = useState(0);
   const isMobileOrTablet = useMediaQuery("(max-width: 1079.98px)");
-
-  function openMethodology(section?: string) {
-    railDrawer.close();
-    commandPalette.close();
-    opsDrawer.close();
-    methodologyDrawer.open(section);
-  }
-
-  function openRailDrawer() {
-    methodologyDrawer.close();
-    commandPalette.close();
-    opsDrawer.close();
-    railDrawer.open();
-  }
-
-  function openOpsDrawer() {
-    methodologyDrawer.close();
-    railDrawer.close();
-    commandPalette.close();
-    opsDrawer.open();
-  }
-
-  // Purge flow: the ops drawer CLOSES before the confirm dialog opens — two
-  // useOverlay overlays must never be open at once (window-level Esc would
-  // close both together).
-  function requestPurge() {
-    opsDrawer.close();
-    purgeConfirm.open();
-  }
 
   async function handlePurgeConfirmed() {
     setPurgeBusy(true);
@@ -350,22 +219,6 @@ export default function App() {
       setPurgeBusy(false);
     }
   }
-
-  // ⌘K / Ctrl+K opens the command palette (accelerator only — every command it
-  // exposes also has a visible control elsewhere). open/close are stable.
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        methodologyDrawer.close();
-        railDrawer.close();
-        opsDrawer.close();
-        commandPalette.open();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [commandPalette.open, methodologyDrawer.close, opsDrawer.close, railDrawer.close]);
 
   useEffect(() => {
     async function boot() {
@@ -444,70 +297,8 @@ export default function App() {
     [scenarioKey, scenarios]
   );
 
-  const isAdmin = access?.access_mode === "admin";
-
-  // Every access update routes through here so a silent admin→visitor
-  // downgrade (cookie expiry) raises the session banner exactly once.
-  function applyAccess(next: AccessResponse, opts?: { intentional?: boolean }) {
-    const prev = accessModeRef.current;
-    accessModeRef.current = next.access_mode;
-    if (next.access_mode === "admin") {
-      setSessionExpired(false);
-    } else if (nextSessionExpired(prev, next.access_mode, Boolean(opts?.intentional))) {
-      setSessionExpired(true);
-    }
-    setAccess(next);
-  }
-
-  async function refreshAccess() {
-    applyAccess(await getAccess());
-  }
-
-  useAccessWatch({ enabled: access != null, onAccess: applyAccess });
-
   // Normalize any failure into an ApiError; cancelled runs stay silent and a
   // forbidden response triggers an access re-check (catches stale admin cookies).
-  // The free analytics describe exactly one book — drop them whenever the
-  // selection or the custom holdings change so a stale card can't describe
-  // another book.
-  useEffect(() => {
-    setBookProfile(null);
-    setEventsReplay(null);
-  }, [portfolioKey, portfolioMode, customRows, customUnits]);
-
-  function freeEnginePayload() {
-    return portfolioMode === "sample"
-      ? { portfolio_key: portfolioKey }
-      : {
-          portfolio_holdings: holdingsFromRows(customRows),
-          portfolio_name: customName || undefined
-        };
-  }
-
-  async function handleProfileBook() {
-    setProfileBusy(true);
-    setError(null);
-    try {
-      setBookProfile(await profileBook(freeEnginePayload()));
-    } catch (exc) {
-      reportError(exc, "profile");
-    } finally {
-      setProfileBusy(false);
-    }
-  }
-
-  async function handleEventsReplay() {
-    setReplayBusy(true);
-    setError(null);
-    try {
-      setEventsReplay(await replayEvents(freeEnginePayload()));
-    } catch (exc) {
-      reportError(exc, "replay");
-    } finally {
-      setReplayBusy(false);
-    }
-  }
-
   function reportError(
     exc: unknown,
     action: "run" | "decompose" | "boot" | "profile" | "replay" | null = null
@@ -551,93 +342,56 @@ export default function App() {
     setScenarioDraftMode(text.trim() === selectedScenario?.text.trim() ? "sample" : "custom");
   }
 
-  async function handleRun() {
-    if (!access) return;
-    // begin() aborts any in-flight run and invalidates its sequence — its late
-    // frames/result/finally are dropped by the isCurrent guards below.
-    const handle = runLifecycle.begin();
-    setError(null);
-    setIsRunning(true);
-    setCurrentStage(null);
-    setStageStatus(null);
-    setCompletedStages(new Set());
-    setCacheHit(false);
-    try {
-      const sharesMode = portfolioMode === "custom" && customUnits === "shares";
-      const baseAdmin = {
-        scenario_text: scenarioText || selectedScenario?.text,
-        portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
-        portfolio_name: portfolioMode === "custom" ? customName : undefined,
-        portfolio_holdings:
-          portfolioMode === "custom" && !sharesMode ? holdingsFromRows(customRows) : undefined,
-        // Mark-to-market: admin share quantities marked to the as-of close + FX.
-        // (Notional dollar scaling is a client-side post-run control, not a run input.)
-        position_quantities: sharesMode ? holdingsFromRows(customRows) : undefined,
-        reporting_currency: sharesMode ? "USD" : undefined,
-        // Custom books pass an explicit benchmark; sample books fall back to their
-        // own assigned benchmark server-side (so leave it undefined there).
-        benchmark:
-          portfolioMode === "custom" && customBenchmark.trim()
-            ? customBenchmark.trim()
-            : undefined,
-        // Only thread as_of_date when admin chose a date EARLIER than the latest
-        // close. The latest close (the default) means "live" — send undefined so
-        // the backend takes the grounded (Google Search) path.
-        as_of_date:
-          asOfDate && asOfDate !== access.latest_market_date ? asOfDate : undefined
-      };
-      const payload = isAdmin
-        ? baseAdmin
-        : scenarioDraftMode === "custom"
-          ? {
-              scenario_text: scenarioText.trim(),
-              portfolio_key: portfolioKey
-            }
-          : {
-              sample_scenario_key: scenarioKey,
-              portfolio_key: portfolioKey
-            };
-      const response = await runScenarioStream(
-        payload,
-        (event) => {
-          if (!runLifecycle.isCurrent(handle.seq)) return;
-          if (event.stage === "cache_hit") {
-            setCacheHit(true);
-            return;
+  // The run payload the controller streams: admins send the full form;
+  // visitors send free text on a sample book or a sample-scenario key.
+  function buildRunPayload() {
+    if (!access) return null;
+    const sharesMode = portfolioMode === "custom" && customUnits === "shares";
+    const baseAdmin = {
+      scenario_text: scenarioText || selectedScenario?.text,
+      portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
+      portfolio_name: portfolioMode === "custom" ? customName : undefined,
+      portfolio_holdings:
+        portfolioMode === "custom" && !sharesMode ? holdingsFromRows(customRows) : undefined,
+      // Mark-to-market: admin share quantities marked to the as-of close + FX.
+      // (Notional dollar scaling is a client-side post-run control, not a run input.)
+      position_quantities: sharesMode ? holdingsFromRows(customRows) : undefined,
+      reporting_currency: sharesMode ? "USD" : undefined,
+      // Custom books pass an explicit benchmark; sample books fall back to their
+      // own assigned benchmark server-side (so leave it undefined there).
+      benchmark:
+        portfolioMode === "custom" && customBenchmark.trim()
+          ? customBenchmark.trim()
+          : undefined,
+      // Only thread as_of_date when admin chose a date EARLIER than the latest
+      // close. The latest close (the default) means "live" — send undefined so
+      // the backend takes the grounded (Google Search) path.
+      as_of_date:
+        asOfDate && asOfDate !== access.latest_market_date ? asOfDate : undefined
+    };
+    return isAdmin
+      ? baseAdmin
+      : scenarioDraftMode === "custom"
+        ? {
+            scenario_text: scenarioText.trim(),
+            portfolio_key: portfolioKey
           }
-          if (event.stage === "done" || event.stage === "error") {
-            return;
-          }
-          setCurrentStage(event.stage);
-          setStageStatus(event.status ?? null);
-          if (event.status === "done") {
-            setCompletedStages((prev) => new Set(prev).add(event.stage));
-          }
-        },
-        { signal: handle.signal }
-      );
-      if (!runLifecycle.isCurrent(handle.seq)) return;
-      setResultEnvelope(response);
-      setCanonicalSnapshot(response.result);
-      setAttributionMethod(preferredAttributionMethod(response.result));
-      setRunSerial((serial) => serial + 1);
-      // Surface dollars by default when the run is marked (shares) OR a notional
-      // portfolio value is already entered (sticky knob); otherwise stay in percent.
-      setDisplayMode(
-        response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
-      );
-    } catch (exc) {
-      if (!runLifecycle.isCurrent(handle.seq)) return;
-      reportError(exc, "run");
-    } finally {
-      if (runLifecycle.isCurrent(handle.seq)) {
-        setIsRunning(false);
-      }
-    }
+        : {
+            sample_scenario_key: scenarioKey,
+            portfolio_key: portfolioKey
+          };
   }
 
-  function handleCancelRun() {
-    runLifecycle.cancel();
+  // A completed RUN resets the canonical + attribution and surfaces dollars by
+  // default when the run is marked (shares) OR a notional portfolio value is
+  // already entered (sticky knob); otherwise stays in percent.
+  function handleRunResult(response: ScenarioRunResponse) {
+    setResultEnvelope(response);
+    setCanonicalSnapshot(response.result);
+    setAttributionMethod(preferredAttributionMethod(response.result));
+    setDisplayMode(
+      response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
+    );
   }
 
   function handleAdjustmentResult(response: ScenarioRunResponse) {
@@ -647,37 +401,6 @@ export default function App() {
   function handlePrefillRerun(text: string) {
     setScenarioText(text);
     setScenarioDraftMode("custom");
-  }
-
-  async function handleDecompose() {
-    if (!resultEnvelope) return;
-    const handle = decomposeLifecycle.begin();
-    setError(null);
-    setIsDecomposing(true);
-    setDecomposeProgress(null);
-    try {
-      const response = await decomposeScenarioStream(
-        resultEnvelope.result,
-        (done, total) => {
-          if (decomposeLifecycle.isCurrent(handle.seq)) setDecomposeProgress({ done, total });
-        },
-        { signal: handle.signal }
-      );
-      if (!decomposeLifecycle.isCurrent(handle.seq)) return;
-      setResultEnvelope(response);
-    } catch (exc) {
-      if (!decomposeLifecycle.isCurrent(handle.seq)) return;
-      reportError(exc, "decompose");
-    } finally {
-      if (decomposeLifecycle.isCurrent(handle.seq)) {
-        setIsDecomposing(false);
-        setDecomposeProgress(null);
-      }
-    }
-  }
-
-  function handleCancelDecompose() {
-    decomposeLifecycle.cancel();
   }
 
   // Palette actions are a thin accelerator over already-visible controls. Built
@@ -725,32 +448,24 @@ export default function App() {
   }
 
   const railContent = (
-    <>
-      <div className="brand-block">
-        <span className="brand-glyph" aria-hidden="true">波</span>
-        <div className="brand-kicker">nami</div>
-        <div className="brand-title">Scenario Explorer</div>
-        <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
-        <div className="brand-crest" aria-hidden="true" />
-      </div>
-      <AccessPanel access={access} onAccessChange={applyAccess} passcodeInputRef={passcodeInputRef} />
-      <PortfolioPanel
-        access={access}
-        portfolios={portfolios}
-        portfolioKey={portfolioKey}
-        setPortfolioKey={setPortfolioKey}
-        portfolioMode={portfolioMode}
-        setPortfolioMode={setPortfolioMode}
-        customName={customName}
-        setCustomName={setCustomName}
-        customRows={customRows}
-        setCustomRows={setCustomRows}
-        customUnits={customUnits}
-        setCustomUnits={setCustomUnits}
-        customBenchmark={customBenchmark}
-        setCustomBenchmark={setCustomBenchmark}
-      />
-    </>
+    <RailContent
+      access={access}
+      onAccessChange={applyAccess}
+      passcodeInputRef={passcodeInputRef}
+      portfolios={portfolios}
+      portfolioKey={portfolioKey}
+      setPortfolioKey={setPortfolioKey}
+      portfolioMode={portfolioMode}
+      setPortfolioMode={setPortfolioMode}
+      customName={customName}
+      setCustomName={setCustomName}
+      customRows={customRows}
+      setCustomRows={setCustomRows}
+      customUnits={customUnits}
+      setCustomUnits={setCustomUnits}
+      customBenchmark={customBenchmark}
+      setCustomBenchmark={setCustomBenchmark}
+    />
   );
 
   return (
@@ -1074,1550 +789,5 @@ export default function App() {
         actions={commandActions}
       />
     </main>
-  );
-}
-
-function AccessPanel({
-  access,
-  onAccessChange,
-  passcodeInputRef
-}: {
-  access: AccessResponse | null;
-  onAccessChange: (access: AccessResponse, opts?: { intentional?: boolean }) => void;
-  passcodeInputRef?: RefObject<HTMLInputElement>;
-}) {
-  const [passcode, setPasscode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<ApiError | string | null>(null);
-  const isAdmin = access?.access_mode === "admin";
-
-  async function handleUnlock() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await unlock(passcode);
-      onAccessChange(response, { intentional: true });
-      setPasscode("");
-    } catch (exc) {
-      setMessage(toApiError(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleLock() {
-    setBusy(true);
-    try {
-      const response = await lock();
-      // A deliberate lock must not raise the session-expired banner.
-      onAccessChange(response, { intentional: true });
-    } catch (exc) {
-      setMessage(toApiError(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="panel access-panel">
-      <div className="panel-title">
-        {isAdmin ? <Unlock size={16} /> : <Lock size={16} />}
-        <span>{isAdmin ? "Admin mode" : "Visitor mode"}</span>
-      </div>
-      <p className="muted">
-        {isAdmin
-          ? "Unrestricted controls are enabled for this browser session."
-          : "Visitors can run sample scenarios on sample portfolios only."}
-      </p>
-      {isAdmin ? (
-        <button className="ghost-button" onClick={handleLock} disabled={busy}>
-          <LogOut size={15} /> Return to visitor mode
-        </button>
-      ) : (
-        <form
-          className="unlock-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (passcode && !busy && access?.admin_available) void handleUnlock();
-          }}
-        >
-          <input
-            ref={passcodeInputRef}
-            value={passcode}
-            onChange={(event) => setPasscode(event.target.value)}
-            type="password"
-            autoComplete="current-password"
-            placeholder="Admin passcode"
-            aria-label="Admin passcode"
-            aria-invalid={Boolean(message)}
-            aria-describedby={message ? "unlock-message" : undefined}
-            disabled={!access?.admin_available || busy}
-          />
-          <button type="submit" disabled={!passcode || busy || !access?.admin_available}>
-            <Shield size={15} /> Unlock
-          </button>
-        </form>
-      )}
-      {message ? <ErrorNotice variant="inline" error={message} id="unlock-message" /> : null}
-    </section>
-  );
-}
-
-function PortfolioPanel({
-  access,
-  portfolios,
-  portfolioKey,
-  setPortfolioKey,
-  portfolioMode,
-  setPortfolioMode,
-  customName,
-  setCustomName,
-  customRows,
-  setCustomRows,
-  customUnits,
-  setCustomUnits,
-  customBenchmark,
-  setCustomBenchmark
-}: {
-  access: AccessResponse | null;
-  portfolios: SamplePortfolio[];
-  portfolioKey: string;
-  setPortfolioKey: (key: string) => void;
-  portfolioMode: PortfolioMode;
-  setPortfolioMode: (mode: PortfolioMode) => void;
-  customName: string;
-  setCustomName: (name: string) => void;
-  customRows: HoldingRow[];
-  setCustomRows: (rows: HoldingRow[]) => void;
-  customUnits: "weights" | "shares";
-  setCustomUnits: (units: "weights" | "shares") => void;
-  customBenchmark: string;
-  setCustomBenchmark: (ticker: string) => void;
-}) {
-  const selected = portfolios.find((portfolio) => portfolio.key === portfolioKey);
-  const hasCash = customRows.some((row) => normalizeTicker(row.ticker) === "CASH");
-  const [validation, setValidation] = useState<string[]>([]);
-  const isShares = customUnits === "shares";
-
-  async function validateCustom(rows = customRows) {
-    // Shares mode is validated server-side (raw share counts, no sum-to-1 rule).
-    if (isShares) return;
-    try {
-      const response = await validatePortfolio(holdingsFromRows(rows));
-      setValidation(response.errors);
-    } catch (exc) {
-      setValidation([toApiError(exc).message]);
-    }
-  }
-
-  async function handleCsv(file: File | null) {
-    if (!file) return;
-    const rows = parseCsv(await file.text());
-    setCustomRows(rows);
-    await validateCustom(rows);
-  }
-
-  const admin = Boolean(access?.permissions.custom_portfolio);
-  return (
-    <section className="panel">
-      <div className="panel-title">
-        <Table2 size={16} />
-        <span>Portfolio</span>
-      </div>
-      {admin ? (
-        <div className="segmented">
-          <button
-            className={portfolioMode === "sample" ? "active" : ""}
-            onClick={() => setPortfolioMode("sample")}
-          >
-            Sample
-          </button>
-          <button
-            className={portfolioMode === "custom" ? "active" : ""}
-            onClick={() => setPortfolioMode("custom")}
-          >
-            Custom
-          </button>
-        </div>
-      ) : null}
-
-      {portfolioMode === "sample" || !admin ? (
-        <>
-          <label>
-            Sample book
-            <select value={portfolioKey} onChange={(event) => setPortfolioKey(event.target.value)}>
-              {portfolios.map((portfolio) => (
-                <option key={portfolio.key} value={portfolio.key}>
-                  {portfolio.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="muted">{selected?.description}</p>
-          {selected?.benchmark ? (
-            <p className="muted">
-              Benchmark: <code>{selected.benchmark}</code>
-            </p>
-          ) : null}
-          <MiniHoldings holdings={selected?.holdings ?? {}} />
-        </>
-      ) : (
-        <>
-          <label>
-            Portfolio name
-            <input value={customName} onChange={(event) => setCustomName(event.target.value)} />
-          </label>
-          <label>
-            Benchmark (optional)
-            <input
-              value={customBenchmark}
-              onChange={(event) => setCustomBenchmark(normalizeTicker(event.target.value))}
-              placeholder="e.g. SPY, QQQ, URTH"
-              aria-label="Benchmark ticker"
-            />
-          </label>
-          <div className="segmented" role="radiogroup" aria-label="Holding units">
-            <button
-              role="radio"
-              aria-checked={!isShares}
-              className={!isShares ? "active" : ""}
-              onClick={() => setCustomUnits("weights")}
-            >
-              Weights
-            </button>
-            <button
-              role="radio"
-              aria-checked={isShares}
-              className={isShares ? "active" : ""}
-              onClick={() => setCustomUnits("shares")}
-              title="Mark-to-market: enter share counts; nami marks each position to the as-of close and converts to USD"
-            >
-              Shares (MTM)
-            </button>
-          </div>
-          <div className="upload-control">
-            <Upload size={15} />
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              aria-label="Upload holdings CSV"
-              onChange={(e) => handleCsv(e.target.files?.[0] ?? null)}
-            />
-          </div>
-          <div className="holding-editor">
-            <div className="holding-row holding-row-head" aria-hidden="true">
-              <span>Ticker</span>
-              <span>{isShares ? "Shares" : "Weight"}</span>
-            </div>
-            {customRows.map((row, index) => (
-              <div className="holding-row" key={row.id}>
-                <input
-                  value={row.ticker}
-                  onChange={(event) => {
-                    const next = [...customRows];
-                    next[index] = { ...row, ticker: normalizeTicker(event.target.value) };
-                    setCustomRows(next);
-                  }}
-                  placeholder="Ticker"
-                  aria-label={`Ticker for holding ${index + 1}`}
-                />
-                <input
-                  value={row.weight}
-                  onChange={(event) => {
-                    const next = [...customRows];
-                    next[index] = { ...row, weight: event.target.value };
-                    setCustomRows(next);
-                  }}
-                  placeholder={isShares ? "100" : "0.25"}
-                  inputMode={isShares ? "numeric" : "decimal"}
-                  aria-label={`${isShares ? "Shares" : "Weight"} for holding ${index + 1}`}
-                />
-              </div>
-            ))}
-          </div>
-          <div className="button-row">
-            <button
-              className="ghost-button"
-              onClick={() =>
-                setCustomRows([
-                  ...customRows,
-                  { id: `row-${crypto.randomUUID()}`, ticker: "", weight: "0" }
-                ])
-              }
-            >
-              Add row
-            </button>
-            <button
-              className="ghost-button"
-              disabled={hasCash}
-              title={
-                isShares
-                  ? "Add a cash sleeve (USD amount, not shares)"
-                  : "Add a cash sleeve (zero-exposure weight)"
-              }
-              onClick={() =>
-                setCustomRows([
-                  ...customRows,
-                  { id: `row-${crypto.randomUUID()}`, ticker: "CASH", weight: "0" }
-                ])
-              }
-            >
-              Add cash
-            </button>
-            {!isShares ? (
-              <button className="ghost-button" onClick={() => validateCustom()}>
-                Validate
-              </button>
-            ) : null}
-          </div>
-          {isShares ? (
-            <p className="muted">
-              Enter share counts. nami marks each position to the as-of close, converts to USD,
-              and derives weights — true mark-to-market.
-            </p>
-          ) : validation.length ? (
-            <div className="inline-error" role="alert">
-              {validation.join(" ")}
-            </div>
-          ) : (
-            <p className="muted">Weights may be decimals near 1.0 or percentages near 100.</p>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
-
-export function ScenarioPanel({
-  access,
-  scenarios,
-  scenarioKey,
-  scenarioDraftMode,
-  onSelectScenario,
-  onSetCustomMode,
-  scenarioText,
-  setScenarioText,
-  selectedScenario,
-  isRunning,
-  onRun,
-  asOfDate,
-  setAsOfDate,
-  latestClose
-}: {
-  access: AccessResponse | null;
-  scenarios: SampleScenario[];
-  scenarioKey: string;
-  scenarioDraftMode: ScenarioDraftMode;
-  onSelectScenario: (key: string) => void;
-  onSetCustomMode: () => void;
-  scenarioText: string;
-  setScenarioText: (text: string) => void;
-  selectedScenario?: SampleScenario;
-  isRunning: boolean;
-  onRun: () => void;
-  asOfDate: string;
-  setAsOfDate: (v: string) => void;
-  latestClose: string;
-}) {
-  const isAdmin = access?.access_mode === "admin";
-  const canEditText = Boolean(access);
-  const chipScenarios = scenarios;
-  const seededFrom =
-    scenarioDraftMode === "custom" && selectedScenario ? selectedScenario.name : null;
-  const runDisabled = isRunning || !scenarioText.trim();
-  return (
-    <section className="scenario-card">
-      <div>
-        <p className="eyebrow">Scenario</p>
-        <h3>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h3>
-      </div>
-      {chipScenarios.length ? (
-        <div className="scenario-chips" role="group" aria-label="Example scenarios">
-          {chipScenarios.map((scenario) => (
-            <button
-              key={scenario.key}
-              type="button"
-              className={`chip${
-                scenarioDraftMode === "sample" && scenario.key === scenarioKey ? " active" : ""
-              }`}
-              onClick={() => onSelectScenario(scenario.key)}
-              title={scenario.text}
-            >
-              {scenario.name}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`chip${scenarioDraftMode === "custom" ? " active" : ""}`}
-            onClick={onSetCustomMode}
-          >
-            Custom
-          </button>
-        </div>
-      ) : null}
-      <div className="scenario-grid visitor-scenario-grid">
-        <label className="scenario-text">
-          Scenario text {seededFrom ? <span className="field-note">Seeded from {seededFrom}</span> : null}
-          <textarea
-            className="scenario-text-input"
-            value={scenarioText}
-            onChange={(event) => setScenarioText(event.target.value)}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !runDisabled) {
-                event.preventDefault();
-                onRun();
-              }
-            }}
-            enterKeyHint="go"
-            disabled={!canEditText}
-            placeholder="Describe a hypothetical market stress."
-          />
-        </label>
-      </div>
-      {isAdmin ? (
-        <AsOfDatePicker
-          value={asOfDate}
-          latestClose={latestClose}
-          onChange={setAsOfDate}
-          disabled={isRunning}
-        />
-      ) : null}
-      <button className="primary-button" onClick={onRun} disabled={runDisabled}>
-        {isRunning ? "Running pipeline..." : "Run hypothetical stress"} <ArrowRight size={16} />
-      </button>
-    </section>
-  );
-}
-
-function ExposureBreakdown({ result }: { result: ScenarioResult }) {
-  const [meta, setMeta] = useState<TickerMetadata>({});
-  const [dimension, setDimension] = useState<"sector" | "country">("sector");
-  const tickers = useMemo(() => Object.keys(result.portfolio_holdings), [result]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getTickerMetadata(tickers)
-      .then((m) => {
-        if (!cancelled) setMeta(m);
-      })
-      .catch(() => {
-        if (!cancelled) setMeta({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tickers]);
-
-  const rows = useMemo(() => groupByTag(result, meta, dimension), [result, meta, dimension]);
-  if (!rows.length) return null;
-
-  return (
-    <CollapsibleCard
-      className="exposure-card"
-      eyebrow="Exposure"
-      title={`${dimension === "sector" ? "Sector" : "Country"} breakdown`}
-      summary={`${rows[0].tag} ${formatPercent(rows[0].weight, 1)} · ${rows.length} ${
-        dimension === "sector" ? "sectors" : "countries"
-      }`}
-      action={
-        <div className="segmented" role="radiogroup" aria-label="Exposure dimension">
-          <button
-            role="radio"
-            aria-checked={dimension === "sector"}
-            className={dimension === "sector" ? "active" : ""}
-            onClick={() => setDimension("sector")}
-          >
-            Sector
-          </button>
-          <button
-            role="radio"
-            aria-checked={dimension === "country"}
-            className={dimension === "country" ? "active" : ""}
-            onClick={() => setDimension("country")}
-          >
-            Country
-          </button>
-        </div>
-      }
-    >
-      <TableScroll>
-        <table>
-          <thead>
-            <tr>
-              <th>{dimension === "sector" ? "Sector" : "Country"}</th>
-              <th className="num">Weight</th>
-              <th className="num">Contribution to P&L</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.tag}>
-                <td>{row.tag}</td>
-                <td className="num">{formatPercent(row.weight, 1)}</td>
-                <td className="num">{formatPercent(row.pnl)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableScroll>
-    </CollapsibleCard>
-  );
-}
-
-export function ResultsPanel({
-  envelope,
-  attributionMethod,
-  setAttributionMethod,
-  factorMeta,
-  displayMode,
-  setDisplayMode,
-  navInput,
-  setNavInput,
-  valuationSort,
-  setValuationSort,
-  isRunning = false,
-  isStale = false,
-  scrollRef,
-  sampleScenarios = [],
-  onSeedScenario,
-  bookProfile = null,
-  profileBusy = false,
-  onProfileBook,
-  eventsReplay = null,
-  replayBusy = false,
-  onEventsReplay,
-  profileUnavailableReason = null,
-  canDecompose,
-  isDecomposing,
-  decomposeProgress,
-  onDecompose,
-  onCancelDecompose,
-  onOpenMethodology,
-  canSave,
-  onSave,
-  onPin,
-  isPinned = false
-}: {
-  envelope: ScenarioRunResponse | null;
-  attributionMethod: AttributionMethod;
-  setAttributionMethod: (method: AttributionMethod) => void;
-  factorMeta: FactorMetadataMap;
-  displayMode: "pct" | "usd";
-  setDisplayMode: (mode: "pct" | "usd") => void;
-  navInput: string;
-  setNavInput: (value: string) => void;
-  valuationSort: ValuationSort;
-  setValuationSort: (sort: ValuationSort) => void;
-  isRunning?: boolean;
-  // Prior results stay on screen, dimmed + aria-busy, while a re-run streams.
-  isStale?: boolean;
-  scrollRef?: RefObject<HTMLElement>;
-  sampleScenarios?: SampleScenario[];
-  onSeedScenario?: (key: string) => void;
-  // Free pre-scenario analytics (render in the empty state only).
-  bookProfile?: BookProfile | null;
-  profileBusy?: boolean;
-  onProfileBook?: () => void;
-  eventsReplay?: EventsReplay | null;
-  replayBusy?: boolean;
-  onEventsReplay?: () => void;
-  profileUnavailableReason?: string | null;
-  canDecompose: boolean;
-  isDecomposing: boolean;
-  decomposeProgress: { done: number; total: number } | null;
-  onDecompose: () => void;
-  onCancelDecompose?: () => void;
-  onOpenMethodology: (section?: string) => void;
-  canSave: boolean;
-  // Pin & compare: pins the CURRENT envelope for the App-level ComparisonPanel.
-  onPin?: () => void;
-  isPinned?: boolean;
-  onSave: () => void;
-}) {
-  if (!envelope) {
-    if (isRunning) {
-      // First-run shimmer skeleton (reduced motion freezes it to a two-tone block).
-      return (
-        <section
-          ref={scrollRef}
-          className="empty-results results-skeleton"
-          aria-label="Scenario results"
-          aria-busy="true"
-        >
-          <span className="visually-hidden">Running scenario…</span>
-          <div className="skeleton-block" style={{ height: 96 }} />
-          <div className="skeleton-block" style={{ height: 48 }} />
-          <div className="skeleton-block" style={{ height: 320 }} />
-          <div className="skeleton-block" style={{ height: 180 }} />
-        </section>
-      );
-    }
-    return (
-      <section ref={scrollRef} className="empty-results onboarding-empty" aria-label="Scenario results">
-        <BarChart3 size={18} aria-hidden="true" />
-        <div>
-          <h3>No scenario run yet</h3>
-          <p className="empty-invite">
-            Pick a book in the rail, describe or seed a stress above, and run it — nami grounds a
-            narrative, derives factor shocks, and attributes modeled P&L.
-          </p>
-          {onProfileBook && onEventsReplay ? (
-            <KnowYourBook
-              profile={bookProfile}
-              replay={eventsReplay}
-              profileBusy={profileBusy}
-              replayBusy={replayBusy}
-              onProfile={onProfileBook}
-              onReplay={onEventsReplay}
-              unavailableReason={profileUnavailableReason}
-              factorMeta={factorMeta}
-            />
-          ) : null}
-        </div>
-      </section>
-    );
-  }
-  const { result, analog_events } = envelope;
-  const currency = result.reporting_currency ?? "USD";
-  // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
-  // NAV is a client-side notional knob — instant what-if, no re-run.
-  const isMarked = Boolean(result.position_quantities);
-  const nav = isMarked ? result.portfolio_nav ?? null : parseNav(navInput);
-  const hasNav = nav != null;
-  const stressedNav = nav != null ? nav * (1 + result.portfolio_pnl.total_pnl) : null;
-  const showDollars = hasNav && displayMode === "usd";
-  const valuations = nav != null ? buildPositionValuations(result, nav) : [];
-  const sortedValuations = [...valuations].sort((a, b) => {
-    const { key, dir } = valuationSort;
-    const sign = dir === "asc" ? 1 : -1;
-    if (key === "ticker") return sign * a.ticker.localeCompare(b.ticker);
-    const av = (a[key] as number | undefined) ?? 0;
-    const bv = (b[key] as number | undefined) ?? 0;
-    return sign * (av - bv);
-  });
-  const toggleSort = (key: ValuationSortKey) =>
-    setValuationSort(
-      valuationSort.key === key
-        ? { key, dir: valuationSort.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: key === "ticker" ? "asc" : "desc" }
-    );
-  const sortHeader = (label: string, key: ValuationSortKey, numeric = true) => (
-    <SortableTh
-      label={label}
-      active={valuationSort.key === key}
-      dir={valuationSort.dir}
-      onToggle={() => toggleSort(key)}
-      numeric={numeric}
-    />
-  );
-  const waterfall =
-    showDollars && nav != null
-      ? buildWaterfallDataDollars(result, attributionMethod, nav, currency, factorMeta)
-      : buildWaterfallData(result, attributionMethod, factorMeta);
-  const factorRows = factorReasoningRows(result, attributionMethod, factorMeta);
-  // Semantic export filenames: nami_<portfolio>_<scenario>_<as-of>_<table>.csv
-  const exportName = (table: string) =>
-    csvFilename(
-      result.portfolio_key !== "custom" ? result.portfolio_key : result.portfolio_name,
-      result.scenario_text,
-      result.market_date,
-      table
-    );
-  const exportFactorShocks = () =>
-    downloadCsv(
-      exportName("factor-shocks"),
-      ["Factor", "Shock applied (decimal)", "Contribution to P&L (decimal)", "Reasoning"],
-      factorRows.map((row) => [row.factorLabel, row.shockApplied, row.contribution, row.reasoning])
-    );
-  const exportNameLevel = () =>
-    downloadCsv(
-      exportName("name-level-contribution"),
-      [
-        "Ticker",
-        "Weight (decimal)",
-        "Factor (decimal)",
-        "Periphery (decimal)",
-        "Total (decimal)"
-      ],
-      Object.entries(result.portfolio_pnl.by_ticker_total)
-        .sort((a, b) => a[1] - b[1])
-        .map(([ticker, total]) => [
-          ticker,
-          result.portfolio_holdings[ticker] ?? 0,
-          result.portfolio_pnl.by_ticker_factor[ticker] ?? 0,
-          result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0,
-          total
-        ])
-    );
-  const exportValuations = () =>
-    downloadCsv(
-      exportName("position-valuation"),
-      [
-        "Ticker",
-        "Weight (decimal)",
-        "Shares",
-        "Mark",
-        "Value (USD)",
-        "Stressed (USD)",
-        "Delta (USD)",
-        "Delta (decimal)"
-      ],
-      // Respects the on-screen sort so the file matches what the user sees.
-      sortedValuations.map((row) => [
-        row.ticker,
-        row.weight,
-        row.shares ?? null,
-        row.mark ?? null,
-        row.value,
-        row.stressed,
-        row.delta,
-        row.deltaPct
-      ])
-    );
-  const exportAnalogs = () =>
-    downloadCsv(
-      exportName("analogs"),
-      ["Event", "Start", "End", "Why relevant"],
-      result.analogs_selected.map((analog) => {
-        const event = analog_events[analog.event_id];
-        return [
-          event?.name ?? analog.event_id,
-          event?.start_date ?? null,
-          event?.end_date ?? null,
-          analog.why_relevant
-        ];
-      })
-    );
-  const readoutMethod = preferredAttributionMethod(result);
-  const hasConditional = Boolean(result.portfolio_pnl.by_factor_conditional_shapley);
-  const hasConditionalExplicit = Boolean(
-    result.portfolio_pnl.by_factor_conditional_shapley_explicit
-  );
-  const hasConditionalGrouped = Boolean(
-    result.portfolio_pnl.by_factor_conditional_shapley_grouped
-  );
-  const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
-    (acc, value) => acc + value,
-    0
-  );
-  const isPhone = useMediaQuery("(max-width: 640px)");
-  // Viewport-height bands: phone keeps the 320/-90°-ticks contract; short
-  // laptops drop to 360; tall monitors get 480 instead of wasting space.
-  const isShortViewport = useMediaQuery("(max-height: 720px)");
-  const isTallViewport = useMediaQuery("(min-height: 900px)");
-  const chartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
-  const theme = chartTheme();
-  const [reproCopied, setReproCopied] = useState(false);
-  const reproducibility = envelope.reproducibility;
-
-  async function copyReproducibility() {
-    const repro = reproducibility;
-    if (!repro) return;
-    const text = `prompt ${repro.prompt_version} · model ${repro.model_id} · as-of ${repro.effective_as_of_date}`;
-    try {
-      await navigator.clipboard.writeText(text);
-      setReproCopied(true);
-      setTimeout(() => setReproCopied(false), 1500);
-    } catch {
-      // Clipboard unavailable (insecure origin) — no-op.
-    }
-  }
-
-  const attributionOptions: {
-    method: AttributionMethod;
-    label: string;
-    title: string;
-    disabled: boolean;
-  }[] = [
-    {
-      method: "naive",
-      label: "Naive algebra",
-      title: "Direct algebraic attribution. Useful for audit/debug; assumes factor independence.",
-      disabled: false
-    },
-    {
-      method: "conditional",
-      label: "Full conditional diagnostic",
-      title:
-        "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors.",
-      disabled: !hasConditional
-    },
-    {
-      method: "conditional_explicit",
-      label: "Scenario shocks",
-      title:
-        "Production risk view restricted to factors explicitly shocked by the scenario. Unshocked factors stay at zero.",
-      disabled: !hasConditionalExplicit
-    },
-    {
-      method: "conditional_grouped",
-      label: "Group totals",
-      title:
-        "Waterfall group totals for market / sector / style / macro, with factor-level detail kept in the table.",
-      disabled: !hasConditionalGrouped
-    }
-  ];
-  const mainAttributionOptions = attributionOptions.filter(
-    (option) => option.method === "conditional_explicit" || option.method === "conditional_grouped"
-  );
-  const diagnosticOptions = attributionOptions
-    .filter((option) => option.method === "naive" || option.method === "conditional")
-    .map((option) =>
-      option.method === "naive"
-        ? {
-            ...option,
-            label: "Naive algebra",
-            title:
-              "Direct algebraic attribution. Useful for audit/debug; assumes factor independence."
-          }
-        : {
-            ...option,
-            label: "Full conditional diagnostic",
-            title:
-              "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors."
-          }
-    );
-
-  // Roving-radiogroup arrow nav: move to the next/prev ENABLED option and select it.
-  function moveAttribution(direction: 1 | -1) {
-    setAttributionMethod(nextEnabledMethod(mainAttributionOptions, attributionMethod, direction));
-  }
-
-  function moveDiagnosticAttribution(direction: 1 | -1) {
-    setAttributionMethod(nextEnabledMethod(diagnosticOptions, attributionMethod, direction));
-  }
-
-  return (
-    <section
-      ref={scrollRef}
-      className={`results-stack${isStale ? " is-stale" : ""}`}
-      aria-busy={isStale || undefined}
-    >
-      <ScenarioReadout
-        result={result}
-        attributionMethod={readoutMethod}
-        factorMeta={factorMeta}
-        showDollars={showDollars}
-        nav={nav}
-        currency={currency}
-      />
-      <EvidenceBlock
-        result={result}
-        analogEvents={analog_events}
-        showDollars={showDollars}
-        nav={nav}
-        currency={currency}
-      />
-      <div className="results-toolbar">
-        <div className="results-toolbar-left">
-          {canSave ? (
-            <button className="ghost-button" onClick={onSave}>
-              <Save size={14} /> Save scenario
-            </button>
-          ) : null}
-          {onPin ? (
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={onPin}
-              disabled={isPinned}
-              title="Hold this result and compare the next run, adjustment, or opened scenario against it"
-            >
-              <Pin size={14} /> {isPinned ? "Pinned" : "Pin to compare"}
-            </button>
-          ) : null}
-          {isMarked ? (
-            <span className="muted nav-marked" title="Marked to the as-of close + FX">
-              NAV <code>{formatCurrency(result.portfolio_nav ?? 0, currency)}</code> · marked
-            </span>
-          ) : (
-            <label className="nav-knob">
-              <span>Portfolio value</span>
-              <input
-                value={navInput}
-                onChange={(event) => {
-                  setNavInput(event.target.value);
-                  if (parseNav(event.target.value) != null) setDisplayMode("usd");
-                }}
-                onFocus={(event) => event.currentTarget.select()}
-                placeholder="e.g. $1,000,000"
-                inputMode="decimal"
-                aria-label="Portfolio value (USD) for the dollar view"
-              />
-            </label>
-          )}
-          {hasNav ? (
-            <div className="segmented results-units" role="radiogroup" aria-label="P&L units">
-              <button
-                role="radio"
-                aria-checked={!showDollars}
-                className={!showDollars ? "active" : ""}
-                onClick={() => setDisplayMode("pct")}
-                title="Show P&L as percentages"
-              >
-                %
-              </button>
-              <button
-                role="radio"
-                aria-checked={showDollars}
-                className={showDollars ? "active" : ""}
-                onClick={() => setDisplayMode("usd")}
-                title="Show P&L in dollars"
-              >
-                $
-              </button>
-            </div>
-          ) : null}
-        </div>
-        {envelope.reproducibility ? (
-          <span className="muted reproducibility-chip">
-            prompt {envelope.reproducibility.prompt_version} · model{" "}
-            {envelope.reproducibility.model_id} · as-of{" "}
-            <code>{envelope.reproducibility.effective_as_of_date}</code>
-            <button
-              type="button"
-              className="chip-copy-btn"
-              aria-label="Copy reproducibility details"
-              title="Copy reproducibility details"
-              onClick={copyReproducibility}
-            >
-              {reproCopied ? <Check size={12} /> : <Copy size={12} />}
-            </button>
-          </span>
-        ) : null}
-      </div>
-      {hasNav ? (
-        <div className="metric-grid secondary-metric-grid" aria-label="Portfolio value details">
-          <Metric
-            label="Portfolio NAV"
-            value={formatCurrency(nav ?? 0, currency)}
-            sub={
-              stressedNav != null
-                ? `-> ${formatCurrency(stressedNav, currency)} stressed`
-                : undefined
-            }
-          />
-        </div>
-      ) : null}
-
-      {/* ≥1440px the waterfall and exposure cards share a row (3fr/2fr) so wide
-          screens carry more analytics instead of stretched single columns. */}
-      <div className="result-card waterfall-card">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">Attribution</p>
-            <h3>Systematic contribution waterfall</h3>
-          </div>
-          <div
-            className="segmented"
-            role="radiogroup"
-            aria-label="Attribution method"
-            onKeyDown={(event) => {
-              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                event.preventDefault();
-                moveAttribution(1);
-              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                event.preventDefault();
-                moveAttribution(-1);
-              }
-            }}
-          >
-            {mainAttributionOptions.map((option) => (
-              <button
-                key={option.method}
-                role="radio"
-                aria-checked={attributionMethod === option.method}
-                tabIndex={attributionMethod === option.method ? 0 : -1}
-                className={attributionMethod === option.method ? "active" : ""}
-                onClick={() => setAttributionMethod(option.method)}
-                disabled={option.disabled}
-                title={option.title}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="guide-link"
-          onClick={() => onOpenMethodology("factor-attribution")}
-        >
-          Which method should I use? Open the methodology comparison →
-        </button>
-        <AdvancedAttributionDiagnostics
-          options={diagnosticOptions}
-          attributionMethod={attributionMethod}
-          setAttributionMethod={setAttributionMethod}
-          moveAttribution={moveDiagnosticAttribution}
-        />
-        {attributionMethod === "conditional" ? (
-          <div className="risk-diagnostics" role="note">
-            <p className="eyebrow">Full conditional diagnostic</p>
-            <p className="muted">
-              Correlation credit, non-causal. Unshocked factors can receive positive or
-              negative P&amp;L through historical co-movement; do not read those bars as
-              explicit scenario shocks.
-            </p>
-          </div>
-        ) : null}
-        <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
-        <Suspense fallback={<div className="skeleton-block" style={{ height: chartHeight }} />}>
-          <PlotLazy
-            data={[
-              {
-                type: "waterfall",
-                orientation: "v",
-                x: waterfall.x,
-                y: waterfall.y,
-                measure: waterfall.measure,
-                text: waterfall.text,
-                hovertext: waterfall.hoverText,
-                hovertemplate: "%{hovertext}<extra></extra>",
-                textposition: "outside",
-                connector: { line: { color: theme.connector } },
-                increasing: { marker: { color: theme.up } },
-                decreasing: { marker: { color: theme.down } },
-                totals: { marker: { color: theme.total } }
-              } as WaterfallTrace
-            ]}
-            layout={{
-              autosize: true,
-              height: chartHeight,
-              paper_bgcolor: "rgba(0,0,0,0)",
-              plot_bgcolor: "rgba(0,0,0,0)",
-              font: { color: theme.text, family: theme.fontMono },
-              margin: { l: 42, r: 18, t: 20, b: isPhone ? 110 : 70 },
-              yaxis: {
-                tickformat: showDollars ? "$,.0f" : ".1%",
-                gridcolor: theme.grid
-              },
-              xaxis: {
-                tickangle: isPhone ? -90 : -35,
-                tickfont: isPhone ? { size: 9 } : undefined,
-                automargin: true
-              },
-              showlegend: false
-            }}
-            config={{ displayModeBar: false, responsive: true }}
-            useResizeHandler
-            className="plot"
-          />
-        </Suspense>
-      </div>
-
-      <ExposureBreakdown result={result} />
-
-      <div className="two-column">
-        <CollapsibleCard
-          className="table-card"
-          title="Factor shocks and attribution"
-          summary={summarizeFactorTable(result, factorMeta)}
-          action={<ExportCsvButton label="Export factor shocks as CSV" onClick={exportFactorShocks} />}
-        >
-          <TableScroll>
-          <table>
-            <thead>
-              <tr>
-                <th>Factor</th>
-                <th className="num">Shock</th>
-                <th className="num">P&L contrib</th>
-                <th>Reasoning</th>
-              </tr>
-            </thead>
-            <tbody>
-              {factorRows.map((row) => (
-                <tr key={row.factor} className={row.isCorrelationCredit ? "diagnostic-row" : ""}>
-                  <td>
-                    <button
-                      className="factor-link"
-                      onClick={() => onOpenMethodology("factor-universe")}
-                      title={factorDescription(factorMeta, row.factor)}
-                    >
-                      {row.factorLabel}
-                    </button>
-                  </td>
-                  <td className="num">{formatPercent(row.shockApplied)}</td>
-                  <td className="num">{formatPercent(row.contribution)}</td>
-                  <td>{row.reasoning}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </TableScroll>
-        </CollapsibleCard>
-        <CollapsibleCard
-          className="table-card"
-          title="Name-level contribution"
-          summary={summarizeNameTable(result)}
-          action={
-            <ExportCsvButton label="Export name-level contribution as CSV" onClick={exportNameLevel} />
-          }
-        >
-          <TableScroll>
-          <table>
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th className="num">Weight</th>
-                <th className="num">Factor</th>
-                <th className="num">Periphery</th>
-                <th className="num">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(result.portfolio_pnl.by_ticker_total)
-                .sort((a, b) => a[1] - b[1])
-                .map(([ticker, total]) => (
-                  <tr key={ticker}>
-                    <td>{ticker}</td>
-                    <td className="num">{formatPercent(result.portfolio_holdings[ticker] ?? 0)}</td>
-                    <td className="num">
-                      {formatPercent(result.portfolio_pnl.by_ticker_factor[ticker] ?? 0)}
-                    </td>
-                    <td className="num">
-                      {formatPercent(result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0)}
-                    </td>
-                    <td className="num">{formatPercent(total)}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          </TableScroll>
-        </CollapsibleCard>
-      </div>
-
-      {hasNav ? (
-        <CollapsibleCard
-          eyebrow="Valuation"
-          title="Position valuation — original → stressed"
-          summary={
-            stressedNav != null
-              ? `NAV ${formatCurrency(nav ?? 0, currency)} → ${formatCurrency(
-                  stressedNav,
-                  currency
-                )} stressed`
-              : undefined
-          }
-          action={
-            <ExportCsvButton label="Export position valuation as CSV" onClick={exportValuations} />
-          }
-        >
-          <TableScroll>
-            <table className="valuation-table">
-              <thead>
-                <tr>
-                  {sortHeader("Ticker", "ticker", false)}
-                  {sortHeader("Weight", "weight")}
-                  {isMarked ? sortHeader("Shares", "shares") : null}
-                  {isMarked ? sortHeader("Mark", "mark") : null}
-                  {sortHeader("Value", "value")}
-                  {sortHeader("Stressed", "stressed")}
-                  {sortHeader("Δ$", "delta")}
-                  {sortHeader("Δ%", "deltaPct")}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedValuations.map((row) => (
-                  <tr key={row.ticker}>
-                    <td>{row.ticker}</td>
-                    <td className="num">{formatPercent(row.weight, 1)}</td>
-                    {isMarked ? <td className="num">{formatShares(row.shares)}</td> : null}
-                    {isMarked ? <td className="num">{formatMarkPrice(row.mark)}</td> : null}
-                    <td className="num">{formatCurrency(row.value, currency)}</td>
-                    <td className="num">{formatCurrency(row.stressed, currency)}</td>
-                    <td className="num">{formatSignedCurrency(row.delta, currency)}</td>
-                    <td className="num">{formatPercent(row.deltaPct)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
-          {isMarked && result.fx_rates && Object.keys(result.fx_rates).length > 1 ? (
-            <p className="muted">
-              FX → USD:{" "}
-              {Object.entries(result.fx_rates)
-                .filter(([ccy]) => ccy !== "USD")
-                .map(
-                  ([ccy, rate]) =>
-                    `${formatFxRate(ccy, rate)} (${result.fx_date_by_currency?.[ccy] ?? "?"})`
-                )
-                .join(" · ")}
-            </p>
-          ) : (
-            <p className="muted">
-              Notional dollar view — sample weights × the portfolio value (positions are not marked).
-            </p>
-          )}
-        </CollapsibleCard>
-      ) : null}
-
-      <CollapsibleCard
-        className="narrative"
-        eyebrow="Narrative"
-        title="Narrative & analog evidence"
-        summary={
-          result.narrative.length > 90 ? `${result.narrative.slice(0, 89)}…` : result.narrative
-        }
-        action={
-          <ExportCsvButton label="Export historical analogs as CSV" onClick={exportAnalogs} />
-        }
-      >
-        <div className="two-column narrative-columns">
-          <div className="narrative-inner">
-            <h4>Grounded narrative</h4>
-            <p>{result.narrative}</p>
-            <div className="citation-list">
-              {result.citations.map((citation) => (
-                <a key={citation.url} href={citation.url} target="_blank" rel="noreferrer">
-                  {citation.title ?? citation.url}
-                </a>
-              ))}
-            </div>
-          </div>
-          <div className="analogs-inner">
-            <h4>Historical analogs</h4>
-            <TableScroll>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Event</th>
-                    <th>Window</th>
-                    <th>Why relevant</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.analogs_selected.map((analog) => {
-                    const event = analog_events[analog.event_id];
-                    return (
-                      <tr key={analog.event_id}>
-                        <td>{event?.name ?? analog.event_id}</td>
-                        <td>{event ? `${event.start_date} -> ${event.end_date}` : "n/a"}</td>
-                        <td>{analog.why_relevant}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </TableScroll>
-          </div>
-        </div>
-      </CollapsibleCard>
-
-      {canDecompose ? (
-      <CollapsibleCard
-        eyebrow="Experimental"
-        title="Fixed-context theme sensitivity"
-        summary={
-          result.narrative_shapley
-            ? `${result.narrative_shapley.contributions.length} themes decomposed`
-            : "admin decomposition — pinned analogs, ~3–15 pipeline runs"
-        }
-        defaultOpen={Boolean(result.narrative_shapley) || isDecomposing}
-        action={
-          <div className="button-row">
-            <button
-              className="ghost-button"
-              onClick={onDecompose}
-              disabled={!canDecompose || isDecomposing}
-            >
-              {isDecomposing
-                ? decomposeProgress
-                  ? `Testing themes… ${decomposeProgress.done}/${decomposeProgress.total}`
-                  : "Testing themes…"
-                : "Run theme sensitivity"}
-            </button>
-            {isDecomposing && onCancelDecompose ? (
-              <button className="ghost-button" onClick={onCancelDecompose}>
-                Cancel
-              </button>
-            ) : null}
-          </div>
-        }
-      >
-        {result.narrative_shapley ? (
-          <TableScroll>
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Sub-narrative</th>
-                  <th className="num">Shapley P&L</th>
-                  {hasNav ? <th className="num">$</th> : null}
-                  <th className="num">Relative</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.narrative_shapley.contributions.map((contribution) => (
-                  <tr key={contribution.narrative_index}>
-                    <td>{contribution.narrative_index + 1}</td>
-                    <td>{contribution.narrative_text}</td>
-                    <td className="num">{formatPercent(contribution.shapley_value)}</td>
-                    {hasNav ? (
-                      <td className="num">
-                        {formatSignedCurrency(contribution.shapley_value * (nav ?? 0), currency)}
-                      </td>
-                    ) : null}
-                    <td className="num">{formatPercent(contribution.relative_contribution)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
-        ) : (
-          <p className="muted">
-            ~3–15 pipeline runs (~30–90s). The marginal shock each theme adds
-            <em> within the original analog context</em> (analogs pinned, no re-grounding) — a
-            theme-sensitivity view, illustrative, not causal. Current periphery total:{" "}
-            {formatPercent(peripheryTotal)}.
-          </p>
-        )}
-      </CollapsibleCard>
-      ) : null}
-    </section>
-  );
-}
-
-
-function AdvancedAttributionDiagnostics({
-  options,
-  attributionMethod,
-  setAttributionMethod,
-  moveAttribution
-}: {
-  options: {
-    method: AttributionMethod;
-    label: string;
-    title: string;
-    disabled: boolean;
-  }[];
-  attributionMethod: AttributionMethod;
-  setAttributionMethod: (method: AttributionMethod) => void;
-  moveAttribution: (direction: 1 | -1) => void;
-}) {
-  return (
-    <details
-      className="advanced-diagnostics"
-      open={attributionMethod === "naive" || attributionMethod === "conditional"}
-    >
-      <summary>Advanced attribution diagnostics</summary>
-      <p className="muted">
-        Audit/debug views only. Full conditional is correlation credit, non-causal, and can
-        assign P&L to factors with no explicit scenario shock.
-      </p>
-      <div
-        className="segmented"
-        role="radiogroup"
-        aria-label="Advanced attribution diagnostics"
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-            event.preventDefault();
-            moveAttribution(1);
-          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-            event.preventDefault();
-            moveAttribution(-1);
-          }
-        }}
-      >
-        {options.map((option) => (
-          <button
-            key={option.method}
-            role="radio"
-            aria-checked={attributionMethod === option.method}
-            tabIndex={attributionMethod === option.method ? 0 : -1}
-            className={attributionMethod === option.method ? "active" : ""}
-            onClick={() => setAttributionMethod(option.method)}
-            disabled={option.disabled}
-            title={option.title}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function RiskDiagnostics({
-  diagnostics,
-  factorMeta
-}: {
-  diagnostics: RiskDiagnosticRecord[];
-  factorMeta: FactorMetadataMap;
-}) {
-  if (!diagnostics.length) return null;
-  return (
-    <div className="risk-diagnostics" role="note" aria-label="Risk diagnostics">
-      <p className="eyebrow">Risk diagnostics</p>
-      <ul>
-        {diagnostics.map((diagnostic, index) => (
-          <li key={`${diagnostic.kind}-${index}`} className={diagnostic.severity}>
-            <strong>
-              {diagnostic.factors.length
-                ? diagnostic.factors.map((factor) => factorDisplayName(factorMeta, factor)).join(", ")
-                : "Scenario"}
-            </strong>
-            <span>{diagnostic.message}</span>
-            {Object.keys(diagnostic.evidence).length ? (
-              <code>
-                {Object.entries(diagnostic.evidence)
-                  .map(([key, value]) =>
-                    typeof value === "number"
-                      ? `${key}: ${formatEvidence(value)}`
-                      : `${key}: ${value}`
-                  )
-                  .join(" | ")}
-              </code>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ScenarioReadout({
-  result,
-  attributionMethod,
-  factorMeta,
-  showDollars,
-  nav,
-  currency
-}: {
-  result: ScenarioResult;
-  attributionMethod: AttributionMethod;
-  factorMeta: FactorMetadataMap;
-  showDollars: boolean;
-  nav: number | null;
-  currency: string;
-}) {
-  const readout = buildReadout(result, attributionMethod, factorMeta);
-  const pnlText =
-    showDollars && nav != null
-      ? formatSignedCurrency(nav * readout.totalPnl, currency)
-      : formatPercent(readout.totalPnl);
-  const activeReturnText =
-    readout.activeReturn != null && showDollars && nav != null
-      ? `${formatSignedCurrency(nav * readout.activeReturn, currency)} (${formatPercent(
-          readout.activeReturn
-        )})`
-      : readout.activeReturn != null
-        ? formatPercent(readout.activeReturn)
-        : null;
-  const toneClass =
-    readout.direction === "gain" ? "up" : readout.direction === "loss" ? "down" : "flat";
-  return (
-    <section className={`scenario-readout ${toneClass}`} aria-label="Impact summary">
-      <p className="readout-eyebrow">Impact summary</p>
-      <p className="readout-headline">{readout.headline}</p>
-      <div className="readout-metrics">
-        <div>
-          <span className="readout-metric-label">Portfolio P&amp;L</span>
-          <span className={`readout-metric-value ${toneClass}`}>{pnlText}</span>
-          {readout.idioBand != null ? (
-            <span
-              className="readout-idio-band"
-              title="±1σ idiosyncratic dispersion around the factor-driven point estimate, scaled to the median selected-analog horizon. A dispersion floor under independence assumptions — not a confidence interval on the scenario."
-            >
-              ±{" "}
-              {showDollars && nav != null
-                ? formatCurrency(nav * readout.idioBand, currency)
-                : formatPercent(readout.idioBand)}{" "}
-              idio (1σ)
-            </span>
-          ) : null}
-        </div>
-        <div>
-          <span className="readout-metric-label">Top driver</span>
-          <span className="readout-metric-value">
-            {readout.topFactor} ({formatPercent(readout.topContribution)})
-          </span>
-        </div>
-        {readout.activeReturn != null && readout.benchmarkTicker ? (
-          <div>
-            <span className="readout-metric-label">Active vs {readout.benchmarkTicker}</span>
-            <span className="readout-metric-value">{activeReturnText}</span>
-          </div>
-        ) : null}
-        <div>
-          <span className="readout-metric-label">Evidence</span>
-          <span className="readout-metric-value">
-            {readout.analogCount} analogs · {readout.citationCount} citations
-          </span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MiniHoldings({ holdings }: { holdings: Record<string, number> }) {
-  return (
-    <div className="mini-holdings">
-      {Object.entries(holdings)
-        .slice(0, 8)
-        .map(([ticker, weight]) => (
-          <span key={ticker}>
-            {ticker} {formatPercent(weight, 1)}
-          </span>
-        ))}
-    </div>
-  );
-}
-
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {sub ? <small>{sub}</small> : null}
-    </div>
-  );
-}
-
-/** Sortable column header with aria-sort semantics; `numeric` right-aligns to
- * match `td.num` cells. */
-function SortableTh({
-  label,
-  active,
-  dir,
-  onToggle,
-  numeric = false
-}: {
-  label: string;
-  active: boolean;
-  dir: "asc" | "desc";
-  onToggle: () => void;
-  numeric?: boolean;
-}) {
-  const arrow = active ? (dir === "asc" ? "▲" : "▼") : "";
-  return (
-    <th
-      className={`sortable${numeric ? " num" : ""}${active ? " sorted" : ""}`}
-      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
-    >
-      <button type="button" onClick={onToggle}>
-        {label}
-        {arrow ? (
-          <span className="sort-arrow" aria-hidden="true">
-            {" "}
-            {arrow}
-          </span>
-        ) : null}
-      </button>
-    </th>
-  );
-}
-
-function ExportCsvButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="ghost-button table-export-btn"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-    >
-      <Download size={13} /> CSV
-    </button>
   );
 }
