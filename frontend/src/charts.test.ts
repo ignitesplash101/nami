@@ -13,6 +13,7 @@ import {
   buildReadout,
   buildWaterfallData,
   buildWaterfallDataDollars,
+  selectMainAttribution,
   chartTheme,
   factorReasoningRows,
   formatCurrency,
@@ -479,5 +480,36 @@ describe("evidence gauge + drill summaries", () => {
     expect(summarizeFactorTable(result)).toContain("1 factor shocked");
     expect(summarizeFactorTable(result)).toContain("-10.00%");
     expect(summarizeNameTable(result)).toBe("2 holdings · worst AAPL -6.00%");
+  });
+});
+
+describe("one methodology, two zooms (Phase 31i)", () => {
+  it("group zoom rolls up the SAME explicit map — both zooms sum to the same factor P&L", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
+    result.portfolio_pnl.by_factor_conditional_shapley_explicit = {
+      SPY: -0.05, // market
+      XLK: -0.03, // sector
+      TNX: 0.01 // macro
+    };
+    const sumRelative = (d: { y: number[] }) => d.y.slice(0, -1).reduce((a, b) => a + b, 0);
+
+    const byFactor = buildWaterfallData(result, "conditional_explicit", undefined, "factor");
+    const byGroup = buildWaterfallData(result, "conditional_explicit", undefined, "group");
+
+    expect(sumRelative(byGroup)).toBeCloseTo(sumRelative(byFactor), 12);
+    expect(sumRelative(byGroup)).toBeCloseTo(-0.07, 12);
+    // groups render in the canonical order, built from the same numbers
+    expect(byGroup.x.slice(0, -1)).toEqual(["Market", "Sector", "Macro"]);
+  });
+
+  it("selectMainAttribution prefers explicit and flags the naive fallback as degraded", () => {
+    const result = fixtureResult();
+    expect(selectMainAttribution(result)).toEqual({
+      method: "conditional_explicit",
+      degraded: false
+    });
+    result.portfolio_pnl.by_factor_conditional_shapley_explicit = null;
+    expect(selectMainAttribution(result)).toEqual({ method: "naive", degraded: true });
   });
 });

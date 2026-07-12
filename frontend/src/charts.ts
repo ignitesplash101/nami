@@ -112,6 +112,25 @@ export function preferredAttributionMethod(result: ScenarioResult): AttributionM
   return "naive";
 }
 
+/** THE production attribution (Phase 31i: one methodology, two zooms).
+ * Explicit conditional Shapley when the engine computed it — efficiency
+ * (sums to factor P&L), symmetry (correlated shocks share credit), and
+ * unshocked factors stay exactly 0. Falls back to the engine's naive algebra
+ * (degraded=true) for old/degraded payloads where the SHAP fit is absent. */
+export function selectMainAttribution(result: ScenarioResult): {
+  method: AttributionMethod;
+  degraded: boolean;
+} {
+  if (result.portfolio_pnl.by_factor_conditional_shapley_explicit) {
+    return { method: "conditional_explicit", degraded: false };
+  }
+  return { method: "naive", degraded: true };
+}
+
+/** Zoom level for the main waterfall: "group" rolls the SAME factor map into
+ * market/sector/style/macro bars, so the two zooms reconcile by construction. */
+export type AttributionZoom = "factor" | "group";
+
 export function selectedFactorAttribution(
   result: ScenarioResult,
   method: AttributionMethod
@@ -140,10 +159,11 @@ export function hasCorrelationCrossCredit(method: AttributionMethod): boolean {
 export function buildWaterfallData(
   result: ScenarioResult,
   method: AttributionMethod,
-  factors?: FactorMetadataMap
+  factors?: FactorMetadataMap,
+  zoom: AttributionZoom = "factor"
 ): WaterfallData {
   const bars = [
-    ...factorWaterfallBars(result, method, factors),
+    ...factorWaterfallBars(result, method, factors, zoom),
     ...peripheryWaterfallBars(result)
   ];
 
@@ -164,10 +184,11 @@ export function buildWaterfallData(
 function factorWaterfallBars(
   result: ScenarioResult,
   method: AttributionMethod,
-  factors?: FactorMetadataMap
+  factors?: FactorMetadataMap,
+  zoom: AttributionZoom = "factor"
 ): WaterfallBar[] {
   const byFactor = selectedFactorAttribution(result, method);
-  if (method === "conditional_grouped") {
+  if (method === "conditional_grouped" || zoom === "group") {
     return groupedFactorBars(byFactor, factors);
   }
   return Object.entries(byFactor)
@@ -526,9 +547,10 @@ export function buildWaterfallDataDollars(
   method: AttributionMethod,
   nav: number,
   currency = "USD",
-  factors?: FactorMetadataMap
+  factors?: FactorMetadataMap,
+  zoom: AttributionZoom = "factor"
 ): WaterfallData {
-  const base = buildWaterfallData(result, method, factors);
+  const base = buildWaterfallData(result, method, factors, zoom);
   return {
     x: base.x,
     y: base.y.map((value) => value * nav),

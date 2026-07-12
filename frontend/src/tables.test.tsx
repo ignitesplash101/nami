@@ -69,8 +69,6 @@ function renderResults() {
   render(
     <ResultsPanel
       envelope={envelopeFixture()}
-      attributionMethod="naive"
-      setAttributionMethod={() => {}}
       factorMeta={{}}
       displayMode="pct"
       setDisplayMode={() => {}}
@@ -120,8 +118,6 @@ describe("numeric table system", () => {
     const { container } = render(
       <ResultsPanel
         envelope={envelopeFixture()}
-        attributionMethod="naive"
-        setAttributionMethod={() => {}}
         factorMeta={{}}
         displayMode="pct"
         setDisplayMode={() => {}}

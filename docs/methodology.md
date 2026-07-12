@@ -547,18 +547,19 @@ exposure to that name.
 
 ## Factor attribution: production view and diagnostics
 
-The app computes four attribution maps internally, but it no longer presents them as
-equal choices. The main workbench uses the practical hedge-fund split:
+The app computes four attribution maps internally, but the production surface shows
+exactly ONE methodology at two zoom levels; the rest are audit diagnostics:
 
 | Surface | Backing field | Purpose |
 |---|---|---|
-| **Scenario shocks** | `by_factor_conditional_shapley_explicit` | Production risk view. Only factors explicitly shocked by the scenario receive factor attribution. |
-| **Group totals** | `by_factor_conditional_shapley_grouped` summed by factor group | Risk-committee view. Waterfall bars show true Market / Sector / Style / Macro totals; the factor table keeps factor-level detail. |
-| **Naive algebra** | `by_factor_naive` | Advanced audit/debug view. Direct formula, assumes factor independence. |
-| **Full conditional diagnostic** | `by_factor_conditional_shapley` | Advanced quant diagnostic. Correlation credit under the full historical joint distribution; non-causal. |
+| **Drivers waterfall — By factor / By group** | `by_factor_conditional_shapley_explicit` (the group zoom is the SAME map summed by factor group, client-side) | The production risk view. Only factors explicitly shocked by the scenario receive attribution; the two zooms reconcile by construction because they are the same numbers. |
+| **Naive algebra** (admin diagnostics) | `by_factor_naive` | Audit/debug. The engine's direct formula; exact, but collinear factors show large offsetting bars. |
+| **Full conditional** (admin diagnostics) | `by_factor_conditional_shapley` | Quant diagnostic. Correlation credit under the full historical joint distribution; non-causal. |
+| **Grouped (full conditional)** (admin diagnostics) | `by_factor_conditional_shapley_grouped` | The legacy committee view, kept for comparison with the production rollup; inherits full-conditional correlation credit. |
 
-The impact summary and top-driver readout default to **Scenario shocks** whenever that
-map is available. Full conditional diagnostic never drives the headline.
+The impact summary and top-driver readout use the explicit map whenever it is
+available. Full conditional diagnostic never drives the headline. Old or degraded
+results without the explicit map fall back to naive algebra with an on-screen caption.
 
 ### Production risk view
 
@@ -577,16 +578,19 @@ The production Shapley view restricts the player set to the explicitly shocked f
 so unshocked factors stay exactly zero while the result still sums to the factor-driven
 P&L under nami's demeaned-background contract.
 
-### Grouped risk view
+### Group zoom
 
-Group totals are the secondary presentation view. The engine first computes the full
-conditional game, sums credit within the four factor groups, then redistributes each
-group's value to members by their within-group naive share. The UI then sums that
-factor-level grouped map back into true `Market`, `Sector`, `Style`, and `Macro`
-waterfall bars, while the factor table keeps the redistributed factor detail for drilldown.
-This preserves efficiency while avoiding noisy peer leakage such as `US large-cap
-equities (SPY)` to `Global equities (ACWI)` or `Momentum stocks (MTUM)` to `Quality
-stocks (QUAL)`.
+The **By group** zoom sums the explicit-Shapley factor credits within the four factor
+groups (`Market`, `Sector`, `Style`, `Macro`) client-side. Because it aggregates the
+same map the factor zoom shows, the two views always reconcile — same total, same
+sign structure, no methodology switch. Unshocked factors remain exactly zero at both
+zooms.
+
+The engine also still computes the legacy grouped map (`full` conditional game, credit
+summed within groups, redistributed to members by within-group naive share). That map
+avoids noisy peer leakage such as `US large-cap equities (SPY)` to `Global equities
+(ACWI)`, but it inherits the full game's correlation credit — so it now lives in the
+admin diagnostics for comparison rather than driving a headline surface.
 
 ### Advanced diagnostics
 
@@ -625,9 +629,10 @@ Two factors, correlation = 0.9, only F0 explicitly shocked:
 | Full conditional diagnostic | Partial credit | Partial correlation credit |
 
 All maps can sum to the same factor-driven P&L, but they answer different questions.
-For user-facing scenario interpretation, start with **Scenario shocks**, then use
-**Group totals** for committee-style reporting. Use the advanced diagnostics only to
-audit the math or investigate correlation leakage.
+For user-facing scenario interpretation there is one production view — explicit
+conditional Shapley — read **By factor** for drilldown or **By group** for
+committee-style reporting (the same numbers rolled up). Use the admin methodology
+diagnostics only to audit the math or investigate correlation leakage.
 
 ---
 

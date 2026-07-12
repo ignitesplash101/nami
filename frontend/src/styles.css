@@ -910,6 +910,27 @@ input[type="range"]::-moz-range-thumb {
   margin: 2px 0 0;
   font-size: 0.78rem;
 }
+
+/* Heading-right control cluster (zoom segmented + fullscreen button). */
+.card-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Fullscreen chart cards (native Fullscreen API — the browser owns Esc and
+   the backdrop; deliberately NOT a useOverlay, so the two-overlays rule is
+   untouched). */
+.result-card:fullscreen {
+  background: var(--bg);
+  padding: var(--space-6);
+  overflow: auto;
+  border-radius: 0;
+}
+.result-card::backdrop {
+  background: var(--bg);
+}
 .book-header h3 {
   margin: 4px 0 6px;
 }

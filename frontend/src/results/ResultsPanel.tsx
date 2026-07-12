@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RefObject } from "react";
-import { BarChart3, Check, Copy, Pin, Save } from "lucide-react";
+import { BarChart3, Check, Copy, Maximize2, Minimize2, Pin, Save } from "lucide-react";
 import {
   buildPositionValuations,
   buildWaterfallData,
@@ -11,26 +11,25 @@ import {
   formatSignedCurrency,
   parseNav,
   preferredAttributionMethod,
+  selectMainAttribution,
   summarizeFactorTable,
   summarizeNameTable
 } from "../charts";
+import type { AttributionZoom } from "../charts";
 import { csvFilename, downloadCsv } from "../csv";
 import { factorDescription } from "../factors";
 import { formatFxRate, formatMarkPrice, formatShares } from "../format";
-import { nextEnabledMethod } from "../attributionNav";
 import { AdjustmentPanel } from "../AdjustmentPanel";
 import { CollapsibleCard } from "../CollapsibleCard";
 import { EvidenceBlock } from "../EvidenceBlock";
 import { TableScroll } from "../TableScroll";
 import { Tabs } from "../Tabs";
 import type { TabItem } from "../Tabs";
+import { useFullscreen } from "../useFullscreen";
 import { useMediaQuery } from "../useMediaQuery";
-import {
-  AdvancedAttributionDiagnostics,
-  RiskDiagnostics
-} from "./AttributionControl";
-import type { AttributionOption } from "./AttributionControl";
+import { RiskDiagnostics } from "./AttributionControl";
 import { ExposureBreakdown } from "./ExposureBreakdown";
+import { MethodologyDiagnostics } from "./MethodologyDiagnostics";
 import { ExportCsvButton, SortableTh } from "./primitives";
 import { ScenarioReadout } from "./ScenarioReadout";
 import { WaterfallChart } from "./WaterfallChart";
@@ -61,8 +60,6 @@ export interface ValuationSort {
 
 export function ResultsPanel({
   envelope,
-  attributionMethod,
-  setAttributionMethod,
   factorMeta,
   displayMode,
   setDisplayMode,
@@ -93,8 +90,6 @@ export function ResultsPanel({
   isPinned = false
 }: {
   envelope: ScenarioRunResponse | null;
-  attributionMethod: AttributionMethod;
-  setAttributionMethod: (method: AttributionMethod) => void;
   factorMeta: FactorMetadataMap;
   displayMode: "pct" | "usd";
   setDisplayMode: (mode: "pct" | "usd") => void;
@@ -143,6 +138,12 @@ export function ResultsPanel({
   const [internalTab, setInternalTab] = useState<ResultsTabKey>("drivers");
   const activeTab = resultsTab ?? internalTab;
   const changeTab = onResultsTabChange ?? setInternalTab;
+  // One methodology, two zooms (Phase 31i): the main waterfall always shows
+  // the explicit conditional Shapley map (naive fallback for old payloads);
+  // "group" rolls the SAME numbers up, so the zooms reconcile by construction.
+  const [zoom, setZoom] = useState<AttributionZoom>("factor");
+  const waterfallCardRef = useRef<HTMLDivElement>(null);
+  const waterfallFullscreen = useFullscreen(waterfallCardRef);
 
   if (!envelope) {
     if (isRunning) {
@@ -213,11 +214,12 @@ export function ResultsPanel({
       numeric={numeric}
     />
   );
+  const mainAttribution = selectMainAttribution(result);
   const waterfall =
     showDollars && nav != null
-      ? buildWaterfallDataDollars(result, attributionMethod, nav, currency, factorMeta)
-      : buildWaterfallData(result, attributionMethod, factorMeta);
-  const factorRows = factorReasoningRows(result, attributionMethod, factorMeta);
+      ? buildWaterfallDataDollars(result, mainAttribution.method, nav, currency, factorMeta, zoom)
+      : buildWaterfallData(result, mainAttribution.method, factorMeta, zoom);
+  const factorRows = factorReasoningRows(result, mainAttribution.method, factorMeta);
   // Semantic export filenames: nami_<portfolio>_<scenario>_<as-of>_<table>.csv
   const exportName = (table: string) =>
     csvFilename(
@@ -292,18 +294,14 @@ export function ResultsPanel({
       })
     );
   const readoutMethod = preferredAttributionMethod(result);
-  const hasConditional = Boolean(result.portfolio_pnl.by_factor_conditional_shapley);
-  const hasConditionalExplicit = Boolean(
-    result.portfolio_pnl.by_factor_conditional_shapley_explicit
-  );
-  const hasConditionalGrouped = Boolean(
-    result.portfolio_pnl.by_factor_conditional_shapley_grouped
-  );
   const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
     (acc, value) => acc + value,
     0
   );
-  const chartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
+  const bandChartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
+  const chartHeight = waterfallFullscreen.isFullscreen
+    ? Math.max(420, (typeof window !== "undefined" ? window.innerHeight : 800) - 260)
+    : bandChartHeight;
   const reproducibility = envelope.reproducibility;
 
   async function copyReproducibility() {
@@ -319,65 +317,6 @@ export function ResultsPanel({
     }
   }
 
-  const attributionOptions: AttributionOption[] = [
-    {
-      method: "naive",
-      label: "Naive algebra",
-      title: "Direct algebraic attribution. Useful for audit/debug; assumes factor independence.",
-      disabled: false
-    },
-    {
-      method: "conditional",
-      label: "Full conditional diagnostic",
-      title:
-        "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors.",
-      disabled: !hasConditional
-    },
-    {
-      method: "conditional_explicit",
-      label: "Scenario shocks",
-      title:
-        "Production risk view restricted to factors explicitly shocked by the scenario. Unshocked factors stay at zero.",
-      disabled: !hasConditionalExplicit
-    },
-    {
-      method: "conditional_grouped",
-      label: "Group totals",
-      title:
-        "Waterfall group totals for market / sector / style / macro, with factor-level detail kept in the table.",
-      disabled: !hasConditionalGrouped
-    }
-  ];
-  const mainAttributionOptions = attributionOptions.filter(
-    (option) => option.method === "conditional_explicit" || option.method === "conditional_grouped"
-  );
-  const diagnosticOptions = attributionOptions
-    .filter((option) => option.method === "naive" || option.method === "conditional")
-    .map((option) =>
-      option.method === "naive"
-        ? {
-            ...option,
-            label: "Naive algebra",
-            title:
-              "Direct algebraic attribution. Useful for audit/debug; assumes factor independence."
-          }
-        : {
-            ...option,
-            label: "Full conditional diagnostic",
-            title:
-              "Correlation-credit diagnostic under the full historical joint distribution. Non-causal; can credit unshocked factors."
-          }
-    );
-
-  // Roving-radiogroup arrow nav: move to the next/prev ENABLED option and select it.
-  function moveAttribution(direction: 1 | -1) {
-    setAttributionMethod(nextEnabledMethod(mainAttributionOptions, attributionMethod, direction));
-  }
-
-  function moveDiagnosticAttribution(direction: 1 | -1) {
-    setAttributionMethod(nextEnabledMethod(diagnosticOptions, attributionMethod, direction));
-  }
-
   // The Adjust tab needs the full provenance chain: permission + the trusted
   // canonical + a live cache_key (the server re-fetches the canonical by key).
   const showAdjust = Boolean(
@@ -390,66 +329,85 @@ export function ResultsPanel({
       label: "Drivers",
       content: (
         <>
-          <div className="result-card waterfall-card">
+          <div className="result-card waterfall-card" ref={waterfallCardRef}>
             <div className="card-heading">
               <div>
                 <p className="eyebrow">Attribution</p>
                 <h3>What drove the P&amp;L</h3>
-                <p className="muted card-subtitle">Systematic contribution waterfall</p>
+                <p className="muted card-subtitle">
+                  Systematic contribution waterfall — explicit conditional Shapley
+                </p>
               </div>
-              <div
-                className="segmented"
-                role="radiogroup"
-                aria-label="Attribution method"
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                    event.preventDefault();
-                    moveAttribution(1);
-                  } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                    event.preventDefault();
-                    moveAttribution(-1);
-                  }
-                }}
-              >
-                {mainAttributionOptions.map((option) => (
+              <div className="card-heading-actions">
+                <div
+                  className="segmented"
+                  role="radiogroup"
+                  aria-label="Attribution view"
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "ArrowRight" ||
+                      event.key === "ArrowDown" ||
+                      event.key === "ArrowLeft" ||
+                      event.key === "ArrowUp"
+                    ) {
+                      event.preventDefault();
+                      setZoom(zoom === "factor" ? "group" : "factor");
+                    }
+                  }}
+                >
                   <button
-                    key={option.method}
                     role="radio"
-                    aria-checked={attributionMethod === option.method}
-                    tabIndex={attributionMethod === option.method ? 0 : -1}
-                    className={attributionMethod === option.method ? "active" : ""}
-                    onClick={() => setAttributionMethod(option.method)}
-                    disabled={option.disabled}
-                    title={option.title}
+                    aria-checked={zoom === "factor"}
+                    tabIndex={zoom === "factor" ? 0 : -1}
+                    className={zoom === "factor" ? "active" : ""}
+                    onClick={() => setZoom("factor")}
+                    title="One bar per shocked factor"
                   >
-                    {option.label}
+                    By factor
                   </button>
-                ))}
+                  <button
+                    role="radio"
+                    aria-checked={zoom === "group"}
+                    tabIndex={zoom === "group" ? 0 : -1}
+                    className={zoom === "group" ? "active" : ""}
+                    onClick={() => setZoom("group")}
+                    title="The same numbers rolled up into market / sector / style / macro"
+                  >
+                    By group
+                  </button>
+                </div>
+                {waterfallFullscreen.supported ? (
+                  <button
+                    type="button"
+                    className="methodology-btn"
+                    onClick={waterfallFullscreen.toggle}
+                    aria-label={
+                      waterfallFullscreen.isFullscreen ? "Exit full screen" : "View full screen"
+                    }
+                    title={waterfallFullscreen.isFullscreen ? "Exit full screen" : "View full screen"}
+                  >
+                    {waterfallFullscreen.isFullscreen ? (
+                      <Minimize2 size={15} />
+                    ) : (
+                      <Maximize2 size={15} />
+                    )}
+                  </button>
+                ) : null}
               </div>
             </div>
+            {mainAttribution.degraded ? (
+              <p className="muted">
+                Conditional attribution unavailable for this result — showing the engine&apos;s
+                naive algebra.
+              </p>
+            ) : null}
             <button
               type="button"
               className="guide-link"
               onClick={() => onOpenMethodology("factor-attribution")}
             >
-              Which method should I use? Open the methodology comparison →
+              How the attribution works →
             </button>
-            <AdvancedAttributionDiagnostics
-              options={diagnosticOptions}
-              attributionMethod={attributionMethod}
-              setAttributionMethod={setAttributionMethod}
-              moveAttribution={moveDiagnosticAttribution}
-            />
-            {attributionMethod === "conditional" ? (
-              <div className="risk-diagnostics" role="note">
-                <p className="eyebrow">Full conditional diagnostic</p>
-                <p className="muted">
-                  Correlation credit, non-causal. Unshocked factors can receive positive or
-                  negative P&amp;L through historical co-movement; do not read those bars as
-                  explicit scenario shocks.
-                </p>
-              </div>
-            ) : null}
             <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
             <WaterfallChart
               waterfall={waterfall}
@@ -691,6 +649,8 @@ export function ResultsPanel({
             key: "advanced" as const,
             label: "Advanced",
             content: (
+              <>
+              <MethodologyDiagnostics result={result} factorMeta={factorMeta} />
               <CollapsibleCard
                 eyebrow="Experimental"
                 title="Which themes matter most"
@@ -762,6 +722,7 @@ export function ResultsPanel({
                   </p>
                 )}
               </CollapsibleCard>
+              </>
             )
           }
         ]

@@ -96,8 +96,6 @@ function renderResults(
   return render(
     <ResultsPanel
       envelope={envelope}
-      attributionMethod="naive"
-      setAttributionMethod={() => {}}
       factorMeta={{}}
       displayMode="pct"
       setDisplayMode={() => {}}

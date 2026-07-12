@@ -21,7 +21,6 @@ import { useToasts } from "./toast";
 import {
   formatPercent,
   parseNav,
-  preferredAttributionMethod,
   sameScenarioResult
 } from "./charts";
 import { factorMap } from "./factors";
@@ -52,7 +51,6 @@ import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { useMediaQuery } from "./useMediaQuery";
 import { useOverlay } from "./useOverlay";
 import type {
-  AttributionMethod,
   FactorMetadataMap,
   SamplePortfolio,
   SampleScenario,
@@ -115,7 +113,6 @@ export default function App() {
   const [savedReloadKey, setSavedReloadKey] = useState(0);
   const saveDialog = useOverlay();
   const [methodology, setMethodology] = useState("");
-  const [attributionMethod, setAttributionMethod] = useState<AttributionMethod>("naive");
   const [error, setError] = useState<ApiError | string | null>(null);
   const [bootSerial, setBootSerial] = useState(0);
   // Top-level area + results sub-tab; both persist across runs. The area
@@ -281,7 +278,6 @@ export default function App() {
             reproducibility: rec.reproducibility
           });
           setCanonicalSnapshot(rec.result);
-          setAttributionMethod(preferredAttributionMethod(rec.result));
         } catch (exc) {
           setError(`Could not load saved scenario: ${exc instanceof Error ? exc.message : exc}`);
         }
@@ -419,7 +415,6 @@ export default function App() {
   function handleRunResult(response: ScenarioRunResponse) {
     setResultEnvelope(response);
     setCanonicalSnapshot(response.result);
-    setAttributionMethod(preferredAttributionMethod(response.result));
     setDisplayMode(
       response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
     );
@@ -563,8 +558,6 @@ export default function App() {
   const scenarioOutput = (
     <ResultsPanel
       envelope={resultEnvelope}
-      attributionMethod={attributionMethod}
-      setAttributionMethod={setAttributionMethod}
       factorMeta={factorMeta}
       displayMode={displayMode}
       setDisplayMode={setDisplayMode}
@@ -655,7 +648,6 @@ export default function App() {
           onOpen={(env) => {
             setResultEnvelope(env);
             setCanonicalSnapshot(env.result);
-            setAttributionMethod(preferredAttributionMethod(env.result));
             // The opened result renders in the Scenario area — switch so it's visible.
             setActiveArea("scenario");
           }}
