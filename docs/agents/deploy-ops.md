@@ -1,0 +1,19 @@
+# nami — deploy, GCP & environment (agent notes)
+
+Owns `cloudbuild.yaml`, the Dockerfile, Cloud Run/Build/Secret Manager
+configuration, regions, and local dev-environment quirks. Change a contract
+here → update this doc in the same commit.
+
+## Gotchas
+
+- **PowerShell `python -c "..."` collides with embedded `f"..."`.** The outer `"` eats the inner `"`. Workarounds: single-quoted f-strings (`f'...'`), here-strings, or a real `.py` file.
+- **Cloud Run GCP client auth uses ADC**, not JSON keys. `nami-sa` is attached via `--service-account=` in `cloudbuild.yaml`; the Vertex AI + GCS Python clients pick it up automatically. Do NOT set `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run — `app/config.py` tolerates its absence.
+- **Cloud Run is publicly invokable, but the app has passcode admin mode.** `cloudbuild.yaml` uses `--allow-unauthenticated` so the React app is viewable without Google login. The `PASSCODE` value is injected from Secret Manager (`nami-passcode:latest`). Visitor mode allows sample scenarios or custom scenario text on sample portfolios only; admin mode unlocks custom/uploaded portfolios, benchmark overrides, backdating, MTM, saved analytics, adjustments, and theme sensitivity.
+- **FastAPI binds to `$PORT`** on Cloud Run via the Dockerfile CMD (`uvicorn app.api.main:api --host 0.0.0.0 --port ${PORT:-8080}`). Don't drop `--host 0.0.0.0` — Cloud Run's TCP health checks fail on default localhost binding.
+- **`--session-affinity` is still enabled** in `cloudbuild.yaml`. It is less load-bearing after moving off Streamlit session state, but harmless and useful for long-running requests.
+- **Cloud Build 2nd-gen trigger** `nami-main-push` lives in `asia-northeast1`, uses the repository resource `projects/<PROJECT_ID>/locations/asia-northeast1/connections/nami-github-connection/repositories/ignitesplash101-nami`. Edit via Cloud Console → Triggers, or `gcloud builds triggers update`.
+- **Cloud Build SA for this project is the compute-engine default** (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`), NOT the legacy `<PROJECT_NUMBER>@cloudbuild.gserviceaccount.com`. `gcloud builds get-default-service-account` returns empty in some gcloud versions; derive reliably with `gcloud projects describe $PROJECT_ID --format="value(projectNumber)"` then construct `<NUMBER>-compute@developer.gserviceaccount.com`.
+- **Dockerfile is multi-stage.** Node builds `frontend/dist`; Python runs FastAPI. The Python stage still uses `uv sync --frozen --no-dev --no-install-project` + `PYTHONPATH=/app`. Don't drop `--no-install-project` — without it, `uv sync` reads `pyproject.toml`'s `readme = README.md` field and fails because README isn't copied yet in the deps layer.
+- **Gemini 3.5 Flash region:** `global` / `us` / `eu` only. NOT `us-central1`, NOT `asia-northeast1`. `VERTEX_AI_LOCATION` is independent of the Cloud Run / bucket region.
+- **(Phase 20) `cloudbuild.yaml` gates deploys on tests.** `backend-tests` (uv image: `uv sync --frozen --extra dev` → ruff → black → pytest with live-evals ignored, CI-dummy env vars) and `frontend-tests` (`node:22-slim`: `npm ci` → typecheck → vitest) start in parallel (`waitFor: ['-']`) and `build` waits on both — a red suite blocks `gcloud run deploy` regardless of GitHub Actions (which stays as the PR surface but CANNOT block this trigger; the two pipelines are independent). Build timeout 1800s, `machineType: E2_HIGHCPU_8`. Don't remove the gates "for deploy speed" — that reopens the ship-while-red hole.
+- **(Phase 30) Cloud Run `--timeout=900`** (cloudbuild.yaml) — the decompose stream (up to 15 pipeline reruns over 4 workers) legitimately exceeds the old 300s ceiling, which severed it mid-stream as a client "network error" even though per-subset events kept flowing. Idle-stream leakage stays bounded by the client idle guards. Don't lower it back without re-checking decompose worst-case wall-clock.
