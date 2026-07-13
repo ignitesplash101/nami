@@ -18,10 +18,18 @@ export function useFullscreen(ref: RefObject<HTMLElement>): {
   useEffect(() => {
     if (!supported) return;
     const onChange = () => {
-      setIsFullscreen(
-        document.fullscreenElement != null && document.fullscreenElement === ref.current
-      );
-      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+      const next =
+        document.fullscreenElement != null && document.fullscreenElement === ref.current;
+      // `fullscreenchange` fires on `document` for every hook instance on
+      // every transition — dispatch the resize only when THIS element's own
+      // state actually flipped, or many mounted cards would fan out one
+      // real transition into a resize storm.
+      setIsFullscreen((prev) => {
+        if (prev !== next) {
+          requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+        }
+        return next;
+      });
     };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
@@ -41,4 +49,51 @@ export function useFullscreen(ref: RefObject<HTMLElement>): {
   }, [ref]);
 
   return { isFullscreen, toggle, supported };
+}
+
+/** Pure fullscreen chart-height rule shared by every fullscreen-capable
+ * chart: inline uses `base`; fullscreen reclaims the viewport minus room for
+ * heading/controls, floored so a short viewport never collapses the chart.
+ * `h` prefers an explicit `viewportHeight` (from `useViewportHeight`, so it
+ * tracks orientation/chrome changes), falls back to a live
+ * `window.innerHeight` read, then 800 — never NaN. */
+export function fullscreenChartHeight(
+  isFullscreen: boolean,
+  base: number,
+  viewportHeight?: number
+): number {
+  if (!isFullscreen) return base;
+  const h =
+    typeof viewportHeight === "number" && Number.isFinite(viewportHeight) && viewportHeight > 0
+      ? viewportHeight
+      : typeof window !== "undefined" && Number.isFinite(window.innerHeight)
+        ? window.innerHeight
+        : 800;
+  return Math.max(420, h - 260);
+}
+
+/** Tracks `window.innerHeight` reactively while `active`, `undefined`
+ * otherwise. Chart cards only need this while actually fullscreen — orientation
+ * changes and mobile browser-chrome show/hide (address bar collapse) resize
+ * the viewport without any other trigger firing, so `fullscreenChartHeight`
+ * needs a live value to recompute against. */
+export function useViewportHeight(active: boolean): number | undefined {
+  const [height, setHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!active || typeof window === "undefined") {
+      setHeight(undefined);
+      return;
+    }
+    const update = () => setHeight(window.innerHeight);
+    update();
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
+  }, [active]);
+
+  return height;
 }

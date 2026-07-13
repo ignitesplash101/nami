@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { RefObject } from "react";
-import { BarChart3, Check, Copy, Maximize2, Minimize2, Pin, Save } from "lucide-react";
+import { BarChart3, Check, Copy, Pin, Save } from "lucide-react";
 import {
   buildPositionValuations,
   buildWaterfallData,
@@ -22,10 +22,11 @@ import { formatFxRate, formatMarkPrice, formatShares } from "../format";
 import { AdjustmentPanel } from "../AdjustmentPanel";
 import { CollapsibleCard } from "../CollapsibleCard";
 import { EvidenceBlock } from "../EvidenceBlock";
+import { FullscreenButton } from "../FullscreenButton";
 import { TableScroll } from "../TableScroll";
 import { Tabs } from "../Tabs";
 import type { TabItem } from "../Tabs";
-import { useFullscreen } from "../useFullscreen";
+import { fullscreenChartHeight, useFullscreen, useViewportHeight } from "../useFullscreen";
 import { useMediaQuery } from "../useMediaQuery";
 import { RiskDiagnostics } from "./AttributionControl";
 import { ExposureBreakdown } from "./ExposureBreakdown";
@@ -299,9 +300,12 @@ export function ResultsPanel({
     0
   );
   const bandChartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
-  const chartHeight = waterfallFullscreen.isFullscreen
-    ? Math.max(420, (typeof window !== "undefined" ? window.innerHeight : 800) - 260)
-    : bandChartHeight;
+  const waterfallViewportHeight = useViewportHeight(waterfallFullscreen.isFullscreen);
+  const chartHeight = fullscreenChartHeight(
+    waterfallFullscreen.isFullscreen,
+    bandChartHeight,
+    waterfallViewportHeight
+  );
   const reproducibility = envelope.reproducibility;
 
   async function copyReproducibility() {
@@ -376,23 +380,10 @@ export function ResultsPanel({
                     By group
                   </button>
                 </div>
-                {waterfallFullscreen.supported ? (
-                  <button
-                    type="button"
-                    className="methodology-btn"
-                    onClick={waterfallFullscreen.toggle}
-                    aria-label={
-                      waterfallFullscreen.isFullscreen ? "Exit full screen" : "View full screen"
-                    }
-                    title={waterfallFullscreen.isFullscreen ? "Exit full screen" : "View full screen"}
-                  >
-                    {waterfallFullscreen.isFullscreen ? (
-                      <Minimize2 size={15} />
-                    ) : (
-                      <Maximize2 size={15} />
-                    )}
-                  </button>
-                ) : null}
+                <FullscreenButton
+                  controller={waterfallFullscreen}
+                  surface="contribution waterfall"
+                />
               </div>
             </div>
             {mainAttribution.degraded ? (

@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
 import { nextEnabledMethod } from "../attributionNav";
 import {
   buildWaterfallData,
@@ -7,8 +6,9 @@ import {
   formatPercent,
   hasCorrelationCrossCredit
 } from "../charts";
+import { FullscreenButton } from "../FullscreenButton";
 import { TableScroll } from "../TableScroll";
-import { useFullscreen } from "../useFullscreen";
+import { fullscreenChartHeight, useFullscreen, useViewportHeight } from "../useFullscreen";
 import type { AttributionOption } from "./AttributionControl";
 import { WaterfallChart } from "./WaterfallChart";
 import type { AttributionMethod, FactorMetadataMap, ScenarioResult } from "../types";
@@ -28,6 +28,7 @@ export function MethodologyDiagnostics({
   const [method, setMethod] = useState<AttributionMethod>("naive");
   const cardRef = useRef<HTMLDivElement>(null);
   const fullscreen = useFullscreen(cardRef);
+  const viewportHeight = useViewportHeight(fullscreen.isFullscreen);
 
   const options: AttributionOption[] = [
     {
@@ -99,17 +100,7 @@ export function MethodologyDiagnostics({
               </button>
             ))}
           </div>
-          {fullscreen.supported ? (
-            <button
-              type="button"
-              className="methodology-btn"
-              onClick={fullscreen.toggle}
-              aria-label={fullscreen.isFullscreen ? "Exit full screen" : "View full screen"}
-              title={fullscreen.isFullscreen ? "Exit full screen" : "View full screen"}
-            >
-              {fullscreen.isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-            </button>
-          ) : null}
+          <FullscreenButton controller={fullscreen} surface="diagnostics waterfall" />
         </div>
       </div>
       {method === "conditional" || method === "conditional_grouped" ? (
@@ -127,11 +118,7 @@ export function MethodologyDiagnostics({
       <WaterfallChart
         waterfall={waterfall}
         showDollars={false}
-        chartHeight={
-          fullscreen.isFullscreen
-            ? Math.max(420, (typeof window !== "undefined" ? window.innerHeight : 800) - 260)
-            : 360
-        }
+        chartHeight={fullscreenChartHeight(fullscreen.isFullscreen, 360, viewportHeight)}
         isPhone={false}
       />
       <TableScroll>
