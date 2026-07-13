@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 /** Native element fullscreen for chart cards. Deliberately NOT a useOverlay —
@@ -14,6 +14,7 @@ export function useFullscreen(ref: RefObject<HTMLElement>): {
   const supported =
     typeof document !== "undefined" && Boolean(document.fullscreenEnabled);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const wasFullscreen = useRef(false);
 
   useEffect(() => {
     if (!supported) return;
@@ -22,14 +23,15 @@ export function useFullscreen(ref: RefObject<HTMLElement>): {
         document.fullscreenElement != null && document.fullscreenElement === ref.current;
       // `fullscreenchange` fires on `document` for every hook instance on
       // every transition — dispatch the resize only when THIS element's own
-      // state actually flipped, or many mounted cards would fan out one
-      // real transition into a resize storm.
-      setIsFullscreen((prev) => {
-        if (prev !== next) {
-          requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
-        }
-        return next;
-      });
+      // state actually flipped, or many mounted cards would fan out one real
+      // transition into a resize storm. Compared via ref, NOT inside the
+      // setIsFullscreen updater: StrictMode double-invokes updaters in dev,
+      // which would dispatch twice; the event handler itself runs once.
+      if (wasFullscreen.current !== next) {
+        wasFullscreen.current = next;
+        requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+      }
+      setIsFullscreen(next);
     };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
