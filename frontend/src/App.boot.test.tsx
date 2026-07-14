@@ -12,7 +12,9 @@ const apiMocks = vi.hoisted(() => ({
   getFactors: vi.fn(),
   getMethodology: vi.fn(),
   getSavedScenario: vi.fn(),
-  getTickerMetadata: vi.fn()
+  getTickerMetadata: vi.fn(),
+  listSavedScenarios: vi.fn(),
+  listSavedPortfolios: vi.fn()
 }));
 
 vi.mock("./api", async () => {
@@ -25,7 +27,9 @@ vi.mock("./api", async () => {
     getFactors: () => apiMocks.getFactors(),
     getMethodology: () => apiMocks.getMethodology(),
     getSavedScenario: (id: string) => apiMocks.getSavedScenario(id),
-    getTickerMetadata: () => apiMocks.getTickerMetadata()
+    getTickerMetadata: () => apiMocks.getTickerMetadata(),
+    listSavedScenarios: () => apiMocks.listSavedScenarios(),
+    listSavedPortfolios: () => apiMocks.listSavedPortfolios()
   };
 });
 
@@ -37,6 +41,16 @@ const access: AccessResponse = {
     custom_portfolio: false,
     free_text_scenario: false,
     narrative_decomposition: false
+  }
+};
+
+const adminAccess: AccessResponse = {
+  ...access,
+  access_mode: "admin",
+  permissions: {
+    custom_portfolio: true,
+    free_text_scenario: true,
+    narrative_decomposition: true
   }
 };
 
@@ -72,6 +86,22 @@ describe("App bootstrap recovery", () => {
     apiMocks.getFactors.mockResolvedValue([]);
     apiMocks.getMethodology.mockResolvedValue("# Methodology");
     apiMocks.getTickerMetadata.mockResolvedValue({});
+    apiMocks.listSavedScenarios.mockResolvedValue([
+      {
+        id: "saved-1",
+        name: "Quarterly stress",
+        tags: [],
+        created_at: "2026-07-14T00:00:00Z",
+        owner_label: null,
+        portfolio_name: "Global quality",
+        portfolio_key: "sample-book",
+        requested_as_of_date: "2026-07-14",
+        effective_as_of_date: "2026-07-14",
+        narrative_mode: "grounded_current",
+        total_pnl: -0.12
+      }
+    ]);
+    apiMocks.listSavedPortfolios.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -116,6 +146,35 @@ describe("App bootstrap recovery", () => {
     });
     await flushAsyncWork();
     expect(apiMocks.getAccess).toHaveBeenCalledTimes(4);
+
+    view.unmount();
+  });
+
+  it("releases a saved-delete overlay when an admin session expires", async () => {
+    apiMocks.getAccess.mockReset();
+    apiMocks.getAccess.mockResolvedValueOnce(adminAccess).mockResolvedValue(access);
+
+    const view = render(<App />);
+    await flushAsyncWork();
+
+    act(() => screen.getByRole("tab", { name: "Library" }).click());
+    await flushAsyncWork();
+    const deleteButton = screen.getByRole("button", { name: "Delete Quarterly stress" });
+    act(() => deleteButton.click());
+
+    expect(screen.getByRole("dialog", { name: "Delete saved scenario" })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.getAccess).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("dialog", { name: "Delete saved scenario" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Library" })).toBeNull();
+    expect(document.body.style.overflow).toBe("");
 
     view.unmount();
   });

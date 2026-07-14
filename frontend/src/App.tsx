@@ -227,7 +227,9 @@ export default function App() {
     openCommandPalette,
     openSaveDialog,
     openSavedDeleteConfirm,
-    requestPurge
+    requestPurge,
+    closeAdminOverlays,
+    closeAllOverlays
   } = useOverlayManager();
   const [purgeBusy, setPurgeBusy] = useState(false);
   // Bumped on purge success and passed as `key` to the saved-scenarios +
@@ -346,11 +348,14 @@ export default function App() {
     window.history.replaceState(null, "", url);
   }, [activeArea]);
 
-  // A visitor can deep-link ?view=library but never see it — snap back once
-  // access resolves (the Library tab isn't rendered for visitors at all).
+  // Admin-only overlays must release their global Esc/scroll ownership before
+  // their hosts unmount on a session downgrade. A visitor deep-link to Library
+  // also snaps back once access resolves.
   useEffect(() => {
-    if (access && !isAdmin && activeArea === "library") setActiveArea("scenario");
-  }, [access, isAdmin, activeArea]);
+    if (!access || isAdmin) return;
+    closeAdminOverlays();
+    if (activeArea === "library") setActiveArea("scenario");
+  }, [access, isAdmin, activeArea, closeAdminOverlays]);
 
   const selectedPortfolio = useMemo(
     () => portfolios.find((portfolio) => portfolio.key === portfolioKey) ?? portfolios[0],
@@ -501,10 +506,12 @@ export default function App() {
     nextArea?: AreaKey,
     nextResultsTab?: ResultsTabKey
   ): void {
-    // The fallback owns body scroll-lock even if its mounted tab becomes
-    // hidden, so collapse it eagerly. Native fullscreen can stay when its
-    // owner remains inside every affected next-visible panel (notably the
-    // Drivers waterfall during a completed run).
+    // Release every overlay before a navigation can hide its host. The fallback
+    // expanded card likewise owns body scroll-lock even while hidden, so
+    // collapse it eagerly. Native fullscreen can stay when its owner remains
+    // inside every affected next-visible panel (notably the Drivers waterfall
+    // during a completed run).
+    closeAllOverlays();
     closeExpandedCard();
     if (typeof document === "undefined") return;
     const transitions: VisibilityTransition[] = [];

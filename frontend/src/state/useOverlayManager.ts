@@ -33,22 +33,23 @@ export function useOverlayManager() {
   const saveDialog = useOverlay();
   const savedDeleteConfirm = useOverlay();
 
-  const closeAllOverlays = useCallback(() => {
-    methodologyDrawer.close();
-    railDrawer.close();
-    commandPalette.close();
+  const closeAdminOverlays = useCallback(() => {
     opsDrawer.close();
     purgeConfirm.close();
     saveDialog.close();
     savedDeleteConfirm.close();
+  }, [opsDrawer.close, purgeConfirm.close, saveDialog.close, savedDeleteConfirm.close]);
+
+  const closeAllOverlays = useCallback(() => {
+    methodologyDrawer.close();
+    railDrawer.close();
+    commandPalette.close();
+    closeAdminOverlays();
   }, [
+    closeAdminOverlays,
     commandPalette.close,
     methodologyDrawer.close,
-    opsDrawer.close,
-    purgeConfirm.close,
-    railDrawer.close,
-    saveDialog.close,
-    savedDeleteConfirm.close
+    railDrawer.close
   ]);
 
   const prepareOverlayOpen = useCallback(() => {
@@ -126,6 +127,8 @@ export function useOverlayManager() {
     openCommandPalette,
     openSaveDialog,
     openSavedDeleteConfirm,
-    requestPurge
+    requestPurge,
+    closeAdminOverlays,
+    closeAllOverlays
   };
 }
