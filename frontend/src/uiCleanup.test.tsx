@@ -222,3 +222,92 @@ describe("first-screen UI cleanup", () => {
     expect(screen.getByRole("button", { name: "Expand factor shocks" })).toBeInTheDocument();
   });
 });
+
+// Toolbar quick actions: jump to shock adjustment, and rebuild the composer
+// from any result (the saved-scenario iteration path).
+function renderQuickActions(
+  overrides: {
+    cacheKey?: string | null;
+    canAdjust?: boolean;
+    resultsTab?: "drivers" | "positions" | "story" | "adjust" | "advanced";
+    onResultsTabChange?: (tab: "drivers" | "positions" | "story" | "adjust" | "advanced") => void;
+    onEditRerun?: (result: ScenarioResult) => void;
+  } = {}
+) {
+  const envelope: ScenarioRunResponse = {
+    ...envelopeFixture(),
+    cache_key: overrides.cacheKey ?? null
+  };
+  render(
+    <ResultsPanel
+      envelope={envelope}
+      factorMeta={{}}
+      displayMode="pct"
+      setDisplayMode={() => {}}
+      navInput="100000"
+      setNavInput={() => {}}
+      valuationSort={{ key: "delta", dir: "asc" }}
+      setValuationSort={() => {}}
+      resultsTab={overrides.resultsTab}
+      onResultsTabChange={overrides.onResultsTabChange}
+      canAdjust={overrides.canAdjust ?? false}
+      canonicalSnapshot={envelope.result}
+      onAdjustResult={() => {}}
+      onPrefillRerun={() => {}}
+      canDecompose={false}
+      isDecomposing={false}
+      decomposeProgress={null}
+      onDecompose={() => {}}
+      onOpenMethodology={() => {}}
+      canSave={false}
+      onSave={() => {}}
+      onEditRerun={overrides.onEditRerun}
+    />
+  );
+  return { envelope };
+}
+
+describe("results toolbar quick actions", () => {
+  it("fires onEditRerun with the current result", () => {
+    const onEditRerun = vi.fn();
+    const { envelope } = renderQuickActions({ onEditRerun });
+    fireEvent.click(screen.getByRole("button", { name: /Edit & re-run/i }));
+    expect(onEditRerun).toHaveBeenCalledTimes(1);
+    expect(onEditRerun).toHaveBeenCalledWith(envelope.result);
+  });
+
+  it("omits the Edit & re-run button when no handler is provided", () => {
+    renderQuickActions({});
+    expect(screen.queryByRole("button", { name: /Edit & re-run/i })).toBeNull();
+  });
+
+  it("switches to the adjust tab when adjust is gated on and not already active", () => {
+    const onResultsTabChange = vi.fn();
+    renderQuickActions({
+      cacheKey: "cache-1",
+      canAdjust: true,
+      resultsTab: "drivers",
+      onResultsTabChange
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Adjust shocks/i }));
+    expect(onResultsTabChange).toHaveBeenCalledWith("adjust");
+  });
+
+  it("hides the Adjust shocks button once the adjust tab is active", () => {
+    renderQuickActions({
+      cacheKey: "cache-1",
+      canAdjust: true,
+      resultsTab: "adjust",
+      onResultsTabChange: () => {}
+    });
+    expect(screen.queryByRole("button", { name: /Adjust shocks/i })).toBeNull();
+  });
+
+  it("omits the Adjust shocks button when the adjust tab is ungated (no cache_key)", () => {
+    // Saved results reopen without a cache_key → no Adjust tab; Edit & re-run is
+    // their only iteration path.
+    renderQuickActions({ cacheKey: null, canAdjust: true, onEditRerun: () => {} });
+    expect(screen.queryByRole("button", { name: /Adjust shocks/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /Edit & re-run/i })).toBeInTheDocument();
+  });
+});

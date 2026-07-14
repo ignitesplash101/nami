@@ -24,6 +24,7 @@ import {
   sameScenarioResult
 } from "./charts";
 import { factorMap } from "./factors";
+import { buildRerunDraft } from "./rerunDraft";
 import { defaultCustomRows, holdingsFromRows } from "./holdings";
 import type { HoldingRow, PortfolioMode, ScenarioDraftMode } from "./holdings";
 import { BookArea } from "./panels/BookArea";
@@ -124,6 +125,8 @@ export default function App() {
     null
   );
   const passcodeInputRef = useRef<HTMLInputElement>(null);
+  // Focused after an "Edit & re-run" hydration lands the composer in view.
+  const scenarioTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Guards the boot effect's default-selection seeding (see boot()) so a second
   // async wave can never clobber a selection the user has already made.
   const bootSeededRef = useRef(false);
@@ -423,9 +426,79 @@ export default function App() {
     setResultEnvelope(response);
   }
 
-  function handlePrefillRerun(text: string) {
-    setScenarioText(text);
+  // Rebuild the whole composer from any result (the saved-scenario iteration
+  // path — saved results have no cache_key, so no Adjust tab). A visitor draft
+  // that needs admin gets an unlock prompt and NO partial hydration; otherwise
+  // text, portfolio, benchmark, as-of, and NAV all ride along. `textOverride`
+  // lets the adjust "rerun required" path prefill the combined text while the
+  // portfolio/as-of context still rides along correctly. Never touches
+  // resultEnvelope / canonicalSnapshot / pinnedEnvelope.
+  function handleEditRerun(result: ScenarioResult, textOverride?: string) {
+    const draft = buildRerunDraft(result, {
+      sampleKeys: portfolios.map((portfolio) => portfolio.key),
+      isAdmin
+    });
+    if (draft.needsAdmin) {
+      pushToast({
+        variant: "info",
+        message: `Unlock admin to re-run this saved scenario (${draft.needsAdminReason}).`
+      });
+      focusUnlock();
+      return;
+    }
+
+    setScenarioText(textOverride ?? draft.scenarioText);
+    // Custom draft mode pins the restored text so the sample-resync effect can't
+    // clobber it (that effect only rewrites text while draftMode === "sample").
     setScenarioDraftMode("custom");
+
+    if (draft.portfolio.mode === "sample") {
+      setPortfolioMode("sample");
+      setPortfolioKey(draft.portfolio.key);
+    } else {
+      setPortfolioMode("custom");
+      setCustomName(draft.portfolio.name);
+      setCustomRows(
+        draft.portfolio.rows.map((row, index) => ({
+          id: `rerun-${index}-${row.ticker}`,
+          ticker: row.ticker,
+          weight: String(row.weight)
+        }))
+      );
+      setCustomUnits(draft.portfolio.units);
+    }
+    // Custom books carry an explicit benchmark; harmless for sample mode (the
+    // run payload ignores customBenchmark there and uses the sample's own).
+    setCustomBenchmark(draft.benchmark ?? "");
+
+    // Restore a backdated pick; otherwise reset to the live anchor so a stale
+    // previously-picked date can't silently backdate the re-run.
+    setAsOfDate(draft.asOf.kind === "backdated" ? draft.asOf.date : access?.latest_market_date ?? "");
+    if (draft.nav != null) setNavInput(String(draft.nav));
+    if (draft.sharesConversion) {
+      pushToast({
+        variant: "info",
+        message:
+          "Re-running as weights — the original share quantities are not re-marked to the as-of close."
+      });
+    }
+
+    setActiveArea("scenario");
+    requestAnimationFrame(() => {
+      scenarioTextareaRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+      scenarioTextareaRef.current?.focus();
+    });
+  }
+
+  // The adjust panel's "rerun required" / expired paths hand back combined text;
+  // route it through the full-state hydration so the book + as-of ride along.
+  function handlePrefillRerun(text: string) {
+    const source = canonicalSnapshot ?? resultEnvelope?.result ?? null;
+    if (source) handleEditRerun(source, text);
+    else {
+      setScenarioText(text);
+      setScenarioDraftMode("custom");
+    }
   }
 
   // Palette actions are a thin accelerator over already-visible controls. Built
@@ -526,6 +599,7 @@ export default function App() {
         asOfDate={asOfDate}
         setAsOfDate={setAsOfDate}
         latestClose={access?.latest_market_date ?? ""}
+        textareaRef={scenarioTextareaRef}
       />
 
       {resultEnvelope?.result.narrative_mode === "analog_only" ? (
@@ -589,6 +663,7 @@ export default function App() {
           resultEnvelope &&
           sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
       )}
+      onEditRerun={handleEditRerun}
     />
   );
 

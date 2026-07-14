@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import type { RefObject } from "react";
 import { AsOfDatePicker } from "../AsOfDatePicker";
 import type { ScenarioDraftMode } from "../holdings";
 import type { AccessResponse, SampleScenario } from "../types";
@@ -17,7 +18,8 @@ export function ScenarioPanel({
   onRun,
   asOfDate,
   setAsOfDate,
-  latestClose
+  latestClose,
+  textareaRef
 }: {
   access: AccessResponse | null;
   scenarios: SampleScenario[];
@@ -33,6 +35,8 @@ export function ScenarioPanel({
   asOfDate: string;
   setAsOfDate: (v: string) => void;
   latestClose: string;
+  // Forwarded so App can focus the composer after an "Edit & re-run" hydration.
+  textareaRef?: RefObject<HTMLTextAreaElement>;
 }) {
   const isAdmin = access?.access_mode === "admin";
   const canEditText = Boolean(access);
@@ -74,6 +78,7 @@ export function ScenarioPanel({
         <label className="scenario-text">
           Scenario text {seededFrom ? <span className="field-note">Seeded from {seededFrom}</span> : null}
           <textarea
+            ref={textareaRef}
             className="scenario-text-input"
             value={scenarioText}
             onChange={(event) => setScenarioText(event.target.value)}

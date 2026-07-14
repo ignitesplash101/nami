@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { RefObject } from "react";
-import { BarChart3, Check, Copy, Pin, Save } from "lucide-react";
+import { BarChart3, Check, Copy, PencilLine, Pin, Save, SlidersHorizontal } from "lucide-react";
 import {
   buildPositionValuations,
   buildWaterfallData,
@@ -88,7 +88,8 @@ export function ResultsPanel({
   canSave,
   onSave,
   onPin,
-  isPinned = false
+  isPinned = false,
+  onEditRerun
 }: {
   envelope: ScenarioRunResponse | null;
   factorMeta: FactorMetadataMap;
@@ -126,6 +127,9 @@ export function ResultsPanel({
   onPin?: () => void;
   isPinned?: boolean;
   onSave: () => void;
+  // Rebuilds the composer from this result (the saved-scenario iteration path,
+  // since saved results carry no cache_key and so have no Adjust tab).
+  onEditRerun?: (result: ScenarioResult) => void;
 }) {
   // Hooks live ABOVE the empty-state early return so the hook list is stable
   // across the null→result transition (the old in-App version relied on the
@@ -774,6 +778,23 @@ export function ResultsPanel({
               title="Hold this result and compare the next run, adjustment, or opened scenario against it"
             >
               <Pin size={14} /> {isPinned ? "Pinned" : "Pin to compare"}
+            </button>
+          ) : null}
+          {/* Same gate as the Adjust tab (showAdjust) so it can never target a
+              missing tab; hidden once that tab is already active. */}
+          {showAdjust && safeTab !== "adjust" ? (
+            <button type="button" className="ghost-button" onClick={() => changeTab("adjust")}>
+              <SlidersHorizontal size={14} /> Adjust shocks
+            </button>
+          ) : null}
+          {onEditRerun ? (
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => onEditRerun(result)}
+              title="Rebuild the composer from this result — text, portfolio, benchmark, and as-of"
+            >
+              <PencilLine size={14} /> Edit &amp; re-run
             </button>
           ) : null}
           {isMarked ? (
