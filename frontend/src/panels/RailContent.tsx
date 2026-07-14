@@ -12,6 +12,7 @@ export function RailContent({
   access,
   onAccessChange,
   passcodeInputRef,
+  portfolioSelectRef,
   portfolios,
   portfolioKey,
   setPortfolioKey,
@@ -30,6 +31,7 @@ export function RailContent({
   access: AccessResponse | null;
   onAccessChange: (access: AccessResponse, opts?: { intentional?: boolean }) => void;
   passcodeInputRef?: RefObject<HTMLInputElement>;
+  portfolioSelectRef?: RefObject<HTMLSelectElement>;
   portfolios: SamplePortfolio[];
   portfolioKey: string;
   setPortfolioKey: (key: string) => void;
@@ -67,6 +69,7 @@ export function RailContent({
       ) : null}
       <PortfolioPanel
         access={access}
+        portfolioSelectRef={portfolioSelectRef}
         portfolios={portfolios}
         portfolioKey={portfolioKey}
         setPortfolioKey={setPortfolioKey}

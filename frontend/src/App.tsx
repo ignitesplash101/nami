@@ -17,6 +17,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorNotice } from "./ErrorNotice";
 import { OpsDrawer } from "./OpsDrawer";
 import { scrollBehavior } from "./motion";
+import { isCompletedUnlock, wrapWithDrawerClose } from "./railDrawerClose";
 import { useToasts } from "./toast";
 import {
   formatPercent,
@@ -53,6 +54,7 @@ import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { useMediaQuery } from "./useMediaQuery";
 import { useOverlay } from "./useOverlay";
 import type {
+  AccessResponse,
   FactorMetadataMap,
   SamplePortfolio,
   SampleScenario,
@@ -125,6 +127,9 @@ export default function App() {
     null
   );
   const passcodeInputRef = useRef<HTMLInputElement>(null);
+  // Focus target for the palette's desktop-only "setup" path (focusSetup) —
+  // the inline rail is already mounted there, so there's nothing to open.
+  const portfolioSelectRef = useRef<HTMLSelectElement>(null);
   // Focused after an "Edit & re-run" hydration lands the composer in view.
   const scenarioTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Guards the boot effect's default-selection seeding (see boot()) so a second
@@ -355,6 +360,21 @@ export default function App() {
     }
   }
 
+  // Palette "setup" command. On compact the inline rail isn't mounted, so it
+  // opens the drawer (mirrors focusUnlock). On desktop the rail is already
+  // visible alongside the workbench — opening the drawer there would
+  // double-mount AccessPanel/PortfolioPanel (the "forked state" trap), so
+  // instead scroll the inline rail's first meaningful control into view.
+  function focusSetup() {
+    if (isMobileOrTablet) {
+      openRailDrawer();
+      requestAnimationFrame(() => portfolioSelectRef.current?.focus());
+    } else {
+      portfolioSelectRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+      portfolioSelectRef.current?.focus();
+    }
+  }
+
   function handleScenarioSeed(key: string) {
     const scenario = scenarios.find((item) => item.key === key);
     setScenarioKey(key);
@@ -515,7 +535,7 @@ export default function App() {
     },
     { id: "area-scenario", label: "Go to Scenario", run: () => setActiveArea("scenario") },
     { id: "area-book", label: "Go to Your book", run: () => setActiveArea("book") },
-    { id: "setup", label: "Open portfolio & access setup", run: openRailDrawer },
+    { id: "setup", label: "Open portfolio & access setup", run: focusSetup },
     { id: "methodology", label: "Open methodology", run: () => openMethodology() },
     {
       id: "theme",
@@ -560,14 +580,32 @@ export default function App() {
     });
   }
 
+  // Compact-only self-close: a COMPLETED rail choice (sample-book pick,
+  // successful unlock) dismisses the drawer so the user doesn't have to
+  // dismiss it manually. Both are inert no-ops on desktop, where the drawer
+  // is never open. Deliberately NOT wired into custom-book edits, mode
+  // switches, CSV upload, or lock — more work happens inside the drawer for
+  // those, and a lock isn't a completed pick worth closing over.
+  const handleRailPortfolioKey = wrapWithDrawerClose(
+    setPortfolioKey,
+    () => railDrawer.isOpen,
+    railDrawer.close
+  );
+
+  function handleRailAccessChange(next: AccessResponse, opts?: { intentional?: boolean }) {
+    applyAccess(next, opts);
+    if (isCompletedUnlock(next, opts) && railDrawer.isOpen) railDrawer.close();
+  }
+
   const railContent = (
     <RailContent
       access={access}
-      onAccessChange={applyAccess}
+      onAccessChange={handleRailAccessChange}
       passcodeInputRef={passcodeInputRef}
+      portfolioSelectRef={portfolioSelectRef}
       portfolios={portfolios}
       portfolioKey={portfolioKey}
-      setPortfolioKey={setPortfolioKey}
+      setPortfolioKey={handleRailPortfolioKey}
       portfolioMode={portfolioMode}
       setPortfolioMode={setPortfolioMode}
       customName={customName}

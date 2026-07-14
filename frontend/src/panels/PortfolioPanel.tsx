@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { RefObject } from "react";
 import { Table2, Upload } from "lucide-react";
 import { toApiError, validatePortfolio } from "../api";
 import { formatPercent, normalizeTicker } from "../charts";
@@ -8,6 +9,7 @@ import type { AccessResponse, SamplePortfolio } from "../types";
 
 export function PortfolioPanel({
   access,
+  portfolioSelectRef,
   portfolios,
   portfolioKey,
   setPortfolioKey,
@@ -23,6 +25,7 @@ export function PortfolioPanel({
   setCustomBenchmark
 }: {
   access: AccessResponse | null;
+  portfolioSelectRef?: RefObject<HTMLSelectElement>;
   portfolios: SamplePortfolio[];
   portfolioKey: string;
   setPortfolioKey: (key: string) => void;
@@ -88,7 +91,11 @@ export function PortfolioPanel({
         <>
           <label>
             Sample book
-            <select value={portfolioKey} onChange={(event) => setPortfolioKey(event.target.value)}>
+            <select
+              ref={portfolioSelectRef}
+              value={portfolioKey}
+              onChange={(event) => setPortfolioKey(event.target.value)}
+            >
               {portfolios.map((portfolio) => (
                 <option key={portfolio.key} value={portfolio.key}>
                   {portfolio.name}
