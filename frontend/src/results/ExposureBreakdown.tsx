@@ -35,6 +35,8 @@ export function ExposureBreakdown({ result }: { result: ScenarioResult }) {
       summary={`${rows[0].tag} ${formatPercent(rows[0].weight, 1)} · ${rows.length} ${
         dimension === "sector" ? "sectors" : "countries"
       }`}
+      fullscreenable
+      surface="exposure breakdown"
       action={
         <div className="segmented" role="radiogroup" aria-label="Exposure dimension">
           <button

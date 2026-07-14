@@ -81,6 +81,9 @@ describe("ComparisonPanel", () => {
     expect(screen.getAllByText("4.00%").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Naive algebra attribution/)).toBeInTheDocument();
     expect(screen.queryByText(/Different books/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Expand scenario comparison" })
+    ).toBeInTheDocument();
   });
 
   it("warns when the books differ and dashes absent-side tickers", () => {

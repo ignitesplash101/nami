@@ -216,4 +216,9 @@ describe("first-screen UI cleanup", () => {
     expect(stressed).not.toBeNull();
     expect(stressed).toHaveTextContent(/stressed/);
   });
+
+  it("opts the factor-shocks table into the fullscreen affordance", () => {
+    renderResults(envelopeFixture());
+    expect(screen.getByRole("button", { name: "Expand factor shocks" })).toBeInTheDocument();
+  });
 });

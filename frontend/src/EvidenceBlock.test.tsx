@@ -136,6 +136,39 @@ describe("EvidenceBlock", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("does not crash when the gauge is null — its fullscreen hook is called ABOVE the early return", () => {
+    // buildEvidenceGauge(result) returns null on this payload, so the
+    // component's `if (!gauge) return null` fires. useFullscreen (and its own
+    // internal hooks) must still have run first, or React's hook-order
+    // invariant is violated and this render throws.
+    expect(() =>
+      render(
+        <EvidenceBlock
+          result={makeResult({ severity_ladder: null, pnl_uncertainty: null, analog_replay: null })}
+          analogEvents={EVENTS}
+          showDollars={false}
+          nav={null}
+          currency="USD"
+        />
+      )
+    ).not.toThrow();
+  });
+
+  it("carries the fullscreen affordance next to the eyebrow when it renders", () => {
+    render(
+      <EvidenceBlock
+        result={makeResult()}
+        analogEvents={EVENTS}
+        showDollars={false}
+        nav={null}
+        currency="USD"
+      />
+    );
+    expect(
+      screen.getByRole("button", { name: "Expand evidence and bounds" })
+    ).toBeInTheDocument();
+  });
+
   it("dollarizes in dollar mode", () => {
     render(
       <EvidenceBlock

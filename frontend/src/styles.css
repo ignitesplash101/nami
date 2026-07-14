@@ -949,6 +949,15 @@ input[type="range"]::-moz-range-thumb {
   overscroll-behavior: contain;
 }
 
+/* Table cards opt into fullscreen too: the baseline 420px cap on
+   .table-scroll would otherwise clip a fullscreened table to a sliver of the
+   viewport it now owns. Bounded (not `none`) so the sticky <th> still has a
+   scrollport to stick within. */
+.fullscreen-surface:fullscreen .table-scroll,
+.fullscreen-surface.is-card-expanded .table-scroll {
+  max-height: calc(100dvh - 200px);
+}
+
 /* Stacking-context escape. `filter`/`opacity`/`transform` on an ancestor make
    that ancestor the containing block for `position: fixed` descendants — an
    expanded card inside stale (filter+opacity) or still-animating (nami-rise
@@ -2162,6 +2171,15 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+}
+/* Carries the eyebrow + the fullscreen button; the eyebrow used to be the
+   block's first free-standing child so it needed a wrapper row to share the
+   line with the new button. */
+.evidence-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 .evidence-gauge {
   position: relative;

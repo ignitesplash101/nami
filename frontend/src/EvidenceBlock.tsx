@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   buildAnalogReplayRows,
   buildEvidenceGauge,
@@ -5,7 +6,9 @@ import {
   formatPercent,
   formatSignedCurrency
 } from "./charts";
+import { FullscreenButton } from "./FullscreenButton";
 import type { AnalogEvent, ScenarioResult } from "./types";
+import { useFullscreen } from "./useFullscreen";
 
 /** One "Evidence & bounds" surface replacing the three stacked evidence strips
  *  (±1σ idio framing, analog replay range, severity ladder): every range on a
@@ -25,6 +28,11 @@ export function EvidenceBlock({
   nav: number | null;
   currency: string;
 }) {
+  // Hooks called unconditionally, ABOVE the `!gauge` early return below — the
+  // gauge is data-dependent (absent on older/thin payloads) and a hook must
+  // never be gated by a value computed from props.
+  const ref = useRef<HTMLElement>(null);
+  const fs = useFullscreen(ref, { surface: "evidence and bounds" });
   const gauge = buildEvidenceGauge(result);
   if (!gauge) return null;
   const fmt = (value: number) =>
@@ -42,8 +50,15 @@ export function EvidenceBlock({
   const band = result.pnl_uncertainty;
 
   return (
-    <section className="evidence-block" aria-label="Evidence and bounds">
-      <p className="readout-eyebrow">Evidence &amp; bounds</p>
+    <section
+      className="evidence-block fullscreen-surface"
+      ref={ref}
+      aria-label="Evidence and bounds"
+    >
+      <div className="evidence-head">
+        <p className="readout-eyebrow">Evidence &amp; bounds</p>
+        <FullscreenButton controller={fs} surface="evidence and bounds" />
+      </div>
 
       <div className="evidence-gauge" aria-hidden="true">
         <span className="evidence-track" />

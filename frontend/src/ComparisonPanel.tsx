@@ -1,4 +1,5 @@
 import { Download, PinOff } from "lucide-react";
+import { useRef } from "react";
 import {
   buildComparisonRows,
   buildTickerDeltas,
@@ -6,8 +7,10 @@ import {
   formatPercent
 } from "./charts";
 import { csvFilename, downloadCsv } from "./csv";
+import { FullscreenButton } from "./FullscreenButton";
 import { TableScroll } from "./TableScroll";
 import type { FactorMetadataMap, ScenarioResult, ScenarioRunResponse } from "./types";
+import { useFullscreen } from "./useFullscreen";
 
 const METHOD_LABEL: Record<string, string> = {
   conditional_explicit: "Scenario shocks (explicit-only Conditional Shapley)",
@@ -61,6 +64,8 @@ export function ComparisonPanel({
 }) {
   const a = pinned.result;
   const b = current.result;
+  const ref = useRef<HTMLElement>(null);
+  const fs = useFullscreen(ref, { surface: "scenario comparison" });
   const method = commonAttributionMethod(a, b);
   const rows = buildComparisonRows(a, b, method, factorMeta);
   const movers = buildTickerDeltas(a, b).slice(0, 10);
@@ -93,15 +98,22 @@ export function ComparisonPanel({
     );
 
   return (
-    <section className="result-card comparison-panel" aria-label="Scenario comparison">
+    <section
+      className="result-card comparison-panel fullscreen-surface"
+      ref={ref}
+      aria-label="Scenario comparison"
+    >
       <div className="card-heading">
         <div>
           <p className="eyebrow">Comparison</p>
           <h3>Pinned vs current</h3>
         </div>
-        <button type="button" className="ghost-button" onClick={onUnpin}>
-          <PinOff size={14} /> Unpin
-        </button>
+        <div className="card-heading-actions">
+          <button type="button" className="ghost-button" onClick={onUnpin}>
+            <PinOff size={14} /> Unpin
+          </button>
+          <FullscreenButton controller={fs} surface="scenario comparison" />
+        </div>
       </div>
 
       <div className="comparison-meta">

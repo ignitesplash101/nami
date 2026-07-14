@@ -1,12 +1,14 @@
 import { Download } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { buildBookProfileRows, formatPercent } from "./charts";
 import { GLOSSARY } from "./copy/glossary";
 import { InfoTip } from "./copy/InfoTip";
 import { csvFilename, downloadCsv } from "./csv";
 import { factorDisplayName } from "./factors";
+import { FullscreenButton } from "./FullscreenButton";
 import { TableScroll } from "./TableScroll";
 import type { BookProfile, EventsReplay, FactorMetadataMap } from "./types";
+import { useFullscreen } from "./useFullscreen";
 
 /** The pre-run "know this book" card: the free engine-only analytics (book
  *  profile, all-events replay) behind one segmented control instead of two
@@ -36,34 +38,39 @@ export function KnowYourBook({
   const hasData = tab === "profile" ? profile != null : replay != null;
   const fetchActive = tab === "profile" ? onProfile : onReplay;
   const ctaLabel = tab === "profile" ? "Profile this book" : "Replay every historical event";
+  const ref = useRef<HTMLElement>(null);
+  const fs = useFullscreen(ref, { surface: "book analytics" });
 
   return (
-    <section className="result-card know-book" aria-label="Understand this book">
+    <section className="result-card know-book fullscreen-surface" ref={ref} aria-label="Understand this book">
       <div className="card-heading">
         <div>
           <p className="eyebrow">Understand this book — instant, free</p>
           <h3>Pre-run analytics</h3>
           <p className="muted card-subtitle">Pure engine math, no LLM call.</p>
         </div>
-        <div className="segmented" role="radiogroup" aria-label="Pre-run analytic">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={tab === "profile"}
-            className={tab === "profile" ? "active" : ""}
-            onClick={() => setTab("profile")}
-          >
-            Book profile
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={tab === "events"}
-            className={tab === "events" ? "active" : ""}
-            onClick={() => setTab("events")}
-          >
-            Event replay
-          </button>
+        <div className="card-heading-actions">
+          <div className="segmented" role="radiogroup" aria-label="Pre-run analytic">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={tab === "profile"}
+              className={tab === "profile" ? "active" : ""}
+              onClick={() => setTab("profile")}
+            >
+              Book profile
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={tab === "events"}
+              className={tab === "events" ? "active" : ""}
+              onClick={() => setTab("events")}
+            >
+              Event replay
+            </button>
+          </div>
+          <FullscreenButton controller={fs} surface="book analytics" />
         </div>
       </div>
 

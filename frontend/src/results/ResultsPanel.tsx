@@ -414,6 +414,8 @@ export function ResultsPanel({
             title="Factor shocks and attribution"
             summary={summarizeFactorTable(result, factorMeta)}
             action={<ExportCsvButton label="Export factor shocks as CSV" onClick={exportFactorShocks} />}
+            fullscreenable
+            surface="factor shocks"
           >
             <TableScroll>
             <table>
@@ -462,6 +464,8 @@ export function ResultsPanel({
             action={
               <ExportCsvButton label="Export name-level contribution as CSV" onClick={exportNameLevel} />
             }
+            fullscreenable
+            surface="name-level contribution"
           >
             <TableScroll>
             <table>
@@ -509,6 +513,8 @@ export function ResultsPanel({
               action={
                 <ExportCsvButton label="Export position valuation as CSV" onClick={exportValuations} />
               }
+              fullscreenable
+              surface="position valuation"
             >
               <TableScroll>
                 <table className="valuation-table">
@@ -575,6 +581,8 @@ export function ResultsPanel({
           action={
             <ExportCsvButton label="Export historical analogs as CSV" onClick={exportAnalogs} />
           }
+          fullscreenable
+          surface="narrative and analogs"
         >
           <div className="two-column narrative-columns">
             <div className="narrative-inner">
@@ -653,6 +661,8 @@ export function ResultsPanel({
                     : "admin decomposition — pinned analogs, ~3–15 pipeline runs"
                 }
                 defaultOpen={Boolean(result.narrative_shapley) || isDecomposing}
+                fullscreenable
+                surface="theme sensitivity"
                 action={
                   <div className="button-row">
                     <button
