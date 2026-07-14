@@ -206,6 +206,7 @@ export default function App() {
     openMethodology,
     openRailDrawer,
     openOpsDrawer,
+    openCommandPalette,
     requestPurge
   } = useOverlayManager();
   const [purgeBusy, setPurgeBusy] = useState(false);
@@ -738,7 +739,7 @@ export default function App() {
             ) : null}
             <button
               className="methodology-btn cmdk-btn"
-              onClick={commandPalette.open}
+              onClick={openCommandPalette}
               title="Command palette (Ctrl/⌘ + K)"
               aria-label="Open command palette"
             >

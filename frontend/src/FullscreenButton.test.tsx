@@ -3,14 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 import { FullscreenButton } from "./FullscreenButton";
 
 describe("FullscreenButton", () => {
-  it("renders nothing when the controller reports no support", () => {
+  it("still renders (Expand label) when native fullscreen is unsupported — the fallback is universal", () => {
     render(
       <FullscreenButton
         controller={{ isFullscreen: false, toggle: () => {}, supported: false }}
         surface="contribution waterfall"
       />
     );
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Expand contribution waterfall" })
+    ).toBeInTheDocument();
   });
 
   it("labels the affordance Expand {surface} when not fullscreen", () => {

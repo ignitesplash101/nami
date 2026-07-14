@@ -919,17 +919,48 @@ input[type="range"]::-moz-range-thumb {
   flex-wrap: wrap;
 }
 
-/* Fullscreen chart cards (native Fullscreen API — the browser owns Esc and
-   the backdrop; deliberately NOT a useOverlay, so the two-overlays rule is
-   untouched). */
-.result-card:fullscreen {
+/* Fullscreen chart cards. Two presentation modes share one visual body on the
+   SAME node: the native Fullscreen API (browser owns Esc/backdrop) and the
+   app-owned expanded-card fallback (iPhone Safari / runtime rejection). */
+.fullscreen-surface:fullscreen {
   background: var(--bg);
   padding: var(--space-6);
   overflow: auto;
   border-radius: 0;
 }
-.result-card::backdrop {
+.fullscreen-surface::backdrop {
   background: var(--bg);
+}
+
+/* Expanded-card fallback: fixed over the app, below the toast tier so error
+   toasts stay visible above it. Additive safe-area padding keeps content clear
+   of notches/home indicators. */
+.fullscreen-surface.is-card-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  background: var(--bg);
+  padding: calc(var(--space-6) + env(safe-area-inset-top))
+    calc(var(--space-6) + env(safe-area-inset-right))
+    calc(var(--space-6) + env(safe-area-inset-bottom))
+    calc(var(--space-6) + env(safe-area-inset-left));
+  overflow: auto;
+  border-radius: 0;
+  overscroll-behavior: contain;
+}
+
+/* Stacking-context escape. `filter`/`opacity`/`transform` on an ancestor make
+   that ancestor the containing block for `position: fixed` descendants — an
+   expanded card inside stale (filter+opacity) or still-animating (nami-rise
+   transform) results would render bounded and dimmed instead of filling the
+   viewport. Neutralize those while any card is expanded; the app is modal
+   behind the card anyway. */
+.has-expanded-card .results-stack.is-stale {
+  filter: none;
+  opacity: 1;
+}
+.has-expanded-card .results-stack > * {
+  animation: none;
 }
 .book-header h3 {
   margin: 4px 0 6px;

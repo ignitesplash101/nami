@@ -11,9 +11,9 @@ export interface FullscreenController {
 /** Shared fullscreen toggle for chart cards. `surface` names what expands
  * ("contribution waterfall") so the label stays specific across many
  * instances — "View full screen" is ambiguous once several cards have one.
- * Renders nothing when the controller reports no native support (iPhone
- * Safari, jsdom); a later task moves this gate out once a fallback mode
- * exists. */
+ * The affordance is universal: `useFullscreen` uses the native API where
+ * supported and an app-owned expanded-card modal on the same node otherwise
+ * (iPhone Safari), so the button no longer gates on `controller.supported`. */
 export function FullscreenButton({
   controller,
   surface
@@ -21,7 +21,6 @@ export function FullscreenButton({
   controller: FullscreenController;
   surface: string;
 }) {
-  if (!controller.supported) return null;
   const label = `${controller.isFullscreen ? "Collapse" : "Expand"} ${surface}`;
   return (
     <button

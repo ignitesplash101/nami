@@ -144,7 +144,9 @@ export function ResultsPanel({
   // "group" rolls the SAME numbers up, so the zooms reconcile by construction.
   const [zoom, setZoom] = useState<AttributionZoom>("factor");
   const waterfallCardRef = useRef<HTMLDivElement>(null);
-  const waterfallFullscreen = useFullscreen(waterfallCardRef);
+  const waterfallFullscreen = useFullscreen(waterfallCardRef, {
+    surface: "contribution waterfall"
+  });
 
   if (!envelope) {
     if (isRunning) {
@@ -333,7 +335,7 @@ export function ResultsPanel({
       label: "Drivers",
       content: (
         <>
-          <div className="result-card waterfall-card" ref={waterfallCardRef}>
+          <div className="result-card waterfall-card fullscreen-surface" ref={waterfallCardRef}>
             <div className="card-heading">
               <div>
                 <p className="eyebrow">Attribution</p>

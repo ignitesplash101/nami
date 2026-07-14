@@ -27,7 +27,7 @@ export function MethodologyDiagnostics({
 }) {
   const [method, setMethod] = useState<AttributionMethod>("naive");
   const cardRef = useRef<HTMLDivElement>(null);
-  const fullscreen = useFullscreen(cardRef);
+  const fullscreen = useFullscreen(cardRef, { surface: "diagnostics waterfall" });
   const viewportHeight = useViewportHeight(fullscreen.isFullscreen);
 
   const options: AttributionOption[] = [
@@ -61,7 +61,7 @@ export function MethodologyDiagnostics({
   const rows = factorReasoningRows(result, method, factorMeta);
 
   return (
-    <div className="result-card diagnostics-card" ref={cardRef}>
+    <div className="result-card diagnostics-card fullscreen-surface" ref={cardRef}>
       <div className="card-heading">
         <div>
           <p className="eyebrow">Audit</p>
