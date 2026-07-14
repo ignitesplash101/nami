@@ -38,6 +38,7 @@ import { Tabs } from "./Tabs";
 import type { TabItem } from "./Tabs";
 import { useAccessSession } from "./state/useAccessSession";
 import { useFreeAnalytics } from "./state/useFreeAnalytics";
+import { useCloseRailOnDesktop } from "./state/useCloseRailOnDesktop";
 import { useOverlayManager } from "./state/useOverlayManager";
 import { useRunController } from "./state/useRunController";
 import { useRunCompletionSignals } from "./state/useRunCompletionSignals";
@@ -51,9 +52,12 @@ import { RailDrawer } from "./RailDrawer";
 import { RunProgress, stageLabel } from "./RunProgress";
 import { SaveScenarioDialog } from "./SaveScenarioDialog";
 import { SavedScenariosPanel } from "./SavedScenariosPanel";
-import { closeExpandedCard } from "./useFullscreen";
+import {
+  closeExpandedCard,
+  exitNativeFullscreenIfOwnerWillHide
+} from "./useFullscreen";
+import type { VisibilityTransition } from "./useFullscreen";
 import { useMediaQuery } from "./useMediaQuery";
-import { useOverlay } from "./useOverlay";
 import { retryBootGet, settleActiveBootEffect } from "./boot";
 import { useBootRecovery } from "./useBootRecovery";
 import type {
@@ -118,7 +122,6 @@ export default function App() {
   const [resultEnvelope, setResultEnvelope] = useState<ScenarioRunResponse | null>(null);
   const [canonicalSnapshot, setCanonicalSnapshot] = useState<ScenarioResult | null>(null);
   const [savedReloadKey, setSavedReloadKey] = useState(0);
-  const saveDialog = useOverlay();
   const [methodology, setMethodology] = useState("");
   const [error, setError] = useState<ApiError | string | null>(null);
   const [bootSerial, setBootSerial] = useState(0);
@@ -216,10 +219,12 @@ export default function App() {
     commandPalette,
     opsDrawer,
     purgeConfirm,
+    saveDialog,
     openMethodology,
     openRailDrawer,
     openOpsDrawer,
     openCommandPalette,
+    openSaveDialog,
     requestPurge
   } = useOverlayManager();
   const [purgeBusy, setPurgeBusy] = useState(false);
@@ -229,6 +234,7 @@ export default function App() {
   // their local state instead of leaving deleted records on screen.
   const [adminDataEpoch, setAdminDataEpoch] = useState(0);
   const isMobileOrTablet = useMediaQuery("(max-width: 1079.98px)");
+  useCloseRailOnDesktop(isMobileOrTablet, railDrawer.close);
 
   useBootRecovery({
     enabled: bootFailed && lastFailedActionRef.current === "boot",
@@ -479,7 +485,7 @@ export default function App() {
     // A fixed expanded card in a now-hidden sub-tab would strand its global modal
     // state (scroll-lock, html flag, window Esc) invisibly — collapse it before
     // the Drivers snap hides whatever tab it lived in.
-    closeExpandedCard();
+    prepareProgrammaticNavigation(undefined, "drivers");
     // A completed run always lands on Drivers — the answer band + waterfall — so
     // a fresh result reads the same regardless of where the sub-tab was parked.
     // (Adjustments/decompositions keep the current sub-tab; see the doc note.)
@@ -487,6 +493,32 @@ export default function App() {
     setDisplayMode(
       response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
     );
+  }
+
+  function prepareProgrammaticNavigation(
+    nextArea?: AreaKey,
+    nextResultsTab?: ResultsTabKey
+  ): void {
+    // The fallback owns body scroll-lock even if its mounted tab becomes
+    // hidden, so collapse it eagerly. Native fullscreen can stay when its
+    // owner remains inside every affected next-visible panel (notably the
+    // Drivers waterfall during a completed run).
+    closeExpandedCard();
+    if (typeof document === "undefined") return;
+    const transitions: VisibilityTransition[] = [];
+    if (nextArea) {
+      transitions.push({
+        scope: document.querySelector(".area-tabs"),
+        nextVisible: document.getElementById(`area-panel-${nextArea}`)
+      });
+    }
+    if (nextResultsTab) {
+      transitions.push({
+        scope: document.querySelector(".results-tabs"),
+        nextVisible: document.getElementById(`results-panel-${nextResultsTab}`)
+      });
+    }
+    exitNativeFullscreenIfOwnerWillHide(transitions);
   }
 
   function handleAdjustmentResult(response: ScenarioRunResponse) {
@@ -598,7 +630,7 @@ export default function App() {
     });
   }
   if (isAdmin && resultEnvelope?.reproducibility) {
-    commandActions.push({ id: "save", label: "Save scenario", run: saveDialog.open });
+    commandActions.push({ id: "save", label: "Save scenario", run: openSaveDialog });
   }
   if (isAdmin && resultEnvelope) {
     commandActions.push({
@@ -741,7 +773,7 @@ export default function App() {
       onCancelDecompose={handleCancelDecompose}
       onOpenMethodology={openMethodology}
       canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
-      onSave={saveDialog.open}
+      onSave={openSaveDialog}
       onPin={() => setPinnedEnvelope(resultEnvelope)}
       isPinned={Boolean(
         pinnedEnvelope &&
@@ -810,7 +842,7 @@ export default function App() {
             setCanonicalSnapshot(env.result);
             // Collapse any expanded card before this snap hides the Library area
             // (it would otherwise strand the card's global modal state invisibly).
-            closeExpandedCard();
+            prepareProgrammaticNavigation("scenario", "drivers");
             // The opened result renders in the Scenario area — switch so it's
             // visible, and snap the sub-tab to Drivers so it lands answered.
             setActiveArea("scenario");
@@ -874,7 +906,7 @@ export default function App() {
     // The completion-toast "View" action jumps areas — collapse any expanded
     // card first so hiding its host area can't strand it invisibly.
     goToScenarioArea: () => {
-      closeExpandedCard();
+      prepareProgrammaticNavigation("scenario");
       setActiveArea("scenario");
     },
     scrollToResults: () =>
@@ -893,17 +925,19 @@ export default function App() {
 
       <section className="workbench" id="workbench">
         <header className="topbar">
-          <button
-            className="methodology-btn rail-toggle-btn"
-            onClick={openRailDrawer}
-            aria-label="Open portfolio and access setup"
-            title="Open portfolio and access setup"
-          >
-            <Menu size={18} />
-          </button>
-          <div>
-            <p className="eyebrow">What-if stress scenarios</p>
-            <h1>Portfolio scenario explorer</h1>
+          <div className="topbar-nav-cluster">
+            <button
+              className="methodology-btn rail-toggle-btn"
+              onClick={openRailDrawer}
+              aria-label="Open portfolio and access setup"
+              title="Open portfolio and access setup"
+            >
+              <Menu size={18} />
+            </button>
+            <div>
+              <p className="eyebrow">What-if stress scenarios</p>
+              <h1>Portfolio scenario explorer</h1>
+            </div>
           </div>
           <div className="status-strip">
             <span className="status-chip access-mode-chip">
@@ -997,7 +1031,7 @@ export default function App() {
         />
       ) : null}
 
-      <RailDrawer isOpen={railDrawer.isOpen} onClose={railDrawer.close}>
+      <RailDrawer isOpen={isMobileOrTablet && railDrawer.isOpen} onClose={railDrawer.close}>
         {railContent}
       </RailDrawer>
 

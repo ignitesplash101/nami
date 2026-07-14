@@ -751,7 +751,7 @@ export function ResultsPanel({
         />
       </div>
       <div className="results-toolbar">
-        <div className="results-toolbar-left">
+        <div className="results-toolbar-actions" role="group" aria-label="Result actions">
           {canSave ? (
             <button className="ghost-button" onClick={onSave}>
               <Save size={14} /> Save scenario
@@ -785,6 +785,8 @@ export function ResultsPanel({
               <PencilLine size={14} /> Edit &amp; re-run
             </button>
           ) : null}
+        </div>
+        <div className="results-toolbar-display" role="group" aria-label="Value and display">
           {isMarked ? (
             <span className="muted nav-marked" title="Marked to the as-of close + FX">
               NAV <code>{formatCurrency(result.portfolio_nav ?? 0, currency)}</code> · marked
@@ -824,7 +826,6 @@ export function ResultsPanel({
               ]}
             />
           ) : null}
-        </div>
         {envelope.reproducibility ? (
           <span className="muted reproducibility-chip">
             prompt {envelope.reproducibility.prompt_version} · model{" "}
@@ -841,6 +842,7 @@ export function ResultsPanel({
             </button>
           </span>
         ) : null}
+        </div>
       </div>
       <Tabs
         className="results-tabs"

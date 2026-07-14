@@ -16,6 +16,9 @@ import { useFullscreen } from "./useFullscreen";
  *  stacked CTAs + cards. Each tab lazy-fetches on first activation; results
  *  clear on book changes upstream exactly as before. */
 export function KnowYourBook({
+  bookName,
+  bookDescription,
+  benchmark,
   profile,
   replay,
   profileBusy,
@@ -25,6 +28,9 @@ export function KnowYourBook({
   unavailableReason,
   factorMeta
 }: {
+  bookName?: string;
+  bookDescription?: string;
+  benchmark?: string | null;
   profile: BookProfile | null;
   replay: EventsReplay | null;
   profileBusy: boolean;
@@ -44,6 +50,22 @@ export function KnowYourBook({
 
   return (
     <section className="result-card know-book fullscreen-surface" ref={ref} aria-label="Understand this book">
+      {bookName ? (
+        <div className="book-context">
+          <div className="book-context-identity">
+            <span className="eyebrow">Current book</span>
+            <strong>{bookName}</strong>
+          </div>
+          {bookDescription ? (
+            <p className="muted book-context-description">{bookDescription}</p>
+          ) : null}
+          {benchmark ? (
+            <p className="muted book-context-benchmark">
+              Benchmark: <code>{benchmark}</code>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="card-heading">
         <div>
           <p className="eyebrow">Understand this book — instant, free</p>
@@ -99,7 +121,8 @@ function ProfileBody({
   );
   const maxAbs = Math.max(...rows.map((row) => Math.abs(row.exposure)), 1e-9);
   return (
-    <div className="know-book-body" aria-label="Book profile">
+    <div className="know-book-body book-profile-layout" aria-label="Book profile">
+      <div className="book-profile-summary">
       <p className="muted book-profile-asof">
         {profile.portfolio_name} · as of {profile.as_of} · {profile.n_factors} factors
       </p>
@@ -125,6 +148,8 @@ function ProfileBody({
           idio — a dispersion floor, not a confidence interval.
         </InfoTip>
       </p>
+      </div>
+      <div className="book-profile-diagnostics">
       <TableScroll>
         <table>
           <thead>
@@ -159,6 +184,7 @@ function ProfileBody({
           </tbody>
         </table>
       </TableScroll>
+      </div>
     </div>
   );
 }

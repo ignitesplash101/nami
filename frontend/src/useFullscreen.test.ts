@@ -1,8 +1,13 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import type { RefObject } from "react";
-import { closeExpandedCard, fullscreenChartHeight, useFullscreen } from "./useFullscreen";
+import {
+  closeExpandedCard,
+  exitNativeFullscreenIfOwnerWillHide,
+  fullscreenChartHeight,
+  useFullscreen
+} from "./useFullscreen";
 
 describe("useFullscreen", () => {
   it("reports unsupported where the Fullscreen API is absent (jsdom, iPhone Safari)", () => {
@@ -205,6 +210,77 @@ describe("closeExpandedCard at a programmatic-navigation seam", () => {
     expect(document.body.style.overflow).toBe("");
     expect(document.documentElement.classList.contains("has-expanded-card")).toBe(false);
     expect(result.current.isFullscreen).toBe(false);
+  });
+});
+
+describe("exitNativeFullscreenIfOwnerWillHide", () => {
+  function installNativeFullscreen(owner: HTMLElement) {
+    const originalOwner = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const originalExit = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    const exit = vi.fn(() => Promise.resolve());
+    Object.defineProperty(document, "fullscreenElement", { value: owner, configurable: true });
+    Object.defineProperty(document, "exitFullscreen", { value: exit, configurable: true });
+    return {
+      exit,
+      restore() {
+        if (originalOwner) Object.defineProperty(document, "fullscreenElement", originalOwner);
+        else delete (document as { fullscreenElement?: Element | null }).fullscreenElement;
+        if (originalExit) Object.defineProperty(document, "exitFullscreen", originalExit);
+        else delete (document as { exitFullscreen?: () => Promise<void> }).exitFullscreen;
+      }
+    };
+  }
+
+  it("keeps native fullscreen when the owner remains in the next-visible Drivers panel", () => {
+    const scope = document.createElement("div");
+    const drivers = document.createElement("section");
+    const waterfall = document.createElement("div");
+    drivers.appendChild(waterfall);
+    scope.appendChild(drivers);
+    document.body.appendChild(scope);
+    const native = installNativeFullscreen(waterfall);
+    try {
+      expect(exitNativeFullscreenIfOwnerWillHide([{ scope, nextVisible: drivers }])).toBe(false);
+      expect(native.exit).not.toHaveBeenCalled();
+    } finally {
+      native.restore();
+      scope.remove();
+    }
+  });
+
+  it("exits native fullscreen when an affected tab scope will hide its owner", () => {
+    const scope = document.createElement("div");
+    const drivers = document.createElement("section");
+    const positions = document.createElement("section");
+    const positionsChart = document.createElement("div");
+    positions.appendChild(positionsChart);
+    scope.append(drivers, positions);
+    document.body.appendChild(scope);
+    const native = installNativeFullscreen(positionsChart);
+    try {
+      expect(exitNativeFullscreenIfOwnerWillHide([{ scope, nextVisible: drivers }])).toBe(true);
+      expect(native.exit).toHaveBeenCalledTimes(1);
+    } finally {
+      native.restore();
+      scope.remove();
+    }
+  });
+
+  it("keeps fullscreen outside the scope whose visible panel is changing", () => {
+    const scope = document.createElement("div");
+    const drivers = document.createElement("section");
+    scope.appendChild(drivers);
+    const book = document.createElement("div");
+    document.body.append(scope, book);
+    const native = installNativeFullscreen(book);
+    try {
+      expect(exitNativeFullscreenIfOwnerWillHide([{ scope, nextVisible: drivers }])).toBe(false);
+      expect(native.exit).not.toHaveBeenCalled();
+    } finally {
+      native.restore();
+      scope.remove();
+      book.remove();
+    }
   });
 });
 

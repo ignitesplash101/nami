@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const styles = readFileSync("src/styles.css", "utf8");
+const app = readFileSync("src/App.tsx", "utf8");
+const scenarioPanel = readFileSync("src/panels/ScenarioPanel.tsx", "utf8");
 
 describe("interactive target CSS contracts", () => {
   it("loads the authored stylesheet", () => {
@@ -29,5 +31,29 @@ describe("interactive target CSS contracts", () => {
     expect(hitRule).toMatch(/content:\s*""/);
     expect(hitRule).toMatch(/position:\s*absolute/);
     expect(hitRule).toMatch(/inset:\s*-10px/);
+  });
+});
+
+describe("responsive composition contracts", () => {
+  it("groups the compact setup trigger with the workbench title", () => {
+    expect(app).toContain('className="topbar-nav-cluster"');
+    expect(styles).toMatch(/\.topbar-nav-cluster\s*\{[^}]*display:\s*flex/s);
+  });
+
+  it("never presents the setup drawer in the same desktop render as the inline rail", () => {
+    expect(app).toContain("isOpen={isMobileOrTablet && railDrawer.isOpen}");
+  });
+
+  it("gives the phone scenario strip an edge affordance and scroll snapping", () => {
+    expect(scenarioPanel).toContain('className="scenario-chips-wrap"');
+    expect(styles).toMatch(/\.scenario-chips-wrap::after\s*\{/);
+    expect(styles).toMatch(/\.scenario-chips\s*\{[^}]*scroll-snap-type:\s*x\s+proximity/s);
+    expect(styles).toMatch(/\.scenario-chips\s+\.chip\s*\{[^}]*scroll-snap-align:\s*start/s);
+  });
+
+  it("uses an approximately 2:3 book-profile layout from 1600px", () => {
+    expect(styles).toMatch(
+      /@media\s*\(min-width:\s*1600px\)[\s\S]*?\.book-profile-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*2fr\)\s+minmax\(0,\s*3fr\)/
+    );
   });
 });

@@ -30,28 +30,41 @@ export function useOverlayManager() {
   const commandPalette = useOverlay();
   const opsDrawer = useOverlay();
   const purgeConfirm = useOverlay();
+  const saveDialog = useOverlay();
 
-  function openMethodology(section?: string) {
-    dismissFullscreenSurfaces();
+  const closeAllOverlays = useCallback(() => {
+    methodologyDrawer.close();
     railDrawer.close();
     commandPalette.close();
     opsDrawer.close();
+    purgeConfirm.close();
+    saveDialog.close();
+  }, [
+    commandPalette.close,
+    methodologyDrawer.close,
+    opsDrawer.close,
+    purgeConfirm.close,
+    railDrawer.close,
+    saveDialog.close
+  ]);
+
+  const prepareOverlayOpen = useCallback(() => {
+    dismissFullscreenSurfaces();
+    closeAllOverlays();
+  }, [closeAllOverlays]);
+
+  function openMethodology(section?: string) {
+    prepareOverlayOpen();
     methodologyDrawer.open(section);
   }
 
   function openRailDrawer() {
-    dismissFullscreenSurfaces();
-    methodologyDrawer.close();
-    commandPalette.close();
-    opsDrawer.close();
+    prepareOverlayOpen();
     railDrawer.open();
   }
 
   function openOpsDrawer() {
-    dismissFullscreenSurfaces();
-    methodologyDrawer.close();
-    railDrawer.close();
-    commandPalette.close();
+    prepareOverlayOpen();
     opsDrawer.open();
   }
 
@@ -60,19 +73,20 @@ export function useOverlayManager() {
   // Deps are all stable (useOverlay open/close), so the ⌘K effect below stays
   // registered once.
   const openCommandPalette = useCallback(() => {
-    dismissFullscreenSurfaces();
-    methodologyDrawer.close();
-    railDrawer.close();
-    opsDrawer.close();
+    prepareOverlayOpen();
     commandPalette.open();
-  }, [commandPalette.open, methodologyDrawer.close, opsDrawer.close, railDrawer.close]);
+  }, [commandPalette.open, prepareOverlayOpen]);
+
+  function openSaveDialog() {
+    prepareOverlayOpen();
+    saveDialog.open();
+  }
 
   // Purge flow: the ops drawer CLOSES before the confirm dialog opens — two
   // useOverlay overlays must never be open at once (window-level Esc would
   // close both together).
   function requestPurge() {
-    dismissFullscreenSurfaces();
-    opsDrawer.close();
+    prepareOverlayOpen();
     purgeConfirm.open();
   }
 
@@ -96,10 +110,12 @@ export function useOverlayManager() {
     commandPalette,
     opsDrawer,
     purgeConfirm,
+    saveDialog,
     openMethodology,
     openRailDrawer,
     openOpsDrawer,
     openCommandPalette,
+    openSaveDialog,
     requestPurge
   };
 }

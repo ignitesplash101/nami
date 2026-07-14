@@ -471,6 +471,12 @@ p {
   justify-content: space-between;
   margin-bottom: 18px;
 }
+.topbar-nav-cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
 /* The topbar heading is the page <h1> (rail brand is decorative) but keeps
  * the visual weight it had as an h2. */
 .topbar h1 {
@@ -894,6 +900,9 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
+.book-area > .area-heading {
+  margin-bottom: 0;
+}
 
 /* ============================================================================
  * InfoTip (Phase 31e) — tap-friendly ⓘ popover replacing hover-only title=
@@ -1023,9 +1032,6 @@ input[type="range"]::-moz-range-thumb {
 }
 .has-expanded-card .results-stack > * {
   animation: none;
-}
-.book-header h2 {
-  margin: 4px 0 6px;
 }
 .area-heading {
   margin: 0 0 14px;
@@ -1161,7 +1167,36 @@ input[type="range"]::-moz-range-thumb {
 
 /* "Know this book" — the free pre-run analytics behind one segmented card. */
 .know-book {
-  margin-top: var(--space-3);
+  margin-top: 0;
+}
+.book-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.book-context-identity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+.book-context-identity .eyebrow,
+.book-context p {
+  margin: 0;
+}
+.book-context-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.book-context-benchmark {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .know-book-cta {
   display: flex;
@@ -1175,6 +1210,10 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   margin-top: var(--space-2);
+}
+.book-profile-summary,
+.book-profile-diagnostics {
+  min-width: 0;
 }
 .know-book-subhead {
   display: flex;
@@ -2135,6 +2174,9 @@ a {
   gap: 8px;
   margin: 6px 0 2px;
 }
+.scenario-chips-wrap {
+  min-width: 0;
+}
 .chip {
   border: 1px solid var(--line);
   background: var(--panel-2);
@@ -2825,6 +2867,22 @@ a {
     flex-wrap: wrap;
     gap: 8px;
   }
+  .topbar-nav-cluster {
+    max-width: 100%;
+  }
+  .book-context {
+    display: grid;
+    align-items: start;
+    gap: var(--space-2);
+  }
+  .book-context-description {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .book-context-benchmark {
+    margin-left: 0;
+  }
   .scenario-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2897,6 +2955,12 @@ a {
   .workbench {
     padding: 16px 14px 32px;
   }
+  .results-toolbar-actions,
+  .results-toolbar-display {
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
   .topbar h1 {
     font-size: 1.35rem;
   }
@@ -2924,13 +2988,29 @@ a {
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
     margin-inline: -4px;
-    padding: 0 4px 4px;
+    padding: 0 36px 4px 4px;
+    scroll-padding-inline: 4px 36px;
+    scroll-snap-type: x proximity;
+  }
+  .scenario-chips-wrap {
+    position: relative;
+  }
+  .scenario-chips-wrap::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 4px;
+    width: 36px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--surface));
   }
   .scenario-chips::-webkit-scrollbar {
     display: none;
   }
   .scenario-chips .chip {
     flex: 0 0 auto;
+    scroll-snap-align: start;
   }
   .scenario-controls {
     display: grid;
@@ -3118,6 +3198,10 @@ a {
   }
 }
 @media (min-width: 1600px) {
+  .book-profile-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
   .scenario-workspace.is-first-run {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     align-items: stretch;
@@ -3188,11 +3272,16 @@ a {
     grid-template-columns: minmax(760px, 7fr) minmax(560px, 5fr);
   }
 }
-.results-toolbar-left {
+.results-toolbar-actions,
+.results-toolbar-display {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+.results-toolbar-display {
+  justify-content: flex-end;
+  margin-left: auto;
 }
 /* Compact %/$ units toggle in the results toolbar (reuses .segmented styling). */
 .results-units {

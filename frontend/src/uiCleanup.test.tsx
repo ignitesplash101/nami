@@ -224,6 +224,40 @@ describe("first-screen UI cleanup", () => {
     expect(stressed).toHaveTextContent(/stressed/);
   });
 
+  it("keeps result actions separate from value and display controls", () => {
+    render(
+      <ResultsPanel
+        envelope={envelopeFixture()}
+        factorMeta={{}}
+        displayMode="pct"
+        setDisplayMode={() => {}}
+        navInput="100000"
+        setNavInput={() => {}}
+        valuationSort={{ key: "delta", dir: "asc" }}
+        setValuationSort={() => {}}
+        isRunning={false}
+        canDecompose={false}
+        isDecomposing={false}
+        decomposeProgress={null}
+        onDecompose={() => {}}
+        onOpenMethodology={() => {}}
+        canSave
+        onSave={() => {}}
+        onPin={() => {}}
+        onEditRerun={() => {}}
+      />
+    );
+
+    const actions = screen.getByRole("group", { name: "Result actions" });
+    expect(actions).toContainElement(screen.getByRole("button", { name: "Save scenario" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: "Pin to compare" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: /Edit & re-run/ }));
+
+    const display = screen.getByRole("group", { name: "Value and display" });
+    expect(display).toContainElement(screen.getByLabelText("Portfolio value (USD) for the dollar view"));
+    expect(display).toContainElement(screen.getByRole("radiogroup", { name: "P&L units" }));
+  });
+
   it("opts the factor-shocks table into the fullscreen affordance", () => {
     renderResults(envelopeFixture());
     expect(screen.getByRole("button", { name: "Expand factor shocks" })).toBeInTheDocument();

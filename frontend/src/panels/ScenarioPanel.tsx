@@ -54,24 +54,26 @@ export function ScenarioPanel({
         <h2>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h2>
       </div>
       {chipScenarios.length ? (
-        <ChoiceGroup
-          ariaLabel="Example scenarios"
-          className="scenario-chips"
-          optionClassName="chip"
-          value={scenarioChoice}
-          onChange={(choice) => {
-            if (choice === customChoice) onSetCustomMode();
-            else onSelectScenario(choice);
-          }}
-          options={[
-            ...chipScenarios.map((scenario) => ({
-              key: scenario.key,
-              label: scenario.name,
-              title: scenario.text
-            })),
-            { key: customChoice, label: "Custom" }
-          ]}
-        />
+        <div className="scenario-chips-wrap">
+          <ChoiceGroup
+            ariaLabel="Example scenarios"
+            className="scenario-chips"
+            optionClassName="chip"
+            value={scenarioChoice}
+            onChange={(choice) => {
+              if (choice === customChoice) onSetCustomMode();
+              else onSelectScenario(choice);
+            }}
+            options={[
+              ...chipScenarios.map((scenario) => ({
+                key: scenario.key,
+                label: scenario.name,
+                title: scenario.text
+              })),
+              { key: customChoice, label: "Custom" }
+            ]}
+          />
+        </div>
       ) : null}
       <div className="scenario-grid visitor-scenario-grid">
         <label className="scenario-text">

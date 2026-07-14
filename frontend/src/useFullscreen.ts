@@ -18,6 +18,35 @@ export function closeExpandedCard(): void {
   activeCard?.collapse();
 }
 
+export interface VisibilityTransition {
+  /** Mounted container whose selected child is changing (area tabs or result tabs). */
+  scope: Element | null;
+  /** Child that will remain visible after the programmatic navigation. */
+  nextVisible: Element | null;
+}
+
+/** Exit native fullscreen only when a programmatic area/tab change will hide
+ * its owner. A Drivers waterfall that remains inside every affected visible
+ * panel stays fullscreen; fullscreen outside an unrelated changing scope is
+ * likewise untouched. The app-owned fallback is handled separately by
+ * closeExpandedCard(), because it must release its own scroll lock eagerly. */
+export function exitNativeFullscreenIfOwnerWillHide(
+  transitions: VisibilityTransition[]
+): boolean {
+  if (typeof document === "undefined") return false;
+  const owner = document.fullscreenElement;
+  if (!owner) return false;
+
+  const willHide = transitions.some(
+    ({ scope, nextVisible }) =>
+      scope?.contains(owner) === true && nextVisible?.contains(owner) !== true
+  );
+  if (!willHide || typeof document.exitFullscreen !== "function") return false;
+
+  void Promise.resolve(document.exitFullscreen()).catch(() => {});
+  return true;
+}
+
 export interface FullscreenOptions {
   /** Names what expands ("contribution waterfall"), used as the modal
    * `aria-label` in the expanded-card fallback. */

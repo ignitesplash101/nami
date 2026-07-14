@@ -32,6 +32,37 @@ describe("useOverlayManager", () => {
     expect(result.current.commandPalette.isOpen).toBe(true);
   });
 
+  it("owns Save and keeps it mutually exclusive with Purge", () => {
+    const { result } = renderHook(() => useOverlayManager());
+
+    act(() => result.current.openSaveDialog());
+    expect(result.current.saveDialog.isOpen).toBe(true);
+
+    act(() => result.current.requestPurge());
+    expect(result.current.saveDialog.isOpen).toBe(false);
+    expect(result.current.purgeConfirm.isOpen).toBe(true);
+  });
+
+  it.each([
+    ["openMethodology", "methodologyDrawer"],
+    ["openRailDrawer", "railDrawer"],
+    ["openOpsDrawer", "opsDrawer"],
+    ["openCommandPalette", "commandPalette"],
+    ["openSaveDialog", "saveDialog"]
+  ] as const)("%s closes an already-open purge confirmation", (opener, target) => {
+    const { result } = renderHook(() => useOverlayManager());
+    act(() => result.current.requestPurge());
+    expect(result.current.purgeConfirm.isOpen).toBe(true);
+
+    act(() => {
+      if (opener === "openMethodology") result.current.openMethodology();
+      else result.current[opener]();
+    });
+
+    expect(result.current.purgeConfirm.isOpen).toBe(false);
+    expect(result.current[target].isOpen).toBe(true);
+  });
+
   it("openCommandPalette collapses an expanded card (mutual exclusion)", () => {
     const { node } = expandCard();
     expect(node.classList.contains("is-card-expanded")).toBe(true);
@@ -43,7 +74,13 @@ describe("useOverlayManager", () => {
     expect(document.documentElement.classList.contains("has-expanded-card")).toBe(false);
   });
 
-  it.each(["openMethodology", "openRailDrawer", "openOpsDrawer", "requestPurge"] as const)(
+  it.each([
+    "openMethodology",
+    "openRailDrawer",
+    "openOpsDrawer",
+    "openSaveDialog",
+    "requestPurge"
+  ] as const)(
     "%s collapses an expanded card (mutual exclusion)",
     (opener) => {
       const { node } = expandCard();

@@ -41,4 +41,43 @@ describe("KnowYourBook", () => {
     expect(events).toHaveFocus();
     expect(screen.getByRole("button", { name: "Replay every historical event" })).toBeInTheDocument();
   });
+
+  it("separates the profile summary from its horizontally safe diagnostics table", () => {
+    render(
+      <KnowYourBook
+        bookName="Global quality"
+        bookDescription="A diversified quality portfolio."
+        benchmark="SPY"
+        profile={{
+          portfolio_name: "Global quality",
+          as_of: "2026-07-10",
+          factor_exposures: { market: 1.1 },
+          per_name: [
+            {
+              ticker: "AAPL",
+              weight: 1,
+              r2: 0.8,
+              r2_adj: 0.79,
+              n_obs: 104,
+              idio_vol_weekly: 0.03
+            }
+          ],
+          idio_band_weekly: 0.02,
+          n_factors: 1
+        }}
+        replay={null}
+        profileBusy={false}
+        replayBusy={false}
+        onProfile={() => {}}
+        onReplay={() => {}}
+        unavailableReason={null}
+        factorMeta={{}}
+      />
+    );
+
+    expect(document.querySelector(".book-profile-summary")).not.toBeNull();
+    const diagnostics = document.querySelector(".book-profile-diagnostics");
+    expect(diagnostics).not.toBeNull();
+    expect(diagnostics?.querySelector(".table-scroll")).not.toBeNull();
+  });
 });
