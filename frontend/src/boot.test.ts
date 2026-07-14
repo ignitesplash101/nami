@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api";
-import { BOOT_RETRY_DELAYS_MS, retryBootGet } from "./boot";
+import { BOOT_RETRY_DELAYS_MS, retryBootGet, settleActiveBootEffect } from "./boot";
 
 function networkError(): ApiError {
   return new ApiError({ status: null, detail: "Network request failed.", kind: "network" });
@@ -54,5 +54,25 @@ describe("retryBootGet", () => {
     await expect(retryBootGet(operation)).rejects.toBe(error);
     expect(operation).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("settleActiveBootEffect", () => {
+  it("does not report a rejection after the owning boot effect was abandoned", async () => {
+    let reject!: (reason: unknown) => void;
+    const pending = new Promise<string>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    let active = true;
+    const onSuccess = vi.fn();
+    const onFailure = vi.fn();
+
+    const settled = settleActiveBootEffect(pending, () => active, onSuccess, onFailure);
+    active = false;
+    reject(new Error("saved scenario load failed"));
+    await settled;
+
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onFailure).not.toHaveBeenCalled();
   });
 });

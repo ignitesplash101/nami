@@ -22,3 +22,21 @@ export async function retryBootGet<T>(operation: () => Promise<T>): Promise<T> {
     }
   }
 }
+
+/** Settle async work owned by a bootstrap effect without letting an abandoned
+ * StrictMode/stale effect write either its value or its error into the app. */
+export async function settleActiveBootEffect<T>(
+  operation: Promise<T>,
+  isActive: () => boolean,
+  onSuccess: (value: T) => void,
+  onFailure: (error: unknown) => void
+): Promise<void> {
+  try {
+    const value = await operation;
+    if (!isActive()) return;
+    onSuccess(value);
+  } catch (error) {
+    if (!isActive()) return;
+    onFailure(error);
+  }
+}

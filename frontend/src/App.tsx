@@ -54,7 +54,7 @@ import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { closeExpandedCard } from "./useFullscreen";
 import { useMediaQuery } from "./useMediaQuery";
 import { useOverlay } from "./useOverlay";
-import { retryBootGet } from "./boot";
+import { retryBootGet, settleActiveBootEffect } from "./boot";
 import { useBootRecovery } from "./useBootRecovery";
 import type {
   AccessResponse,
@@ -296,19 +296,22 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const savedId = params.get("saved");
       if (savedId && accessResponse.access_mode === "admin") {
-        try {
-          const rec = await getSavedScenario(savedId);
-          if (!active) return;
-          setResultEnvelope({
-            result: rec.result,
-            analog_events: rec.analog_events_snapshot,
-            cache_key: null,
-            reproducibility: rec.reproducibility
-          });
-          setCanonicalSnapshot(rec.result);
-        } catch (exc) {
-          setError(`Could not load saved scenario: ${exc instanceof Error ? exc.message : exc}`);
-        }
+        await settleActiveBootEffect(
+          getSavedScenario(savedId),
+          () => active,
+          (rec) => {
+            setResultEnvelope({
+              result: rec.result,
+              analog_events: rec.analog_events_snapshot,
+              cache_key: null,
+              reproducibility: rec.reproducibility
+            });
+            setCanonicalSnapshot(rec.result);
+          },
+          (exc) => {
+            setError(`Could not load saved scenario: ${exc instanceof Error ? exc.message : exc}`);
+          }
+        );
       }
     }
     boot().catch((exc: unknown) => {
