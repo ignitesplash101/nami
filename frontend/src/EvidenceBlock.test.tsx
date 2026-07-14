@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import { EvidenceBlock } from "./EvidenceBlock";
 import type { ScenarioResult } from "./types";
+import { closeExpandedCard } from "./useFullscreen";
 
 function makeResult(overrides: Partial<ScenarioResult> = {}): ScenarioResult {
   return {
@@ -77,6 +78,15 @@ const EVENTS = {
   }
 };
 
+afterEach(() => {
+  // Reset expanded-card globals so a failing hook-order run can't poison
+  // later tests (the whole point of that test is that a broken component
+  // LEAKS these).
+  closeExpandedCard();
+  document.body.style.overflow = "";
+  document.documentElement.classList.remove("has-expanded-card");
+});
+
 describe("EvidenceBlock", () => {
   it("renders every layer with the merged honesty caption (phrases verbatim)", () => {
     render(
@@ -136,22 +146,45 @@ describe("EvidenceBlock", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("does not crash when the gauge is null — its fullscreen hook is called ABOVE the early return", () => {
-    // buildEvidenceGauge(result) returns null on this payload, so the
-    // component's `if (!gauge) return null` fires. useFullscreen (and its own
-    // internal hooks) must still have run first, or React's hook-order
-    // invariant is violated and this render throws.
-    expect(() =>
-      render(
-        <EvidenceBlock
-          result={makeResult({ severity_ladder: null, pnl_uncertainty: null, analog_replay: null })}
-          analogEvents={EVENTS}
-          showDollars={false}
-          nav={null}
-          currency="USD"
-        />
-      )
-    ).not.toThrow();
+  it("hook-order guard: expanded state and scroll-lock cleanup survive a same-instance gauge flip", () => {
+    // A fresh mount with a null gauge can NEVER catch hooks placed below
+    // `if (!gauge) return null` — the first render just returns before
+    // reaching them. The regression only manifests when the SAME fiber
+    // re-renders across a gauge-truthiness flip. And it does so SILENTLY:
+    // React's "Rendered fewer hooks than expected" check needs at least one
+    // hook consumed in the re-render, so a pre-hook early return (zero hooks)
+    // slips past it — verified empirically — and instead wipes the fiber's
+    // hook state and orphans the effect cleanups. So this test asserts the
+    // observable damage, not a throw: (1) the expanded-card state must
+    // survive a truthy → null → truthy flip; (2) unmount must release the
+    // scroll-lock (orphaned cleanups would leak it forever).
+    const withGauge = makeResult();
+    const withoutGauge = makeResult({
+      severity_ladder: null,
+      pnl_uncertainty: null,
+      analog_replay: null
+    });
+    const props = { analogEvents: EVENTS, showDollars: false, nav: null, currency: "USD" };
+    const { rerender, unmount, container } = render(<EvidenceBlock result={withGauge} {...props} />);
+
+    // Expand (jsdom has no native Fullscreen API → the expanded-card fallback).
+    fireEvent.click(screen.getByRole("button", { name: "Expand evidence and bounds" }));
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(document.documentElement.classList.contains("has-expanded-card")).toBe(true);
+
+    // Same instance: gauge flips null (a thin payload) and back.
+    expect(() => rerender(<EvidenceBlock result={withoutGauge} {...props} />)).not.toThrow();
+    expect(container).toBeEmptyDOMElement();
+    expect(() => rerender(<EvidenceBlock result={withGauge} {...props} />)).not.toThrow();
+
+    // Hook state survived the flip: the controller still reports expanded.
+    // (Hooks below the early return reset it — the label would read Expand.)
+    expect(screen.getByRole("button", { name: "Collapse evidence and bounds" })).toBeInTheDocument();
+
+    // Unmount releases the scroll-lock; orphaned effect cleanups would leak it.
+    unmount();
+    expect(document.body.style.overflow).toBe("");
+    expect(document.documentElement.classList.contains("has-expanded-card")).toBe(false);
   });
 
   it("carries the fullscreen affordance next to the eyebrow when it renders", () => {

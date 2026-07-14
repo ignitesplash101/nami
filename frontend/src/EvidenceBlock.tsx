@@ -30,7 +30,10 @@ export function EvidenceBlock({
 }) {
   // Hooks called unconditionally, ABOVE the `!gauge` early return below — the
   // gauge is data-dependent (absent on older/thin payloads) and a hook must
-  // never be gated by a value computed from props.
+  // never be gated by a value computed from props. Note the failure mode is
+  // SILENT: a pre-hook early return consumes zero hooks, which React's
+  // "Rendered fewer hooks" check cannot detect — it wipes the hook state and
+  // orphans effect cleanups instead of throwing (test-pinned).
   const ref = useRef<HTMLElement>(null);
   const fs = useFullscreen(ref, { surface: "evidence and bounds" });
   const gauge = buildEvidenceGauge(result);
