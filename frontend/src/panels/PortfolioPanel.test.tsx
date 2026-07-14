@@ -255,4 +255,56 @@ describe("PortfolioPanel holdings context", () => {
 
     await act(async () => resolveUpload(validationResponse([])));
   });
+
+  it("does not let a delayed upload overwrite a newer row edit", async () => {
+    let resolveFileText!: (text: string) => void;
+    const delayedFile = {
+      text: () => new Promise<string>((resolve) => (resolveFileText = resolve))
+    };
+    vi.mocked(validatePortfolio).mockResolvedValue(validationResponse([]));
+    render(
+      <CustomPanelHarness
+        initialRows={[{ id: "row-aapl", ticker: "AAPL", weight: "1" }]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Upload holdings CSV"), {
+      target: { files: [delayedFile] }
+    });
+    fireEvent.change(screen.getByLabelText("Ticker for holding 1"), {
+      target: { value: "MSFT" }
+    });
+
+    await act(async () => resolveFileText("ticker,weight\nSTALE,1"));
+
+    expect(screen.getByLabelText("Ticker for holding 1")).toHaveValue("MSFT");
+    expect(screen.queryByDisplayValue("STALE")).not.toBeInTheDocument();
+    expect(validatePortfolio).not.toHaveBeenCalled();
+  });
+
+  it("does not let an older delayed upload overwrite a newer upload", async () => {
+    let resolveOldFileText!: (text: string) => void;
+    const delayedFile = {
+      text: () => new Promise<string>((resolve) => (resolveOldFileText = resolve))
+    };
+    const currentFile = { text: async () => "ticker,weight\nCURRENT,1" };
+    vi.mocked(validatePortfolio).mockResolvedValue(validationResponse([]));
+    render(
+      <CustomPanelHarness
+        initialRows={[{ id: "row-aapl", ticker: "AAPL", weight: "1" }]}
+      />
+    );
+
+    const upload = screen.getByLabelText("Upload holdings CSV");
+    fireEvent.change(upload, { target: { files: [delayedFile] } });
+    fireEvent.change(upload, { target: { files: [currentFile] } });
+    await waitFor(() => expect(screen.getByDisplayValue("CURRENT")).toBeInTheDocument());
+
+    await act(async () => resolveOldFileText("ticker,weight\nSTALE,1"));
+
+    expect(screen.getByLabelText("Ticker for holding 1")).toHaveValue("CURRENT");
+    expect(screen.queryByDisplayValue("STALE")).not.toBeInTheDocument();
+    expect(validatePortfolio).toHaveBeenCalledTimes(1);
+    expect(validatePortfolio).toHaveBeenCalledWith({ CURRENT: 1 });
+  });
 });

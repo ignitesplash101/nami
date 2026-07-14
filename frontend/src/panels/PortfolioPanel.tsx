@@ -43,24 +43,24 @@ export function PortfolioPanel({
   const selected = portfolios.find((portfolio) => portfolio.key === portfolioKey);
   const hasCash = customRows.some((row) => normalizeTicker(row.ticker) === "CASH");
   const [validation, setValidation] = useState<string[]>([]);
-  const validationRequestRef = useRef(0);
+  const operationGenerationRef = useRef(0);
   const isShares = customUnits === "shares";
 
-  function clearValidation() {
-    validationRequestRef.current += 1;
+  function beginPortfolioOperation() {
+    operationGenerationRef.current += 1;
     setValidation([]);
+    return operationGenerationRef.current;
   }
 
   async function validateCustom(rows = customRows) {
     // Shares mode is validated server-side (raw share counts, no sum-to-1 rule).
     if (isShares) return;
-    const requestId = validationRequestRef.current + 1;
-    validationRequestRef.current = requestId;
+    const requestId = beginPortfolioOperation();
     try {
       const response = await validatePortfolio(holdingsFromRows(rows));
-      if (validationRequestRef.current === requestId) setValidation(response.errors);
+      if (operationGenerationRef.current === requestId) setValidation(response.errors);
     } catch (exc) {
-      if (validationRequestRef.current === requestId) {
+      if (operationGenerationRef.current === requestId) {
         setValidation([toApiError(exc).message]);
       }
     }
@@ -68,14 +68,16 @@ export function PortfolioPanel({
 
   async function handleCsv(file: File | null) {
     if (!file) return;
-    clearValidation();
-    const rows = parseCsv(await file.text());
+    const uploadGeneration = beginPortfolioOperation();
+    const text = await file.text();
+    if (operationGenerationRef.current !== uploadGeneration) return;
+    const rows = parseCsv(text);
     setCustomRows(rows);
     await validateCustom(rows);
   }
 
   function updateCustomRows(rows: HoldingRow[]) {
-    clearValidation();
+    beginPortfolioOperation();
     setCustomRows(rows);
   }
 
@@ -157,7 +159,7 @@ export function PortfolioPanel({
               aria-checked={!isShares}
               className={!isShares ? "active" : ""}
               onClick={() => {
-                clearValidation();
+                beginPortfolioOperation();
                 setCustomUnits("weights");
               }}
             >
@@ -168,7 +170,7 @@ export function PortfolioPanel({
               aria-checked={isShares}
               className={isShares ? "active" : ""}
               onClick={() => {
-                clearValidation();
+                beginPortfolioOperation();
                 setCustomUnits("shares");
               }}
               title="Mark-to-market: enter share counts; nami marks each position to the as-of close and converts to USD"
