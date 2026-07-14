@@ -70,6 +70,17 @@ describe("presentApiError", () => {
     expect(raw.message).toMatch(/network error — check your connection/i);
   });
 
+  it("uses recovery-aware copy for a startup connection interruption", () => {
+    const boot = present(
+      "network",
+      "Connection was interrupted while loading nami. The app retries automatically when you reconnect or return to this tab."
+    );
+    expect(boot.message).toMatch(/interrupted while loading/i);
+    expect(boot.message).toMatch(/retries automatically/i);
+    expect(boot.cta).toBe("retry");
+    expect(boot.ctaLabel).toBe("Retry");
+  });
+
   it("unavailable passes actionable server detail through, generic on bare status lines", () => {
     const detailed = present(
       "unavailable",

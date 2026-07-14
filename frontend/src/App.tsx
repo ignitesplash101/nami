@@ -54,6 +54,8 @@ import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { closeExpandedCard } from "./useFullscreen";
 import { useMediaQuery } from "./useMediaQuery";
 import { useOverlay } from "./useOverlay";
+import { retryBootGet } from "./boot";
+import { useBootRecovery } from "./useBootRecovery";
 import type {
   AccessResponse,
   FactorMetadataMap,
@@ -120,6 +122,7 @@ export default function App() {
   const [methodology, setMethodology] = useState("");
   const [error, setError] = useState<ApiError | string | null>(null);
   const [bootSerial, setBootSerial] = useState(0);
+  const [bootFailed, setBootFailed] = useState(false);
   // Top-level area + results sub-tab; both persist across runs. The area
   // round-trips through ?view= so Book/Library views are linkable.
   const [activeArea, setActiveArea] = useState<AreaKey>(initialArea);
@@ -227,6 +230,11 @@ export default function App() {
   const [adminDataEpoch, setAdminDataEpoch] = useState(0);
   const isMobileOrTablet = useMediaQuery("(max-width: 1079.98px)");
 
+  useBootRecovery({
+    enabled: bootFailed && lastFailedActionRef.current === "boot",
+    onRecover: retryBoot
+  });
+
   async function handlePurgeConfirmed() {
     setPurgeBusy(true);
     try {
@@ -246,15 +254,18 @@ export default function App() {
   }
 
   useEffect(() => {
+    let active = true;
+
     async function boot() {
       const [accessResponse, portfolioResponse, scenarioResponse, factorResponse, methodologyText] =
         await Promise.all([
-          getAccess(),
-          getSamplePortfolios(),
-          getSampleScenarios(),
-          getFactors().catch(() => []),
-          getMethodology().catch(() => "")
+          retryBootGet(getAccess),
+          retryBootGet(getSamplePortfolios),
+          retryBootGet(getSampleScenarios),
+          retryBootGet(getFactors).catch(() => []),
+          retryBootGet(getMethodology).catch(() => "")
         ]);
+      if (!active) return;
       applyAccess(accessResponse);
       // Seed the as-of picker with the latest NYSE close (the live anchor), so
       // "live" means the latest US close rather than the browser's local day.
@@ -274,6 +285,11 @@ export default function App() {
         setScenarioDraftMode("sample");
       }
       setMethodology(methodologyText);
+      setBootFailed(false);
+      if (lastFailedActionRef.current === "boot") {
+        lastFailedActionRef.current = null;
+        setError(null);
+      }
 
       // Permalink hydration: ?saved=<id> opens a saved scenario directly.
       // Admin-only (matches the underlying endpoint gating).
@@ -282,6 +298,7 @@ export default function App() {
       if (savedId && accessResponse.access_mode === "admin") {
         try {
           const rec = await getSavedScenario(savedId);
+          if (!active) return;
           setResultEnvelope({
             result: rec.result,
             analog_events: rec.analog_events_snapshot,
@@ -294,8 +311,13 @@ export default function App() {
         }
       }
     }
-    boot().catch((exc: unknown) => reportError(exc, "boot"));
+    boot().catch((exc: unknown) => {
+      if (active) reportError(exc, "boot");
+    });
     // bootSerial lets the error banner's Retry re-run a failed boot.
+    return () => {
+      active = false;
+    };
   }, [bootSerial]);
 
   useEffect(() => {
@@ -334,11 +356,28 @@ export default function App() {
     exc: unknown,
     action: "run" | "decompose" | "boot" | "profile" | "replay" | null = null
   ) {
-    const err = toApiError(exc);
+    let err = toApiError(exc);
     if (err.kind === "cancelled") return;
     if (err.kind === "forbidden") void refreshAccess().catch(() => {});
+    if (action === "boot" && err.kind === "network") {
+      err = new ApiError({
+        status: null,
+        detail:
+          "Connection was interrupted while loading nami. The app retries automatically " +
+          "when you reconnect or return to this tab.",
+        kind: "network"
+      });
+    }
     lastFailedActionRef.current = action;
+    setBootFailed(action === "boot" && err.kind === "network");
     setError(err);
+  }
+
+  function retryBoot() {
+    if (lastFailedActionRef.current !== "boot") return;
+    setBootFailed(false);
+    setError(null);
+    setBootSerial((serial) => serial + 1);
   }
 
   function retryLastAction() {
@@ -346,7 +385,7 @@ export default function App() {
     setError(null);
     if (action === "run") void handleRun();
     else if (action === "decompose") void handleDecompose();
-    else if (action === "boot") setBootSerial((serial) => serial + 1);
+    else if (action === "boot") retryBoot();
     else if (action === "profile") void handleProfileBook();
     else if (action === "replay") void handleEventsReplay();
   }
