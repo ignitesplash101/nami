@@ -166,6 +166,48 @@ describe("useFullscreen expanded-card fallback", () => {
   });
 });
 
+describe("closeExpandedCard at a programmatic-navigation seam", () => {
+  // Regression: a programmatic snap (run completion, saved-open, completion-toast
+  // "View") can HIDE the sub-tab/area a fixed expanded card lives in WITHOUT
+  // unmounting it — Tabs keep panels mounted with [hidden]. The card's collapse
+  // cleanup never runs, so its global modal state (body scroll-lock, html flag,
+  // window Esc) stays live but the card is invisible and its exit control is
+  // display:none. App's navigation points (handleRunResult, SavedScenariosPanel
+  // onOpen, goToScenarioArea) now call closeExpandedCard() at those seams. This
+  // pins that the call releases the global state even while the card node is
+  // still mounted but [hidden]. The App wiring itself is verified by READING —
+  // App is not rendered in unit tests here (repo convention).
+  afterEach(() => {
+    act(() => closeExpandedCard());
+    document.body.innerHTML = "";
+    document.body.style.overflow = "";
+    document.documentElement.classList.remove("has-expanded-card");
+  });
+
+  it("releases scroll-lock + html flag for a still-mounted, hidden card", () => {
+    const node = document.createElement("div");
+    node.className = "fullscreen-surface";
+    document.body.appendChild(node);
+    const ref: RefObject<HTMLDivElement> = { current: node };
+    const { result } = renderHook(() => useFullscreen(ref, { surface: "book analytics" }));
+
+    act(() => result.current.toggle());
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(document.documentElement.classList.contains("has-expanded-card")).toBe(true);
+
+    // The host sub-tab/area hides while the card stays MOUNTED + expanded (the
+    // reachable bug condition) — invisible, but its global state is still live.
+    node.hidden = true;
+    expect(result.current.isFullscreen).toBe(true);
+
+    // The navigation seam fires closeExpandedCard() → global state must release.
+    act(() => closeExpandedCard());
+    expect(document.body.style.overflow).toBe("");
+    expect(document.documentElement.classList.contains("has-expanded-card")).toBe(false);
+    expect(result.current.isFullscreen).toBe(false);
+  });
+});
+
 describe("fullscreenChartHeight", () => {
   it("passes the base straight through when not fullscreen", () => {
     expect(fullscreenChartHeight(false, 360, 900)).toBe(360);

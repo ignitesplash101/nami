@@ -151,6 +151,12 @@ export function ResultsPanel({
   const waterfallFullscreen = useFullscreen(waterfallCardRef, {
     surface: "contribution waterfall"
   });
+  // Hoisted ABOVE the early return with the other hooks (see the contract at the
+  // top of this fn): it's `active`-gated, so calling it before we know an
+  // envelope exists is free, and it keeps the hook count stable across the
+  // null→result flip. Placed below early returns it added a hook only after the
+  // first run completed → "Rendered more hooks than during the previous render".
+  const waterfallViewportHeight = useViewportHeight(waterfallFullscreen.isFullscreen);
 
   if (!envelope) {
     if (isRunning) {
@@ -306,7 +312,6 @@ export function ResultsPanel({
     0
   );
   const bandChartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
-  const waterfallViewportHeight = useViewportHeight(waterfallFullscreen.isFullscreen);
   const chartHeight = fullscreenChartHeight(
     waterfallFullscreen.isFullscreen,
     bandChartHeight,

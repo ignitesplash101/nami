@@ -51,6 +51,7 @@ import { RailDrawer } from "./RailDrawer";
 import { RunProgress, stageLabel } from "./RunProgress";
 import { SaveScenarioDialog } from "./SaveScenarioDialog";
 import { SavedScenariosPanel } from "./SavedScenariosPanel";
+import { closeExpandedCard } from "./useFullscreen";
 import { useMediaQuery } from "./useMediaQuery";
 import { useOverlay } from "./useOverlay";
 import type {
@@ -433,6 +434,10 @@ export default function App() {
   function handleRunResult(response: ScenarioRunResponse) {
     setResultEnvelope(response);
     setCanonicalSnapshot(response.result);
+    // A fixed expanded card in a now-hidden sub-tab would strand its global modal
+    // state (scroll-lock, html flag, window Esc) invisibly — collapse it before
+    // the Drivers snap hides whatever tab it lived in.
+    closeExpandedCard();
     // A completed run always lands on Drivers — the answer band + waterfall — so
     // a fresh result reads the same regardless of where the sub-tab was parked.
     // (Adjustments/decompositions keep the current sub-tab; see the doc note.)
@@ -760,6 +765,9 @@ export default function App() {
           onOpen={(env) => {
             setResultEnvelope(env);
             setCanonicalSnapshot(env.result);
+            // Collapse any expanded card before this snap hides the Library area
+            // (it would otherwise strand the card's global modal state invisibly).
+            closeExpandedCard();
             // The opened result renders in the Scenario area — switch so it's
             // visible, and snap the sub-tab to Drivers so it lands answered.
             setActiveArea("scenario");
@@ -820,7 +828,12 @@ export default function App() {
       ? formatPercent(resultEnvelope.result.portfolio_pnl.total_pnl)
       : "",
     pushToast,
-    goToScenarioArea: () => setActiveArea("scenario"),
+    // The completion-toast "View" action jumps areas — collapse any expanded
+    // card first so hiding its host area can't strand it invisibly.
+    goToScenarioArea: () => {
+      closeExpandedCard();
+      setActiveArea("scenario");
+    },
     scrollToResults: () =>
       resultsRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" })
   });

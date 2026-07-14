@@ -221,6 +221,52 @@ describe("first-screen UI cleanup", () => {
     renderResults(envelopeFixture());
     expect(screen.getByRole("button", { name: "Expand factor shocks" })).toBeInTheDocument();
   });
+
+  it("hook-order guard: a null→result flip on the SAME instance never crashes the hook count", () => {
+    // The empty/skeleton state returns early (before the drill layer), so EVERY
+    // hook must sit ABOVE that return. Otherwise the FIRST completed run adds one
+    // more hook than the empty render used → React throws "Rendered more hooks
+    // than during the previous render" and the root ErrorBoundary eats the
+    // result. A fresh mount can never catch this (the empty render just returns);
+    // only the SAME fiber flipping null→result does. This pins both directions.
+    function panel(envelope: ScenarioRunResponse | null, isRunning = false) {
+      return (
+        <ResultsPanel
+          envelope={envelope}
+          factorMeta={{}}
+          displayMode="pct"
+          setDisplayMode={() => {}}
+          navInput="100000"
+          setNavInput={() => {}}
+          valuationSort={{ key: "delta", dir: "asc" }}
+          setValuationSort={() => {}}
+          isRunning={isRunning}
+          canDecompose={false}
+          isDecomposing={false}
+          decomposeProgress={null}
+          onDecompose={() => {}}
+          onOpenMethodology={() => {}}
+          canSave={false}
+          onSave={() => {}}
+        />
+      );
+    }
+
+    // Boot on the running skeleton (null envelope, mid-run) — the real boot path.
+    const { rerender } = render(panel(null, true));
+    expect(screen.getByLabelText("Scenario results")).toHaveClass("results-skeleton");
+
+    // First completed run: SAME fiber, envelope flips truthy → the extra hook
+    // below the early return would fire here. Must not throw; must render.
+    expect(() => rerender(panel(envelopeFixture()))).not.toThrow();
+    expect(screen.getByLabelText("Impact summary")).toBeInTheDocument();
+
+    // And back the other direction (result → onboarding empty → result again).
+    expect(() => rerender(panel(null))).not.toThrow();
+    expect(screen.getByText("No scenario run yet")).toBeInTheDocument();
+    expect(() => rerender(panel(envelopeFixture()))).not.toThrow();
+    expect(screen.getByLabelText("Impact summary")).toBeInTheDocument();
+  });
 });
 
 // Toolbar quick actions: jump to shock adjustment, and rebuild the composer

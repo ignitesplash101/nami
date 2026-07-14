@@ -3,6 +3,17 @@ import { useMethodologyDrawer } from "../useMethodologyDrawer";
 import { useOverlay } from "../useOverlay";
 import { closeExpandedCard } from "../useFullscreen";
 
+// Before opening any overlay, clear BOTH fullscreen presentations of a chart
+// card: the app-owned expanded card (a window-Esc owner) AND a natively
+// fullscreened element — a palette/drawer renders OUTSIDE the fullscreened
+// subtree, so it would open invisibly (e.g. ⌘K over a fullscreen chart).
+function dismissFullscreenSurfaces() {
+  closeExpandedCard();
+  if (typeof document !== "undefined" && document.fullscreenElement) {
+    void document.exitFullscreen();
+  }
+}
+
 /** Owns every overlay plus their mutual exclusion: two window-level Esc owners
  * must never coexist. Both useOverlay overlays and an expanded chart card
  * (`useFullscreen`'s fallback) own a window Esc listener, so each opener closes
@@ -21,7 +32,7 @@ export function useOverlayManager() {
   const purgeConfirm = useOverlay();
 
   function openMethodology(section?: string) {
-    closeExpandedCard();
+    dismissFullscreenSurfaces();
     railDrawer.close();
     commandPalette.close();
     opsDrawer.close();
@@ -29,7 +40,7 @@ export function useOverlayManager() {
   }
 
   function openRailDrawer() {
-    closeExpandedCard();
+    dismissFullscreenSurfaces();
     methodologyDrawer.close();
     commandPalette.close();
     opsDrawer.close();
@@ -37,7 +48,7 @@ export function useOverlayManager() {
   }
 
   function openOpsDrawer() {
-    closeExpandedCard();
+    dismissFullscreenSurfaces();
     methodologyDrawer.close();
     railDrawer.close();
     commandPalette.close();
@@ -45,11 +56,11 @@ export function useOverlayManager() {
   }
 
   // ⌘K entry and the visible topbar button share this ONE opener — direct
-  // commandPalette.open calls are forbidden (they'd skip closeExpandedCard).
+  // commandPalette.open calls are forbidden (they'd skip dismissFullscreenSurfaces).
   // Deps are all stable (useOverlay open/close), so the ⌘K effect below stays
   // registered once.
   const openCommandPalette = useCallback(() => {
-    closeExpandedCard();
+    dismissFullscreenSurfaces();
     methodologyDrawer.close();
     railDrawer.close();
     opsDrawer.close();
@@ -60,7 +71,7 @@ export function useOverlayManager() {
   // useOverlay overlays must never be open at once (window-level Esc would
   // close both together).
   function requestPurge() {
-    closeExpandedCard();
+    dismissFullscreenSurfaces();
     opsDrawer.close();
     purgeConfirm.open();
   }
