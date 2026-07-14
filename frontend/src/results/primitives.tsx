@@ -1,5 +1,3 @@
-import { Download } from "lucide-react";
-
 export function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="metric">
@@ -41,19 +39,5 @@ export function SortableTh({
         ) : null}
       </button>
     </th>
-  );
-}
-
-export function ExportCsvButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="ghost-button table-export-btn"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-    >
-      <Download size={13} /> CSV
-    </button>
   );
 }

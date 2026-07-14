@@ -177,11 +177,6 @@ def conditional_shapley_attribution_grouped(
     `factor_group_map: factor_name -> group_name`. Every factor in `betas.columns`
     must be mapped — unmapped factors raise.
     """
-    factor_names = list(betas.columns)
-    unmapped = [f for f in factor_names if f not in factor_group_map]
-    if unmapped:
-        raise ValueError(f"Factors not in factor_group_map: {sorted(unmapped)}")
-
     full = conditional_shapley_attribution(
         betas,
         shocks,
@@ -189,6 +184,29 @@ def conditional_shapley_attribution_grouped(
         factor_returns_history,
         min_background_rows=min_background_rows,
     )
+    return grouped_attribution_from_full(full, betas, shocks, weights, factor_group_map)
+
+
+def grouped_attribution_from_full(
+    full: dict[str, float],
+    betas: pd.DataFrame,
+    shocks: dict[str, float],
+    weights: pd.Series,
+    factor_group_map: dict[str, str],
+) -> dict[str, float]:
+    """Derive grouped attribution from an already-computed full Shapley map.
+
+    The grouped view only sums and redistributes the full result; it does not
+    need another explainer fit. Keeping this transform separate lets the
+    scenario pipeline pay the full Conditional Shapley cost exactly once.
+    """
+    factor_names = list(betas.columns)
+    unmapped = [f for f in factor_names if f not in factor_group_map]
+    if unmapped:
+        raise ValueError(f"Factors not in factor_group_map: {sorted(unmapped)}")
+    missing = [f for f in factor_names if f not in full]
+    if missing:
+        raise ValueError(f"Factors missing from full Shapley result: {sorted(missing)}")
 
     weighted_betas_full = weights.reindex(betas.index).fillna(0.0) @ betas
 

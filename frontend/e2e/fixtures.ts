@@ -128,6 +128,7 @@ export const scenarioEnvelope = {
 type MockOptions = {
   admin?: boolean;
   failFirstAccessTransport?: boolean;
+  savedScenario?: boolean;
 };
 
 const localHosts = new Set(["127.0.0.1", "localhost"]);
@@ -218,7 +219,47 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
         }
       }));
     }
-    if (key === "GET /api/saved-scenarios") return void (await json(route, []));
+    if (key === "GET /api/saved-scenarios") {
+      return void (await json(
+        route,
+        options.savedScenario
+          ? [
+              {
+                id: "saved-1",
+                name: "Quarterly stress",
+                tags: [],
+                created_at: "2026-07-14T00:00:00Z",
+                owner_label: null,
+                portfolio_name: "US tech growth",
+                portfolio_key: "us_tech_growth",
+                requested_as_of_date: "2026-07-13",
+                effective_as_of_date: "2026-07-13",
+                narrative_mode: "grounded",
+                total_pnl: -0.08
+              }
+            ]
+          : []
+      ));
+    }
+    if (key === "GET /api/saved-scenarios/saved-1") {
+      return void (await json(route, {
+        id: "saved-1",
+        name: "Quarterly stress",
+        tags: [],
+        notes: "",
+        created_at: "2026-07-14T00:00:00Z",
+        created_by: "fixture",
+        owner_label: null,
+        scenario_text: scenarioEnvelope.result.scenario_text,
+        portfolio_snapshot_ref: null,
+        portfolio_holdings: scenarioEnvelope.result.portfolio_holdings,
+        portfolio_key: scenarioEnvelope.result.portfolio_key,
+        portfolio_name: scenarioEnvelope.result.portfolio_name,
+        analog_events_snapshot: scenarioEnvelope.analog_events,
+        result: scenarioEnvelope.result,
+        reproducibility: scenarioEnvelope.reproducibility
+      }));
+    }
     if (key === "GET /api/portfolios") return void (await json(route, []));
     if (key === "GET /api/usage") {
       return void (await json(route, {

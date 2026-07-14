@@ -18,7 +18,7 @@ A scenario run executes three distinct Gemini calls in sequence, with different 
 
 Why split Call 2 in two? See section 2.
 
-The orchestrator runs Call 1 with the pre-fetched event registry, then *parallelizes* (a) `yfinance` portfolio prices, (b) `yfinance` factor-history fetches, (c) the Calls 2a/2b chain — all inside one `ThreadPoolExecutor` opened immediately after the cache check. The market-data calls (~2–6s) overlap with the Gemini chain (~8–16s), so yfinance becomes effectively free. The 3 Shapley attribution fits at the end also run in a 3-worker pool because `shap.LinearExplainer` drops into NumPy/SciPy linalg that releases the GIL.
+The orchestrator runs Call 1 with the pre-fetched event registry, then *parallelizes* portfolio prices, factor history, and the Calls 2a/2b chain. Selected analog returns reuse the 30-day complete event matrix when present; otherwise only the selected events are fetched. Attribution computes full and explicit Conditional Shapley in parallel, then derives grouped attribution from the full result, avoiding a duplicate full explainer.
 
 ---
 
@@ -38,7 +38,7 @@ This is documented in code, not just docs. Reviewers can grep for the assertion.
 
 ## 3. `PROMPT_VERSION` as the cache-invalidation lever
 
-Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v10"`. The version is mixed into the scenario cache key:
+Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v11"`. The version is mixed into the scenario cache key:
 
 ```python
 # app/utils/hashing.py::scenario_cache_key
@@ -61,6 +61,7 @@ The full version history is in the file header. Highlights:
 - v7 → v8: shock extraction is explicitly framed as hypothetical stress construction, overlapping factor divergence must be explained, and `ScenarioResult` gained warning-only `risk_diagnostics`.
 - v8 → v9: shock-units/horizon contract in the extraction prompt (cumulative episode total returns, not weekly) + honest rule-4 wording (the reasoning-based envelope escape hatch never existed in code), per-event envelope payload + window lengths, 2–5 analog cardinality enforced post-hoc, periphery hard band ±0.75, horizon-neutral factor descriptions, `ScenarioResult` gained `regression_quality` + `analog_event_returns`, and `.T`-suffix ticker returns are USD-converted before beta estimation. Engine-math changes (standardized ridge, per-ticker masks) are keyed separately via the new `regression_spec` cache-key component — that lever, not `PROMPT_VERSION`, owns estimator/alpha/lookback changes from here on.
 - v9 → v10: factor-universe breadth. Four new factors enter the LLM payload — `EFA` (developed ex-US equities), `HYG` (high-yield credit), `GLD` (gold), `SHY` (short-duration Treasuries), all decimal price returns with horizon-neutral descriptions — and rule 7's overlap enumeration gains `EFA`. The event registry grew 17 → 31 with four new tags (`technology`, `volatility`, `credit`, `disaster`); registry edits ride `events_version`, but the new factor descriptions alone require the prompt bump.
+- v10 → v11: grounded-narrative source quality. Google Search grounding now prefers official public-market sources, academic/institutional research, and major news, while discouraging broker marketing, retail/crypto sites, SEO explainers, and Wikipedia when stronger evidence exists. This is guidance, not an allowlist.
 
 ML-systems framing: this is *experiment versioning*. Same prompt + same model + same data + same code → byte-for-byte same output (modulo Gemini's own non-determinism, which `temperature=0` reduces but doesn't eliminate). Bump the version when any input to that contract changes.
 

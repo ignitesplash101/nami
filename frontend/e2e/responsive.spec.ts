@@ -111,6 +111,27 @@ test("completed run lands on Drivers and fallback fullscreen exits before palett
   expectCleanNetworkPolicy(api);
 });
 
+test("results keep one export and expose Edit & re-run only for saved origins", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const api = await installApiMocks(page, { admin: true, savedScenario: true });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+  await expect(page.getByRole("button", { name: "Export all results" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Edit & re-run" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Pin to compare" })).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Library" }).click();
+  await page.getByRole("button", { name: "Quarterly stress", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Scenario" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(page.getByRole("button", { name: "Edit & re-run" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export all results" })).toHaveCount(1);
+  expectCleanNetworkPolicy(api);
+});
+
 test("save and purge confirmations yield to the command palette", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const api = await installApiMocks(page, { admin: true });

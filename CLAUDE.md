@@ -110,6 +110,6 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–34 shipped (most recently Phase 34: UI seam hardening + deterministic
-release QA). The full append-only log — one dated entry per phase with scope
+Phases 0–35 shipped (most recently Phase 35: simpler results, stronger sources,
+and faster replay/scenario runs). The full append-only log — one dated entry per phase with scope
 and rationale — lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

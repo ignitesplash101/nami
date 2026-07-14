@@ -467,6 +467,12 @@ def test_benchmark_overlay_attached_on_miss_and_hit(monkeypatch):
     assert result.benchmark_ticker == "QQQ"
     assert result.benchmark_pnl is not None
     assert result.active_return is not None
+    assert result.benchmark_pnl.by_factor_conditional_shapley is None
+    assert result.benchmark_pnl.by_factor_conditional_shapley_explicit is None
+    assert result.benchmark_pnl.by_factor_conditional_shapley_grouped is None
+    assert result.benchmark_pnl.total_pnl == pytest.approx(
+        sum(result.benchmark_pnl.by_factor_naive.values())
+    )
     expected_active = result.portfolio_pnl.total_pnl - result.benchmark_pnl.total_pnl
     assert result.active_return == pytest.approx(expected_active)
 
@@ -487,6 +493,12 @@ def test_benchmark_overlay_attached_on_miss_and_hit(monkeypatch):
     assert hit.benchmark_ticker == "QQQ"
     assert hit.benchmark_pnl is not None
     assert hit.active_return is not None
+    assert hit.benchmark_pnl.by_factor_conditional_shapley is None
+    assert hit.benchmark_pnl.by_factor_conditional_shapley_explicit is None
+    assert hit.benchmark_pnl.by_factor_conditional_shapley_grouped is None
+    assert hit.active_return == pytest.approx(
+        hit.portfolio_pnl.total_pnl - hit.benchmark_pnl.total_pnl
+    )
 
 
 def test_explicit_benchmark_overrides_sample(monkeypatch):

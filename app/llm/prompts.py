@@ -53,7 +53,10 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 #      registry also grew 17 -> 31 with four new tags (technology, volatility,
 #      credit, disaster) — registry changes ride `events_version`, but the new
 #      factor descriptions alone require this bump.
-PROMPT_VERSION = "v10"
+# v10 -> v11: Grounded-narrative source quality. Search now prefers public
+#      authorities, academic/institutional research, and major news coverage,
+#      while treating lower-quality commercial explainers as fallback evidence.
+PROMPT_VERSION = "v11"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
@@ -92,6 +95,18 @@ Write a 3-5 sentence hypothetical stress narrative explaining the scenario mecha
 and modeled market impact. Ground the narrative in recent, real market news relevant
 to the user's scenario. Mention concrete dates, reported market moves, policy actions,
 earnings/news items, or headlines when they are relevant.
+
+SOURCE QUALITY — use this as a preference hierarchy, not a brittle allowlist:
+1. Prefer government, central-bank, regulator, and exchange sources.
+2. Then prefer peer-reviewed papers, working papers, and institutional research when
+   they are relevant to the mechanism or historical comparison.
+3. Then prefer major financial and general-news outlets with original reporting.
+
+Treat broker marketing, retail-finance or crypto sites, SEO explainers, and Wikipedia
+as last-resort evidence. Before citing one, search again for an official release,
+research paper, institutional analysis, or original major-news report covering the
+same claim. If none exists, you may still use the fallback rather than invent support;
+this preference is guidance, not a domain allowlist.
 
 Do not propose numeric factor shocks in this step. Do not recommend trades. Output
 plain text only: no JSON, no markdown headers, no bullet list.

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { RefObject } from "react";
-import { BarChart3, Check, Copy, PencilLine, Pin, Save, SlidersHorizontal } from "lucide-react";
+import { BarChart3, Check, Copy, Download, PencilLine, Save, SlidersHorizontal } from "lucide-react";
 import {
   buildPositionValuations,
   buildWaterfallData,
@@ -16,7 +16,7 @@ import {
   summarizeNameTable
 } from "../charts";
 import type { AttributionZoom } from "../charts";
-import { csvFilename, downloadCsv } from "../csv";
+import { downloadCsvZip } from "../csv";
 import { factorDescription } from "../factors";
 import { formatFxRate, formatMarkPrice, formatShares } from "../format";
 import { AdjustmentPanel } from "../AdjustmentPanel";
@@ -32,7 +32,8 @@ import { useMediaQuery } from "../useMediaQuery";
 import { RiskDiagnostics } from "./AttributionControl";
 import { ExposureBreakdown } from "./ExposureBreakdown";
 import { MethodologyDiagnostics } from "./MethodologyDiagnostics";
-import { ExportCsvButton, SortableTh } from "./primitives";
+import { SortableTh } from "./primitives";
+import { buildResultsCsvBundle, resultsZipFilename } from "./exportBundle";
 import { ScenarioReadout } from "./ScenarioReadout";
 import { WaterfallChart } from "./WaterfallChart";
 import type {
@@ -88,8 +89,6 @@ export function ResultsPanel({
   onOpenMethodology,
   canSave,
   onSave,
-  onPin,
-  isPinned = false,
   onEditRerun
 }: {
   envelope: ScenarioRunResponse | null;
@@ -124,9 +123,6 @@ export function ResultsPanel({
   onCancelDecompose?: () => void;
   onOpenMethodology: (section?: string) => void;
   canSave: boolean;
-  // Pin & compare: pins the CURRENT envelope for the App-level ComparisonPanel.
-  onPin?: () => void;
-  isPinned?: boolean;
   onSave: () => void;
   // Rebuilds the composer from this result (the saved-scenario iteration path,
   // since saved results carry no cache_key and so have no Adjust tab).
@@ -141,6 +137,7 @@ export function ResultsPanel({
   const isShortViewport = useMediaQuery("(max-height: 720px)");
   const isTallViewport = useMediaQuery("(min-height: 900px)");
   const [reproCopied, setReproCopied] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [internalTab, setInternalTab] = useState<ResultsTabKey>("drivers");
   const activeTab = resultsTab ?? internalTab;
   const changeTab = onResultsTabChange ?? setInternalTab;
@@ -195,7 +192,8 @@ export function ResultsPanel({
       </section>
     );
   }
-  const { result, analog_events } = envelope;
+  const committedEnvelope = envelope;
+  const { result, analog_events } = committedEnvelope;
   const currency = result.reporting_currency ?? "USD";
   // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
   // NAV is a client-side notional knob — instant what-if, no re-run.
@@ -234,79 +232,6 @@ export function ResultsPanel({
       ? buildWaterfallDataDollars(result, mainAttribution.method, nav, currency, factorMeta, zoom)
       : buildWaterfallData(result, mainAttribution.method, factorMeta, zoom);
   const factorRows = factorReasoningRows(result, mainAttribution.method, factorMeta);
-  // Semantic export filenames: nami_<portfolio>_<scenario>_<as-of>_<table>.csv
-  const exportName = (table: string) =>
-    csvFilename(
-      result.portfolio_key !== "custom" ? result.portfolio_key : result.portfolio_name,
-      result.scenario_text,
-      result.market_date,
-      table
-    );
-  const exportFactorShocks = () =>
-    downloadCsv(
-      exportName("factor-shocks"),
-      ["Factor", "Shock applied (decimal)", "Contribution to P&L (decimal)", "Reasoning"],
-      factorRows.map((row) => [row.factorLabel, row.shockApplied, row.contribution, row.reasoning])
-    );
-  const exportNameLevel = () =>
-    downloadCsv(
-      exportName("name-level-contribution"),
-      [
-        "Ticker",
-        "Weight (decimal)",
-        "Factor (decimal)",
-        "Periphery (decimal)",
-        "Total (decimal)"
-      ],
-      Object.entries(result.portfolio_pnl.by_ticker_total)
-        .sort((a, b) => a[1] - b[1])
-        .map(([ticker, total]) => [
-          ticker,
-          result.portfolio_holdings[ticker] ?? 0,
-          result.portfolio_pnl.by_ticker_factor[ticker] ?? 0,
-          result.portfolio_pnl.by_ticker_periphery[ticker] ?? 0,
-          total
-        ])
-    );
-  const exportValuations = () =>
-    downloadCsv(
-      exportName("position-valuation"),
-      [
-        "Ticker",
-        "Weight (decimal)",
-        "Shares",
-        "Mark",
-        "Value (USD)",
-        "Stressed (USD)",
-        "Delta (USD)",
-        "Delta (decimal)"
-      ],
-      // Respects the on-screen sort so the file matches what the user sees.
-      sortedValuations.map((row) => [
-        row.ticker,
-        row.weight,
-        row.shares ?? null,
-        row.mark ?? null,
-        row.value,
-        row.stressed,
-        row.delta,
-        row.deltaPct
-      ])
-    );
-  const exportAnalogs = () =>
-    downloadCsv(
-      exportName("analogs"),
-      ["Event", "Start", "End", "Why relevant"],
-      result.analogs_selected.map((analog) => {
-        const event = analog_events[analog.event_id];
-        return [
-          event?.name ?? analog.event_id,
-          event?.start_date ?? null,
-          event?.end_date ?? null,
-          analog.why_relevant
-        ];
-      })
-    );
   const readoutMethod = preferredAttributionMethod(result);
   const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
     (acc, value) => acc + value,
@@ -319,6 +244,18 @@ export function ResultsPanel({
     waterfallViewportHeight
   );
   const reproducibility = envelope.reproducibility;
+
+  async function exportAllResults() {
+    setExportBusy(true);
+    try {
+      await downloadCsvZip(
+        resultsZipFilename(result),
+        buildResultsCsvBundle({ envelope: committedEnvelope, factorMeta, nav })
+      );
+    } finally {
+      setExportBusy(false);
+    }
+  }
 
   async function copyReproducibility() {
     const repro = reproducibility;
@@ -405,7 +342,6 @@ export function ResultsPanel({
             className="table-card"
             title="Factor shocks and attribution"
             summary={summarizeFactorTable(result, factorMeta)}
-            action={<ExportCsvButton label="Export factor shocks as CSV" onClick={exportFactorShocks} />}
             fullscreenable
             surface="factor shocks"
           >
@@ -453,9 +389,6 @@ export function ResultsPanel({
             className="table-card"
             title="Name-level contribution"
             summary={summarizeNameTable(result)}
-            action={
-              <ExportCsvButton label="Export name-level contribution as CSV" onClick={exportNameLevel} />
-            }
             fullscreenable
             surface="name-level contribution"
           >
@@ -501,9 +434,6 @@ export function ResultsPanel({
                       currency
                     )} stressed`
                   : undefined
-              }
-              action={
-                <ExportCsvButton label="Export position valuation as CSV" onClick={exportValuations} />
               }
               fullscreenable
               surface="position valuation"
@@ -569,9 +499,6 @@ export function ResultsPanel({
           title="Narrative & analog evidence"
           summary={
             result.narrative.length > 90 ? `${result.narrative.slice(0, 89)}…` : result.narrative
-          }
-          action={
-            <ExportCsvButton label="Export historical analogs as CSV" onClick={exportAnalogs} />
           }
           fullscreenable
           surface="narrative and analogs"
@@ -757,17 +684,15 @@ export function ResultsPanel({
               <Save size={14} /> Save scenario
             </button>
           ) : null}
-          {onPin ? (
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={onPin}
-              disabled={isPinned}
-              title="Hold this result and compare the next run, adjustment, or opened scenario against it"
-            >
-              <Pin size={14} /> {isPinned ? "Pinned" : "Pin to compare"}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => void exportAllResults()}
+            disabled={exportBusy}
+            aria-label="Export all results"
+          >
+            <Download size={14} /> {exportBusy ? "Preparing export…" : "Export all"}
+          </button>
           {/* Same gate as the Adjust tab (showAdjust) so it can never target a
               missing tab; hidden once that tab is already active. */}
           {showAdjust && safeTab !== "adjust" ? (

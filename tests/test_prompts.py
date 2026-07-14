@@ -14,6 +14,8 @@ import pandas as pd
 from app.factors.universe import factor_metadata
 from app.llm.prompts import (
     ANALOG_GROUNDED_NARRATIVE_PROMPT,
+    GROUNDED_NARRATIVE_PROMPT,
+    PROMPT_VERSION,
     SHOCK_EDIT_PROMPT,
     SHOCK_EXTRACTION_PROMPT,
     format_shock_extraction_user_message,
@@ -45,6 +47,26 @@ def test_edit_and_analog_prompts_carry_units_contract():
     assert "TOTAL returns over each analog's full event window" in _flat(
         ANALOG_GROUNDED_NARRATIVE_PROMPT
     )
+
+
+def test_grounded_narrative_prioritizes_high_quality_sources():
+    flat = _flat(GROUNDED_NARRATIVE_PROMPT).lower()
+    assert PROMPT_VERSION == "v11"
+    assert "government" in flat
+    assert "central-bank" in flat
+    assert "regulator" in flat
+    assert "exchange" in flat
+    assert "peer-reviewed" in flat
+    assert "working papers" in flat
+    assert "institutional research" in flat
+    assert "major financial" in flat
+    assert "broker marketing" in flat
+    assert "crypto sites" in flat
+    assert "seo" in flat
+    assert "wikipedia" in flat
+    assert "last-resort evidence" in flat
+    assert "search again" in flat
+    assert "not a domain allowlist" in flat
 
 
 def test_factor_descriptions_are_horizon_neutral():

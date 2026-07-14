@@ -123,6 +123,8 @@ export interface RiskDiagnostic {
 
 export interface TickerRegressionQuality {
   r2: number;
+  r2_adj?: number | null;
+  p_eff?: number | null;
   n_obs: number;
   idio_vol_weekly: number;
 }

@@ -17,6 +17,27 @@ describe("KnowYourBook", () => {
       />
     );
     expect(screen.getByRole("button", { name: "Expand book analytics" })).toBeInTheDocument();
+    expect(screen.getByText("Free, no LLM")).toBeInTheDocument();
+    expect(screen.queryByText(/instant, free/i)).toBeNull();
+  });
+
+  it("shows honest cold-load copy while event replay is computing", () => {
+    render(
+      <KnowYourBook
+        profile={null}
+        replay={null}
+        profileBusy={false}
+        replayBusy
+        onProfile={() => {}}
+        onReplay={() => {}}
+        unavailableReason={null}
+        factorMeta={{}}
+      />
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Event replay" }));
+
+    expect(screen.getByRole("button", { name: "Loading historical events…" })).toBeDisabled();
+    expect(screen.getByText(/first load can take a couple of minutes/i)).toBeInTheDocument();
   });
 
   it("uses the shared automatic-activation keyboard behavior", () => {

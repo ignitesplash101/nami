@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from app.data.sample_portfolios import Portfolio
+from app.factors import shocks as shocks_module
 from app.factors.regression import (
     InsufficientHistoryError,
     estimate_betas,
@@ -370,6 +371,43 @@ def test_portfolio_pnl_returns_json_safe_dict():
         assert isinstance(result[key], dict), f"{key} should be a dict, got {type(result[key])}"
         for v in result[key].values():
             assert isinstance(v, float), f"{key} values must be float, got {type(v)}"
+
+
+def test_portfolio_pnl_computes_full_shapley_once_and_derives_grouped(monkeypatch):
+    betas = pd.DataFrame([[1.0, 0.5]], index=["AAPL"], columns=["SPY", "VIX"])
+    portfolio = Portfolio(name="x", description="x", holdings={"AAPL": 1.0})
+    full_result = {"SPY": -0.08, "VIX": 0.03}
+    explicit_result = {"SPY": -0.05, "VIX": 0.0}
+    grouped_result = {"SPY": -0.05, "VIX": 0.0}
+    calls = {"full": 0, "derived_from": None}
+
+    def fake_full(*args, **kwargs):
+        calls["full"] += 1
+        return full_result
+
+    def fake_explicit(*args, **kwargs):
+        return explicit_result
+
+    def fake_grouped(full, *args, **kwargs):
+        calls["derived_from"] = full
+        return grouped_result
+
+    monkeypatch.setattr(shocks_module, "conditional_shapley_attribution", fake_full)
+    monkeypatch.setattr(shocks_module, "conditional_shapley_attribution_explicit", fake_explicit)
+    monkeypatch.setattr(shocks_module, "grouped_attribution_from_full", fake_grouped)
+
+    result = portfolio_pnl(
+        portfolio,
+        betas,
+        {"SPY": -0.05},
+        factor_returns_history=pd.DataFrame({"SPY": [0.0], "VIX": [0.0]}),
+    )
+
+    assert calls["full"] == 1
+    assert calls["derived_from"] is full_result
+    assert result["by_factor_conditional_shapley"] is full_result
+    assert result["by_factor_conditional_shapley_explicit"] is explicit_result
+    assert result["by_factor_conditional_shapley_grouped"] is grouped_result
 
 
 def test_portfolio_pnl_with_periphery_shocks():

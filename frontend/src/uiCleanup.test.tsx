@@ -243,15 +243,16 @@ describe("first-screen UI cleanup", () => {
         onOpenMethodology={() => {}}
         canSave
         onSave={() => {}}
-        onPin={() => {}}
         onEditRerun={() => {}}
       />
     );
 
     const actions = screen.getByRole("group", { name: "Result actions" });
     expect(actions).toContainElement(screen.getByRole("button", { name: "Save scenario" }));
-    expect(actions).toContainElement(screen.getByRole("button", { name: "Pin to compare" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: "Export all results" }));
     expect(actions).toContainElement(screen.getByRole("button", { name: /Edit & re-run/ }));
+    expect(screen.queryByRole("button", { name: /Pin to compare/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Export factor shocks as CSV/i })).toBeNull();
 
     const display = screen.getByRole("group", { name: "Value and display" });
     expect(display).toContainElement(screen.getByLabelText("Portfolio value (USD) for the dollar view"));
@@ -261,6 +262,16 @@ describe("first-screen UI cleanup", () => {
   it("opts the factor-shocks table into the fullscreen affordance", () => {
     renderResults(envelopeFixture());
     expect(screen.getByRole("button", { name: "Expand factor shocks" })).toBeInTheDocument();
+  });
+
+  it("keeps one results export in the toolbar and no section-level CSV controls", () => {
+    renderResults(envelopeFixture());
+    expect(screen.getAllByRole("button", { name: "Export all results" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /Export .* as CSV/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Positions" }));
+    expect(screen.getAllByRole("button", { name: "Export all results" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /Export .* as CSV/i })).toBeNull();
   });
 
   it("hook-order guard: a null→result flip on the SAME instance never crashes the hook count", () => {

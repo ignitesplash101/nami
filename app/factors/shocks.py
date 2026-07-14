@@ -15,7 +15,7 @@ from app.data.sample_portfolios import Portfolio
 from app.factors.attribution import (
     conditional_shapley_attribution,
     conditional_shapley_attribution_explicit,
-    conditional_shapley_attribution_grouped,
+    grouped_attribution_from_full,
     naive_attribution,
 )
 from app.factors.regression import TickerRegressionStats
@@ -155,11 +155,12 @@ def portfolio_pnl(
     by_factor_conditional_shapley_grouped: dict[str, float] | None = None
     if factor_returns_history is not None:
         factor_group_map = {name: f.group for name, f in FACTORS.items()}
-        # All three variants take the same inputs, produce independent outputs, and
-        # each is best-effort (graceful-degrade to None on exception). shap's
-        # LinearExplainer drops into SciPy/NumPy linalg which releases the GIL,
-        # so a small ThreadPoolExecutor buys real parallelism on the ~2-6s cost.
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        # Full and explicit are the only two explainer fits. Grouped attribution
+        # is a deterministic redistribution of the full result, so fitting the
+        # same full game a second time only adds latency. Both fits remain
+        # best-effort and run concurrently because the numerical work releases
+        # the GIL.
+        with ThreadPoolExecutor(max_workers=2) as pool:
             full_future = pool.submit(
                 conditional_shapley_attribution, betas, shocks, weights, factor_returns_history
             )
@@ -170,26 +171,25 @@ def portfolio_pnl(
                 weights,
                 factor_returns_history,
             )
-            grouped_future = pool.submit(
-                conditional_shapley_attribution_grouped,
-                betas,
-                shocks,
-                weights,
-                factor_returns_history,
-                factor_group_map,
-            )
             try:
                 by_factor_conditional_shapley = full_future.result()
             except Exception as exc:  # noqa: BLE001 — Shapley failure must not break a scenario
                 logger.warning("Conditional Shapley unavailable: %s", exc)
+            if by_factor_conditional_shapley is not None:
+                try:
+                    by_factor_conditional_shapley_grouped = grouped_attribution_from_full(
+                        by_factor_conditional_shapley,
+                        betas,
+                        shocks,
+                        weights,
+                        factor_group_map,
+                    )
+                except Exception as exc:  # noqa: BLE001 — grouped is best-effort
+                    logger.warning("Grouped Shapley unavailable: %s", exc)
             try:
                 by_factor_conditional_shapley_explicit = explicit_future.result()
             except Exception as exc:  # noqa: BLE001 — explicit-only is best-effort
                 logger.warning("Explicit-only Shapley unavailable: %s", exc)
-            try:
-                by_factor_conditional_shapley_grouped = grouped_future.result()
-            except Exception as exc:  # noqa: BLE001 — grouped is best-effort
-                logger.warning("Grouped Shapley unavailable: %s", exc)
 
     total_pnl = float(by_ticker_total.sum())
 

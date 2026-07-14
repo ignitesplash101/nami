@@ -15,6 +15,7 @@ from app.factors.attribution import (
     conditional_shapley_attribution,
     conditional_shapley_attribution_explicit,
     conditional_shapley_attribution_grouped,
+    grouped_attribution_from_full,
     naive_attribution,
 )
 
@@ -228,6 +229,18 @@ def test_explicit_only_no_shocks_returns_all_zero():
 
 
 # ─── Grouped Shapley ──────────────────────────────────────────────────────
+
+
+def test_grouped_attribution_can_be_derived_from_existing_full_result():
+    betas = pd.DataFrame([[2.0, 1.0, 3.0]], index=["T0"], columns=["F0", "F1", "F2"])
+    weights = pd.Series({"T0": 1.0})
+    shocks = {"F0": 0.1, "F1": 0.2, "F2": 0.3}
+    full = {"F0": 1.0, "F1": 2.0, "F2": 3.0}
+    groups = {"F0": "market", "F1": "market", "F2": "macro"}
+
+    grouped = grouped_attribution_from_full(full, betas, shocks, weights, groups)
+
+    assert grouped == pytest.approx({"F0": 1.5, "F1": 1.5, "F2": 3.0})
 
 
 def test_grouped_shapley_sums_to_factor_pnl():

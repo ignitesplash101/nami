@@ -1,6 +1,11 @@
 import { slugify } from "./format";
 
 export type CsvCell = string | number | null | undefined;
+export interface CsvBundleFile {
+  filename: string;
+  headers: string[];
+  rows: CsvCell[][];
+}
 
 // Excel formula-injection guard (OWASP): TEXT cells starting with one of these
 // get a leading apostrophe so spreadsheet apps treat them as literals. Exports
@@ -50,6 +55,28 @@ export function downloadCsv(filename: string, headers: string[], rows: CsvCell[]
   const blob = new Blob([bom + toCsv(headers, rows)], {
     type: "text/csv;charset=utf-8"
   });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadCsvZip(filename: string, files: CsvBundleFile[]): Promise<void> {
+  const { strToU8, zipSync } = await import("fflate");
+  const bom = String.fromCharCode(0xfeff);
+  const entries = Object.fromEntries(
+    files.map((file) => [file.filename, strToU8(bom + toCsv(file.headers, file.rows))])
+  );
+  const zipped = zipSync(entries, { level: 6 });
+  const bytes = zipped.buffer.slice(
+    zipped.byteOffset,
+    zipped.byteOffset + zipped.byteLength
+  ) as ArrayBuffer;
+  const blob = new Blob([bytes], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

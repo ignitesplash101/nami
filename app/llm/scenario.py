@@ -28,7 +28,6 @@ from app.factors.analogs import (
     compute_envelope_from_matrix,
     event_summaries,
     events_version,
-    fetch_event_returns_matrix,
     filter_events_as_of,
     load_events,
     summarize_events,
@@ -43,7 +42,11 @@ from app.factors.regression import (
 )
 from app.factors.shocks import analog_replay_pnl, portfolio_idio_band, portfolio_pnl
 from app.factors.universe import FACTORS, factor_universe_version
-from app.factors.warm_cache import get_event_returns_matrix, get_factor_returns_with_history
+from app.factors.warm_cache import (
+    get_event_returns_matrix,
+    get_factor_returns_with_history,
+    get_selected_event_returns_matrix,
+)
 from app.llm.adjust_validation import validate_factor_overrides
 from app.llm.gemini_client import GeminiClient
 from app.llm.prompts import PROMPT_VERSION
@@ -548,11 +551,12 @@ def _benchmark_overlay(
 ) -> ScenarioResult:
     """Attach benchmark + active-return as a NON-cached overlay (mirrors `_apply_mtm`).
 
-    The benchmark is run as a one-holding portfolio through the SAME factor history
-    and the result's own `factor_shocks` (empty periphery). This is a display
-    adornment, so it is best-effort: any failure logs and leaves the benchmark
-    fields None rather than failing the run. Pre-fetched returns/history are reused
-    on the cache-miss path; the cache-hit path fetches its own (vintage-correct).
+    The benchmark is run as a one-holding portfolio through the result's own
+    `factor_shocks` (empty periphery). Benchmark total P&L and naive attribution
+    are sufficient for active return, so conditional maps are deliberately skipped.
+    This is a display adornment: any failure logs and leaves the benchmark fields
+    None rather than failing the run. Pre-fetched returns are reused on a cache miss;
+    the cache-hit path fetches its own vintage-correct inputs.
     """
     if not benchmark_ticker:
         return result
@@ -590,7 +594,7 @@ def _benchmark_overlay(
             bench_betas,
             shocks={fs.factor: fs.shock for fs in result.factor_shocks},
             periphery_shocks={},
-            factor_returns_history=factor_history,
+            factor_returns_history=None,
         )
         return result.model_copy(
             update={
@@ -831,7 +835,7 @@ def run_scenario(
             )
         # Cardinality enforcement of record — the "2 to 5" in the selection prompt
         # is guidance only, and the pinned path bypasses the LLM entirely.
-        # Duplicate ids within bounds are caught by fetch_event_returns_matrix.
+        # Duplicate ids within bounds are caught by the selected-event helper.
         unique_ids = set(selected_ids)
         if not (MIN_SELECTED_ANALOGS <= len(unique_ids) <= MAX_SELECTED_ANALOGS):
             raise ValueError(
@@ -842,7 +846,7 @@ def run_scenario(
         progress("analogs", "done")
 
         progress("envelope", "start")
-        returns_matrix = fetch_event_returns_matrix(selected_ids, registry=events)
+        returns_matrix = get_selected_event_returns_matrix(selected_ids, registry=events)
         envelope = compute_envelope_from_matrix(returns_matrix)
         per_event_returns = _per_event_records(returns_matrix, events)
         progress("envelope", "done")

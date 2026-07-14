@@ -68,7 +68,7 @@ export function KnowYourBook({
       ) : null}
       <div className="card-heading">
         <div>
-          <p className="eyebrow">Understand this book — instant, free</p>
+          <p className="eyebrow">Free, no LLM</p>
           <h3>Pre-run analytics</h3>
           <p className="muted card-subtitle">Pure engine math, no LLM call.</p>
         </div>
@@ -95,9 +95,14 @@ export function KnowYourBook({
             onClick={fetchActive}
             disabled={busy || Boolean(unavailableReason)}
           >
-            {busy ? "Computing…" : ctaLabel}
+            {busy && tab === "events" ? "Loading historical events…" : busy ? "Computing…" : ctaLabel}
           </button>
           {unavailableReason ? <span className="field-note">{unavailableReason}</span> : null}
+          {tab === "events" && replayBusy ? (
+            <span className="field-note">
+              The first load can take a couple of minutes. Later replays reuse the shared cache.
+            </span>
+          ) : null}
         </div>
       ) : null}
 

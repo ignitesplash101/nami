@@ -19,11 +19,7 @@ import { OpsDrawer } from "./OpsDrawer";
 import { scrollBehavior } from "./motion";
 import { isCompletedUnlock, wrapWithDrawerClose } from "./railDrawerClose";
 import { useToasts } from "./toast";
-import {
-  formatPercent,
-  parseNav,
-  sameScenarioResult
-} from "./charts";
+import { formatPercent, parseNav } from "./charts";
 import { factorMap } from "./factors";
 import { buildRerunDraft } from "./rerunDraft";
 import { defaultCustomRows, holdingsFromRows } from "./holdings";
@@ -34,6 +30,8 @@ import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { ScenarioWorkspace } from "./panels/ScenarioWorkspace";
 import { ResultsPanel } from "./results/ResultsPanel";
 import type { ResultsTabKey, ValuationSort } from "./results/ResultsPanel";
+import { canEditAndRerun } from "./resultOrigin";
+import type { ResultOrigin } from "./resultOrigin";
 import { Tabs } from "./Tabs";
 import type { TabItem } from "./Tabs";
 import { useAccessSession } from "./state/useAccessSession";
@@ -46,7 +44,6 @@ import { BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
 import type { CommandAction } from "./CommandPalette";
 import { CollapsibleCard } from "./CollapsibleCard";
-import { ComparisonPanel } from "./ComparisonPanel";
 import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
 import { RunProgress, stageLabel } from "./RunProgress";
@@ -102,10 +99,6 @@ export default function App() {
   const [customUnits, setCustomUnits] = useState<"weights" | "shares">("weights");
   // Optional benchmark ticker for a custom book (sample books carry their own).
   const [customBenchmark, setCustomBenchmark] = useState("");
-  // Pin & compare: holds a full envelope for side-by-side comparison. No other
-  // setter touches it, so it survives runs, adjustments, decompositions, and
-  // saved-scenario opens until the user re-pins or clears it.
-  const [pinnedEnvelope, setPinnedEnvelope] = useState<ScenarioRunResponse | null>(null);
   // Default every book to a $100k notional value so the dollar view (P&L,
   // stressed values, position table) is populated out-of-the-box for everyone,
   // incl. visitors. Pure client-side notional scaling — NOT mark-to-market.
@@ -120,6 +113,7 @@ export default function App() {
   // equal-to-latest-close means live, earlier means backdated.
   const [asOfDate, setAsOfDate] = useState<string>("");
   const [resultEnvelope, setResultEnvelope] = useState<ScenarioRunResponse | null>(null);
+  const [resultOrigin, setResultOrigin] = useState<ResultOrigin>(null);
   const [canonicalSnapshot, setCanonicalSnapshot] = useState<ScenarioResult | null>(null);
   const [savedReloadKey, setSavedReloadKey] = useState(0);
   const [methodology, setMethodology] = useState("");
@@ -162,7 +156,10 @@ export default function App() {
     buildRunPayload,
     onRunResult: handleRunResult,
     getDecomposeSource: () => resultEnvelope?.result ?? null,
-    onDecomposeResult: (response) => setResultEnvelope(response),
+    onDecomposeResult: (response) => {
+      setResultEnvelope(response);
+      setResultOrigin("live");
+    },
     onError: (exc, action) => reportError(exc, action),
     clearError: () => setError(null)
   });
@@ -316,6 +313,7 @@ export default function App() {
               cache_key: null,
               reproducibility: rec.reproducibility
             });
+            setResultOrigin("saved");
             setCanonicalSnapshot(rec.result);
           },
           (exc) => {
@@ -488,6 +486,7 @@ export default function App() {
   // already entered (sticky knob); otherwise stays in percent.
   function handleRunResult(response: ScenarioRunResponse) {
     setResultEnvelope(response);
+    setResultOrigin("live");
     setCanonicalSnapshot(response.result);
     // A fixed expanded card in a now-hidden sub-tab would strand its global modal
     // state (scroll-lock, html flag, window Esc) invisibly — collapse it before
@@ -532,6 +531,7 @@ export default function App() {
 
   function handleAdjustmentResult(response: ScenarioRunResponse) {
     setResultEnvelope(response);
+    setResultOrigin("live");
   }
 
   // Rebuild the whole composer from any result (the saved-scenario iteration
@@ -540,7 +540,7 @@ export default function App() {
   // text, portfolio, benchmark, as-of, and NAV all ride along. `textOverride`
   // lets the adjust "rerun required" path prefill the combined text while the
   // portfolio/as-of context still rides along correctly. Never touches
-  // resultEnvelope / canonicalSnapshot / pinnedEnvelope.
+  // resultEnvelope / canonicalSnapshot.
   function handleEditRerun(result: ScenarioResult, textOverride?: string) {
     const draft = buildRerunDraft(result, {
       sampleKeys: portfolios.map((portfolio) => portfolio.key),
@@ -783,35 +783,16 @@ export default function App() {
       onOpenMethodology={openMethodology}
       canSave={Boolean(isAdmin && resultEnvelope?.reproducibility)}
       onSave={openSaveDialog}
-      onPin={() => setPinnedEnvelope(resultEnvelope)}
-      isPinned={Boolean(
-        pinnedEnvelope &&
-          resultEnvelope &&
-          sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result)
-      )}
-      onEditRerun={handleEditRerun}
+      onEditRerun={canEditAndRerun(resultOrigin) ? handleEditRerun : undefined}
     />
   );
 
   const scenarioArea = (
-    <>
-      <ScenarioWorkspace
-        hasResults={resultEnvelope != null}
-        input={scenarioInput}
-        output={scenarioOutput}
-      />
-
-      {pinnedEnvelope &&
-      resultEnvelope &&
-      !sameScenarioResult(pinnedEnvelope.result, resultEnvelope.result) ? (
-        <ComparisonPanel
-          pinned={pinnedEnvelope}
-          current={resultEnvelope}
-          factorMeta={factorMeta}
-          onUnpin={() => setPinnedEnvelope(null)}
-        />
-      ) : null}
-    </>
+    <ScenarioWorkspace
+      hasResults={resultEnvelope != null}
+      input={scenarioInput}
+      output={scenarioOutput}
+    />
   );
 
   const bookArea = (
@@ -849,6 +830,7 @@ export default function App() {
           reloadKey={savedReloadKey}
           onOpen={(env) => {
             setResultEnvelope(env);
+            setResultOrigin("saved");
             setCanonicalSnapshot(env.result);
             // Collapse any expanded card before this snap hides the Library area
             // (it would otherwise strand the card's global modal state invisibly).

@@ -26,7 +26,11 @@ China imports, prolonged trade war"). nami:
    attribution and per-name regression fit quality.
 
 Every market-context claim in the narrative is **cited** to a real source the LLM
-retrieved during grounding. Without citations the pipeline refuses to return.
+retrieved during grounding. The prompt prefers government, central-bank, regulator,
+exchange, academic/institutional-research, and major-news sources in that order. It
+discourages broker marketing, retail/crypto sites, SEO explainers, and Wikipedia when
+stronger evidence exists; this is search guidance rather than a brittle domain allowlist.
+Without citations the pipeline refuses to return.
 
 ---
 
@@ -460,6 +464,9 @@ evidence and is preserved byte-for-byte).
 ### Call 2a — Grounded narrative (`_grounded_narrative`)
 - Input: scenario + envelope + factor universe + holdings
 - **Google Search tool ON**, NO `response_schema` (free-form text)
+- Source preference: official public-market sources → academic/institutional research
+  → major financial/general news. Lower-quality marketing and explainer sources are
+  used only when stronger evidence is unavailable.
 - Output: 3-5 sentence narrative citing recent market news
 
 ### Call 2b — Structured extraction (`_extract_structured_shocks`)
@@ -790,28 +797,6 @@ Pearson r plus every per-pair row and skip reason — lives in
 [`docs/backdated-case-studies.md`](backdated-case-studies.md), it decomposes full-run
 error into its two layers: how much comes from the linear engine itself versus from the
 severity of the LLM-proposed, envelope-banded shocks.
-
----
-
-## Scenario comparison (pin & compare)
-
-Any displayed result can be **pinned**; when a different result is shown (a new run, an
-adjusted variant, an opened saved scenario, another book), a comparison panel renders:
-headline P&L for both sides plus the delta, factor shocks and contributions aligned per
-factor with deltas, and the top name-level movers. Everything is display-only arithmetic
-over the two already-computed results — no LLM calls, no server round-trip, nothing cached.
-
-Two honesty rules govern it:
-
-- **One attribution method for both sides.** The panel picks the lowest method BOTH
-  results can serve (explicit Conditional Shapley → grouped → naive algebra) and labels
-  it — a delta must never subtract one methodology's number from another's.
-- **Cross-book comparisons are disclosed.** When the two sides hold different books, the
-  panel warns that the deltas mix portfolio composition and scenario effects; tickers
-  absent from one book render as a dash (their delta treats the absent side as zero).
-  Different as-of dates are disclosed the same way (betas and analog registries differ by
-  vintage). The comparison is percent-only: notional dollar knobs are per-result and
-  would compare unlike NAVs.
 
 ---
 
