@@ -110,6 +110,6 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–31 shipped; Phase 32 (adaptive desktop and ultrawide composition) is
-the current arc. The full append-only log — one dated entry per phase with
-scope and rationale — lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).
+Phases 0–33 shipped (most recently Phase 33: seamless workflow + fullscreen
+everywhere). The full append-only log — one dated entry per phase with scope
+and rationale — lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).
