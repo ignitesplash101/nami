@@ -688,7 +688,7 @@ export default function App() {
   );
 
   const areaItems: TabItem<AreaKey>[] = [
-    { key: "scenario", label: "Scenario", content: scenarioArea },
+    { key: "scenario", label: "Scenario", content: scenarioArea, busy: isRunning || isDecomposing },
     { key: "book", label: "Your book", content: bookArea },
     ...(isAdmin ? [{ key: "library" as const, label: "Library", content: libraryArea }] : [])
   ];

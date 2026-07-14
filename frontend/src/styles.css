@@ -810,6 +810,19 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text);
   border-bottom-color: var(--accent-2);
 }
+/* currentColor (not a token): the dot must read on BOTH the active tab's
+   on-ink text and the inactive tab's muted text, in both themes, with zero
+   new tokens to keep in sync. */
+.tab-busy-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: var(--space-1);
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  animation: tab-busy-pulse 1.2s ease-in-out infinite;
+}
 
 /* Area tabs are the app's PRIMARY navigation — a filled pill-nav (active =
    crest-on-ink, the app's segmented convention), visually distinct from the
@@ -1809,6 +1822,15 @@ a {
   100% {
     transform: scale(2.4);
     opacity: 0;
+  }
+}
+@keyframes tab-busy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
   }
 }
 

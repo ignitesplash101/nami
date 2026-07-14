@@ -55,4 +55,24 @@ describe("Tabs", () => {
     fireEvent.keyDown(tablist, { key: "End" });
     expect(screen.getByRole("tab", { name: "Three" })).toHaveAttribute("aria-selected", "true");
   });
+
+  it("renders a decorative busy dot on items flagged busy, without changing the accessible name", () => {
+    const items: TabItem<Key>[] = [
+      { key: "one", label: "One", content: <p>first panel</p>, busy: true },
+      { key: "two", label: "Two", content: <p>second panel</p> }
+    ];
+    render(
+      <Tabs items={items} active="one" onChange={() => {}} ariaLabel="Demo tabs" idBase="demo" />
+    );
+
+    // Exact previous accessible name still resolves — the dot is aria-hidden
+    // and appended after the label, so it never enters the accname.
+    const busyTab = screen.getByRole("tab", { name: "One" });
+    const dot = busyTab.querySelector(".tab-busy-dot");
+    expect(dot).toBeInTheDocument();
+    expect(dot).toHaveAttribute("aria-hidden", "true");
+
+    const idleTab = screen.getByRole("tab", { name: "Two" });
+    expect(idleTab.querySelector(".tab-busy-dot")).not.toBeInTheDocument();
+  });
 });

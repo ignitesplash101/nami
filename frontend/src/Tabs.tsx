@@ -6,6 +6,11 @@ export interface TabItem<K extends string> {
   key: K;
   label: ReactNode;
   content: ReactNode;
+  /** Shows a small pulsing dot after the label (e.g. a run streaming while
+   * the user is parked on another area). Purely decorative — the dot is
+   * aria-hidden and never joins the accessible name; the app's single
+   * polite live region already carries run lifecycle to screen readers. */
+  busy?: boolean;
 }
 
 /** Accessible tablist with mounted-but-hidden panels (the CollapsibleCard
@@ -82,6 +87,7 @@ export function Tabs<K extends string>({
               onClick={() => select(item.key)}
             >
               {item.label}
+              {item.busy ? <span className="tab-busy-dot" aria-hidden="true" /> : null}
             </button>
           ))}
         </div>
