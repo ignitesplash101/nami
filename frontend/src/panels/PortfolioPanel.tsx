@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { RefObject } from "react";
-import { Table2, Upload } from "lucide-react";
+import { Table2, Trash2, Upload } from "lucide-react";
 import { toApiError, validatePortfolio } from "../api";
 import { formatPercent, normalizeTicker } from "../charts";
 import { holdingsFromRows, parseCsv } from "../holdings";
@@ -43,24 +43,49 @@ export function PortfolioPanel({
   const selected = portfolios.find((portfolio) => portfolio.key === portfolioKey);
   const hasCash = customRows.some((row) => normalizeTicker(row.ticker) === "CASH");
   const [validation, setValidation] = useState<string[]>([]);
+  const validationRequestRef = useRef(0);
   const isShares = customUnits === "shares";
+
+  function clearValidation() {
+    validationRequestRef.current += 1;
+    setValidation([]);
+  }
 
   async function validateCustom(rows = customRows) {
     // Shares mode is validated server-side (raw share counts, no sum-to-1 rule).
     if (isShares) return;
+    const requestId = validationRequestRef.current + 1;
+    validationRequestRef.current = requestId;
     try {
       const response = await validatePortfolio(holdingsFromRows(rows));
-      setValidation(response.errors);
+      if (validationRequestRef.current === requestId) setValidation(response.errors);
     } catch (exc) {
-      setValidation([toApiError(exc).message]);
+      if (validationRequestRef.current === requestId) {
+        setValidation([toApiError(exc).message]);
+      }
     }
   }
 
   async function handleCsv(file: File | null) {
     if (!file) return;
+    clearValidation();
     const rows = parseCsv(await file.text());
     setCustomRows(rows);
     await validateCustom(rows);
+  }
+
+  function updateCustomRows(rows: HoldingRow[]) {
+    clearValidation();
+    setCustomRows(rows);
+  }
+
+  function removeCustomRow(index: number) {
+    const rows = customRows.filter((_, rowIndex) => rowIndex !== index);
+    updateCustomRows(
+      rows.length
+        ? rows
+        : [{ id: `row-${crypto.randomUUID()}`, ticker: "", weight: "" }]
+    );
   }
 
   const admin = Boolean(access?.permissions.custom_portfolio);
@@ -131,7 +156,10 @@ export function PortfolioPanel({
               role="radio"
               aria-checked={!isShares}
               className={!isShares ? "active" : ""}
-              onClick={() => setCustomUnits("weights")}
+              onClick={() => {
+                clearValidation();
+                setCustomUnits("weights");
+              }}
             >
               Weights
             </button>
@@ -139,7 +167,10 @@ export function PortfolioPanel({
               role="radio"
               aria-checked={isShares}
               className={isShares ? "active" : ""}
-              onClick={() => setCustomUnits("shares")}
+              onClick={() => {
+                clearValidation();
+                setCustomUnits("shares");
+              }}
               title="Mark-to-market: enter share counts; nami marks each position to the as-of close and converts to USD"
             >
               Shares (MTM)
@@ -158,6 +189,7 @@ export function PortfolioPanel({
             <div className="holding-row holding-row-head" aria-hidden="true">
               <span>Ticker</span>
               <span>{isShares ? "Shares" : "Weight"}</span>
+              <span />
             </div>
             {customRows.map((row, index) => (
               <div className="holding-row" key={row.id}>
@@ -166,7 +198,7 @@ export function PortfolioPanel({
                   onChange={(event) => {
                     const next = [...customRows];
                     next[index] = { ...row, ticker: normalizeTicker(event.target.value) };
-                    setCustomRows(next);
+                    updateCustomRows(next);
                   }}
                   placeholder="Ticker"
                   aria-label={`Ticker for holding ${index + 1}`}
@@ -176,12 +208,24 @@ export function PortfolioPanel({
                   onChange={(event) => {
                     const next = [...customRows];
                     next[index] = { ...row, weight: event.target.value };
-                    setCustomRows(next);
+                    updateCustomRows(next);
                   }}
                   placeholder={isShares ? "100" : "0.25"}
                   inputMode={isShares ? "numeric" : "decimal"}
                   aria-label={`${isShares ? "Shares" : "Weight"} for holding ${index + 1}`}
                 />
+                <button
+                  type="button"
+                  className="holding-remove-button"
+                  aria-label={`Remove ${
+                    normalizeTicker(row.ticker)
+                      ? `${normalizeTicker(row.ticker)} holding`
+                      : `holding ${index + 1}`
+                  }`}
+                  onClick={() => removeCustomRow(index)}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                </button>
               </div>
             ))}
           </div>
@@ -189,7 +233,7 @@ export function PortfolioPanel({
             <button
               className="ghost-button"
               onClick={() =>
-                setCustomRows([
+                updateCustomRows([
                   ...customRows,
                   { id: `row-${crypto.randomUUID()}`, ticker: "", weight: "0" }
                 ])
@@ -206,7 +250,7 @@ export function PortfolioPanel({
                   : "Add a cash sleeve (zero-exposure weight)"
               }
               onClick={() =>
-                setCustomRows([
+                updateCustomRows([
                   ...customRows,
                   { id: `row-${crypto.randomUUID()}`, ticker: "CASH", weight: "0" }
                 ])
@@ -238,16 +282,54 @@ export function PortfolioPanel({
   );
 }
 
+export interface TopHoldingsSummary {
+  rows: Array<{ ticker: string; weight: number }>;
+  coverage: number;
+  remaining: number;
+}
+
+export function summarizeTopHoldings(
+  holdings: Record<string, number>,
+  limit: number
+): TopHoldingsSummary {
+  const rowLimit = Math.max(0, Math.floor(limit));
+  const entries = Object.entries(holdings)
+    .map(([ticker, weight]) => ({ ticker, weight: Number(weight) }))
+    .sort((left, right) => {
+      const byWeight = right.weight - left.weight;
+      if (byWeight !== 0) return byWeight;
+      if (left.ticker < right.ticker) return -1;
+      if (left.ticker > right.ticker) return 1;
+      return 0;
+    });
+  const rows = entries.slice(0, rowLimit);
+
+  return {
+    rows,
+    coverage: rows.reduce((total, row) => total + row.weight, 0),
+    remaining: Math.max(0, entries.length - rows.length)
+  };
+}
+
 function MiniHoldings({ holdings }: { holdings: Record<string, number> }) {
+  const summary = summarizeTopHoldings(holdings, 8);
+  if (!summary.rows.length) {
+    return <p className="muted mini-holdings-empty">No holdings available.</p>;
+  }
+
   return (
     <div className="mini-holdings">
-      {Object.entries(holdings)
-        .slice(0, 8)
-        .map(([ticker, weight]) => (
-          <span key={ticker}>
-            {ticker} {formatPercent(weight, 1)}
+      <p className="mini-holdings-summary">
+        Top {summary.rows.length} · {formatPercent(summary.coverage, 1)} of book
+      </p>
+      <div className="mini-holdings-list">
+        {summary.rows.map((row) => (
+          <span key={row.ticker}>
+            {row.ticker} {formatPercent(row.weight, 1)}
           </span>
         ))}
+        {summary.remaining ? <span>+{summary.remaining} more</span> : null}
+      </div>
     </div>
   );
 }

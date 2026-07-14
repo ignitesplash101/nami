@@ -645,10 +645,21 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .mini-holdings {
+  margin-top: 10px;
+}
+.mini-holdings-summary,
+.mini-holdings-empty {
+  margin: 0;
+  font-size: var(--step--1);
+}
+.mini-holdings-summary {
+  color: var(--muted);
+}
+.mini-holdings-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 7px;
 }
 
 .upload-control {
@@ -670,8 +681,28 @@ input[type="range"]::-moz-range-thumb {
 
 .holding-row {
   display: grid;
-  grid-template-columns: 1fr 0.8fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) 44px;
   gap: 6px;
+}
+
+.holding-remove-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-soft);
+  color: var(--muted);
+  transition: background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.holding-remove-button:hover {
+  border-color: var(--line-strong);
+  background: var(--tint-strong);
+  color: var(--text);
 }
 
 /* Column-label header for the holdings editor (paired with per-input aria-labels). */
