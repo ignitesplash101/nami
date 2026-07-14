@@ -2506,6 +2506,12 @@ a {
   width: min(360px, calc(100vw - 32px));
   pointer-events: none;
 }
+/* Two sibling regions (announced live region + silent) share the fixed stack;
+   display:contents lets their toasts flow directly into the .toast-stack flex
+   column so all toasts share the same gap regardless of which region owns them. */
+.toast-region {
+  display: contents;
+}
 .toast {
   pointer-events: auto;
   display: flex;
@@ -2530,8 +2536,26 @@ a {
   border-left-color: var(--down);
 }
 .toast-message {
+  flex: 1 1 auto;
   font-size: 0.88rem;
   line-height: 1.45;
+}
+.toast-action {
+  flex: 0 0 auto;
+  align-self: center;
+  background: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--accent-2);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-action:hover {
+  border-color: var(--accent-2);
 }
 .toast-dismiss {
   background: none;

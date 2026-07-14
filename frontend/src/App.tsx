@@ -38,6 +38,7 @@ import { useAccessSession } from "./state/useAccessSession";
 import { useFreeAnalytics } from "./state/useFreeAnalytics";
 import { useOverlayManager } from "./state/useOverlayManager";
 import { useRunController } from "./state/useRunController";
+import { useRunCompletionSignals } from "./state/useRunCompletionSignals";
 import { BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
 import type { CommandAction } from "./CommandPalette";
@@ -295,13 +296,6 @@ export default function App() {
     }
   }, [scenarioDraftMode, scenarioKey, scenarios]);
 
-  // Post-commit scroll so the freshly landed results DOM exists; gated through
-  // scrollBehavior() per the reduced-motion contract.
-  useEffect(() => {
-    if (runSerial === 0) return;
-    resultsRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
-  }, [runSerial]);
-
   // Keep ?view= linkable without a router: scenario is the clean default URL.
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -416,6 +410,10 @@ export default function App() {
   function handleRunResult(response: ScenarioRunResponse) {
     setResultEnvelope(response);
     setCanonicalSnapshot(response.result);
+    // A completed run always lands on Drivers — the answer band + waterfall — so
+    // a fresh result reads the same regardless of where the sub-tab was parked.
+    // (Adjustments/decompositions keep the current sub-tab; see the doc note.)
+    setResultsTab("drivers");
     setDisplayMode(
       response.result.portfolio_nav != null || parseNav(navInput) != null ? "usd" : "pct"
     );
@@ -649,8 +647,10 @@ export default function App() {
           onOpen={(env) => {
             setResultEnvelope(env);
             setCanonicalSnapshot(env.result);
-            // The opened result renders in the Scenario area — switch so it's visible.
+            // The opened result renders in the Scenario area — switch so it's
+            // visible, and snap the sub-tab to Drivers so it lands answered.
             setActiveArea("scenario");
+            setResultsTab("drivers");
           }}
           onForbidden={() => void refreshAccess().catch(() => {})}
         />
@@ -695,6 +695,22 @@ export default function App() {
   const effectiveArea: AreaKey = areaItems.some((item) => item.key === activeArea)
     ? activeArea
     : "scenario";
+  const isScenarioArea = effectiveArea === "scenario";
+
+  // Surface every completed run: scroll to results when the user is looking,
+  // else a visual-only toast + a scroll deferred until they return. Placed AFTER
+  // effectiveArea derives so isScenarioArea reflects the real (visible) area.
+  useRunCompletionSignals({
+    runSerial,
+    isScenarioArea,
+    headlinePnl: resultEnvelope
+      ? formatPercent(resultEnvelope.result.portfolio_pnl.total_pnl)
+      : "",
+    pushToast,
+    goToScenarioArea: () => setActiveArea("scenario"),
+    scrollToResults: () =>
+      resultsRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" })
+  });
 
   return (
     <main className="app-shell">
