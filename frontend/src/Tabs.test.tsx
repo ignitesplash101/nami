@@ -42,18 +42,29 @@ describe("Tabs", () => {
     expect(document.getElementById("demo-panel-one")).toHaveAttribute("hidden");
   });
 
-  it("moves AND selects with arrow keys (automatic activation), wrapping at ends", () => {
+  it("moves, selects, and focuses with arrow keys (automatic activation), wrapping at ends", () => {
     render(<Harness />);
-    const tablist = screen.getByRole("tablist");
-    fireEvent.keyDown(tablist, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Two" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
-    fireEvent.keyDown(tablist, { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: "Three" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key: "Home" });
-    expect(screen.getByRole("tab", { name: "One" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(tablist, { key: "End" });
-    expect(screen.getByRole("tab", { name: "Three" })).toHaveAttribute("aria-selected", "true");
+    const one = screen.getByRole("tab", { name: "One" });
+    const two = screen.getByRole("tab", { name: "Two" });
+    const three = screen.getByRole("tab", { name: "Three" });
+    one.focus();
+
+    fireEvent.keyDown(one, { key: "ArrowRight" });
+    expect(two).toHaveAttribute("aria-selected", "true");
+    expect(two).toHaveFocus();
+
+    fireEvent.keyDown(two, { key: "ArrowLeft" });
+    fireEvent.keyDown(one, { key: "ArrowLeft" });
+    expect(three).toHaveAttribute("aria-selected", "true");
+    expect(three).toHaveFocus();
+
+    fireEvent.keyDown(three, { key: "Home" });
+    expect(one).toHaveAttribute("aria-selected", "true");
+    expect(one).toHaveFocus();
+
+    fireEvent.keyDown(one, { key: "End" });
+    expect(three).toHaveAttribute("aria-selected", "true");
+    expect(three).toHaveFocus();
   });
 
   it("renders a decorative busy dot on items flagged busy, without changing the accessible name", () => {

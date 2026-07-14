@@ -1,5 +1,6 @@
 import { formatEvidence } from "../format";
 import { factorDisplayName } from "../factors";
+import { ChoiceGroup } from "../ChoiceGroup";
 import type {
   AttributionMethod,
   FactorMetadataMap,
@@ -16,13 +17,11 @@ export interface AttributionOption {
 export function AdvancedAttributionDiagnostics({
   options,
   attributionMethod,
-  setAttributionMethod,
-  moveAttribution
+  setAttributionMethod
 }: {
   options: AttributionOption[];
   attributionMethod: AttributionMethod;
   setAttributionMethod: (method: AttributionMethod) => void;
-  moveAttribution: (direction: 1 | -1) => void;
 }) {
   return (
     <details
@@ -34,35 +33,18 @@ export function AdvancedAttributionDiagnostics({
         Audit/debug views only. Full conditional is correlation credit, non-causal, and can
         assign P&L to factors with no explicit scenario shock.
       </p>
-      <div
+      <ChoiceGroup<AttributionMethod>
+        ariaLabel="Advanced attribution diagnostics"
         className="segmented"
-        role="radiogroup"
-        aria-label="Advanced attribution diagnostics"
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-            event.preventDefault();
-            moveAttribution(1);
-          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-            event.preventDefault();
-            moveAttribution(-1);
-          }
-        }}
-      >
-        {options.map((option) => (
-          <button
-            key={option.method}
-            role="radio"
-            aria-checked={attributionMethod === option.method}
-            tabIndex={attributionMethod === option.method ? 0 : -1}
-            className={attributionMethod === option.method ? "active" : ""}
-            onClick={() => setAttributionMethod(option.method)}
-            disabled={option.disabled}
-            title={option.title}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+        value={attributionMethod}
+        onChange={setAttributionMethod}
+        options={options.map((option) => ({
+          key: option.method,
+          label: option.label,
+          disabled: option.disabled,
+          title: option.title
+        }))}
+      />
     </details>
   );
 }

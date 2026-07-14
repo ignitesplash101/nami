@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Command } from "lucide-react";
 import { OverlayShell } from "./OverlayShell";
 
@@ -22,6 +22,8 @@ interface CommandPaletteProps {
  */
 export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const idBase = useId();
+  const listboxId = `${idBase}-command-listbox`;
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
@@ -47,13 +49,28 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
     action.run();
   };
 
+  const optionId = (action: CommandAction) =>
+    `${idBase}-command-${encodeURIComponent(action.id)}`;
+
+  useEffect(() => {
+    const action = filtered[active];
+    if (!isOpen || !action) return;
+    document.getElementById(optionId(action))?.scrollIntoView?.({ block: "nearest" });
+  }, [active, filtered, isOpen]);
+
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActive((i) => Math.min(i + 1, filtered.length - 1));
+      if (filtered.length) setActive((i) => (i + 1) % filtered.length);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
+      if (filtered.length) setActive((i) => (i - 1 + filtered.length) % filtered.length);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      if (filtered.length) setActive(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      if (filtered.length) setActive(filtered.length - 1);
     } else if (event.key === "Enter") {
       event.preventDefault();
       choose(filtered[active]);
@@ -77,28 +94,37 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
           className="command-input"
           placeholder="Type a command…"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setActive(0);
+          }}
           onKeyDown={onKeyDown}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          aria-controls={listboxId}
+          aria-activedescendant={filtered[active] ? optionId(filtered[active]) : undefined}
           aria-label="Command search"
         />
       </div>
-      <ul className="command-list" role="listbox" aria-label="Commands">
+      <ul id={listboxId} className="command-list" role="listbox" aria-label="Commands">
         {filtered.length === 0 ? (
           <li className="command-empty">No matching commands</li>
         ) : (
           filtered.map((action, index) => (
-            <li key={action.id}>
-              <button
-                type="button"
-                className={`command-item${index === active ? " active" : ""}`}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => choose(action)}
-                role="option"
-                aria-selected={index === active}
-              >
-                <span>{action.label}</span>
-                {action.hint ? <span className="command-hint">{action.hint}</span> : null}
-              </button>
+            <li
+              key={action.id}
+              id={optionId(action)}
+              className={`command-item${index === active ? " active" : ""}`}
+              onMouseEnter={() => setActive(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(action)}
+              role="option"
+              aria-selected={index === active}
+            >
+              <span>{action.label}</span>
+              {action.hint ? <span className="command-hint">{action.hint}</span> : null}
             </li>
           ))
         )}

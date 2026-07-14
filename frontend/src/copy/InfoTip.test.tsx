@@ -8,10 +8,13 @@ describe("InfoTip", () => {
     render(<InfoTip label="About single-name noise">explains the band</InfoTip>);
     const btn = screen.getByRole("button", { name: "About single-name noise" });
     expect(btn).toHaveAttribute("aria-expanded", "false");
+    const popoverId = btn.getAttribute("aria-controls");
+    expect(popoverId).toBeTruthy();
     expect(screen.queryByRole("note")).toBeNull();
 
     fireEvent.click(btn);
     expect(btn).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("note")).toHaveAttribute("id", popoverId);
     expect(screen.getByRole("note")).toHaveTextContent("explains the band");
 
     fireEvent.click(btn);

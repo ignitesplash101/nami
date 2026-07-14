@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Info } from "lucide-react";
 
@@ -9,6 +9,7 @@ import { Info } from "lucide-react";
  * closing alongside a drawer on one Esc press is acceptable by design). */
 export function InfoTip({ label, children }: { label: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const popoverId = `${useId()}-infotip`;
   const rootRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -34,12 +35,13 @@ export function InfoTip({ label, children }: { label: string; children: ReactNod
         className="infotip-btn"
         aria-label={label}
         aria-expanded={open}
+        aria-controls={popoverId}
         onClick={() => setOpen((prev) => !prev)}
       >
         <Info size={13} aria-hidden="true" />
       </button>
       {open ? (
-        <span className="infotip-pop" role="note">
+        <span id={popoverId} className="infotip-pop" role="note">
           {children}
         </span>
       ) : null}

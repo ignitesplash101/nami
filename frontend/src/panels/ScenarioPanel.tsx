@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import type { RefObject } from "react";
 import { AsOfDatePicker } from "../AsOfDatePicker";
+import { ChoiceGroup } from "../ChoiceGroup";
 import type { ScenarioDraftMode } from "../holdings";
 import type { AccessResponse, SampleScenario } from "../types";
 
@@ -44,35 +45,33 @@ export function ScenarioPanel({
   const seededFrom =
     scenarioDraftMode === "custom" && selectedScenario ? selectedScenario.name : null;
   const runDisabled = isRunning || !scenarioText.trim();
+  const customChoice = "__custom__";
+  const scenarioChoice = scenarioDraftMode === "custom" ? customChoice : scenarioKey;
   return (
     <section className="scenario-card">
       <div>
         <p className="eyebrow">Scenario</p>
-        <h3>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h3>
+        <h2>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h2>
       </div>
       {chipScenarios.length ? (
-        <div className="scenario-chips" role="group" aria-label="Example scenarios">
-          {chipScenarios.map((scenario) => (
-            <button
-              key={scenario.key}
-              type="button"
-              className={`chip${
-                scenarioDraftMode === "sample" && scenario.key === scenarioKey ? " active" : ""
-              }`}
-              onClick={() => onSelectScenario(scenario.key)}
-              title={scenario.text}
-            >
-              {scenario.name}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`chip${scenarioDraftMode === "custom" ? " active" : ""}`}
-            onClick={onSetCustomMode}
-          >
-            Custom
-          </button>
-        </div>
+        <ChoiceGroup
+          ariaLabel="Example scenarios"
+          className="scenario-chips"
+          optionClassName="chip"
+          value={scenarioChoice}
+          onChange={(choice) => {
+            if (choice === customChoice) onSetCustomMode();
+            else onSelectScenario(choice);
+          }}
+          options={[
+            ...chipScenarios.map((scenario) => ({
+              key: scenario.key,
+              label: scenario.name,
+              title: scenario.text
+            })),
+            { key: customChoice, label: "Custom" }
+          ]}
+        />
       ) : null}
       <div className="scenario-grid visitor-scenario-grid">
         <label className="scenario-text">

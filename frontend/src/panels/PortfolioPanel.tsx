@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Table2, Trash2, Upload } from "lucide-react";
 import { toApiError, validatePortfolio } from "../api";
+import { ChoiceGroup } from "../ChoiceGroup";
 import { formatPercent, normalizeTicker } from "../charts";
 import { holdingsFromRows, parseCsv } from "../holdings";
 import type { HoldingRow, HoldingUnits, PortfolioMode } from "../holdings";
@@ -98,20 +99,16 @@ export function PortfolioPanel({
         <span>Portfolio</span>
       </div>
       {admin ? (
-        <div className="segmented">
-          <button
-            className={portfolioMode === "sample" ? "active" : ""}
-            onClick={() => setPortfolioMode("sample")}
-          >
-            Sample
-          </button>
-          <button
-            className={portfolioMode === "custom" ? "active" : ""}
-            onClick={() => setPortfolioMode("custom")}
-          >
-            Custom
-          </button>
-        </div>
+        <ChoiceGroup<PortfolioMode>
+          ariaLabel="Portfolio source"
+          className="segmented"
+          value={portfolioMode}
+          onChange={setPortfolioMode}
+          options={[
+            { key: "sample", label: "Sample" },
+            { key: "custom", label: "Custom" }
+          ]}
+        />
       ) : null}
 
       {portfolioMode === "sample" || !admin ? (
@@ -153,31 +150,24 @@ export function PortfolioPanel({
               aria-label="Benchmark ticker"
             />
           </label>
-          <div className="segmented" role="radiogroup" aria-label="Holding units">
-            <button
-              role="radio"
-              aria-checked={!isShares}
-              className={!isShares ? "active" : ""}
-              onClick={() => {
-                beginPortfolioOperation();
-                setCustomUnits("weights");
-              }}
-            >
-              Weights
-            </button>
-            <button
-              role="radio"
-              aria-checked={isShares}
-              className={isShares ? "active" : ""}
-              onClick={() => {
-                beginPortfolioOperation();
-                setCustomUnits("shares");
-              }}
-              title="Mark-to-market: enter share counts; nami marks each position to the as-of close and converts to USD"
-            >
-              Shares (MTM)
-            </button>
-          </div>
+          <ChoiceGroup<HoldingUnits>
+            ariaLabel="Holding units"
+            className="segmented"
+            value={customUnits}
+            onChange={(units) => {
+              beginPortfolioOperation();
+              setCustomUnits(units);
+            }}
+            options={[
+              { key: "weights", label: "Weights" },
+              {
+                key: "shares",
+                label: "Shares (MTM)",
+                title:
+                  "Mark-to-market: enter share counts; nami marks each position to the as-of close and converts to USD"
+              }
+            ]}
+          />
           <div className="upload-control">
             <Upload size={15} />
             <input

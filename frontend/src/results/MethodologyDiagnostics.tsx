@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { nextEnabledMethod } from "../attributionNav";
 import {
   buildWaterfallData,
   factorReasoningRows,
@@ -7,6 +6,7 @@ import {
   hasCorrelationCrossCredit
 } from "../charts";
 import { FullscreenButton } from "../FullscreenButton";
+import { ChoiceGroup } from "../ChoiceGroup";
 import { TableScroll } from "../TableScroll";
 import { fullscreenChartHeight, useFullscreen, useViewportHeight } from "../useFullscreen";
 import type { AttributionOption } from "./AttributionControl";
@@ -53,10 +53,6 @@ export function MethodologyDiagnostics({
     }
   ];
 
-  function move(direction: 1 | -1) {
-    setMethod(nextEnabledMethod(options, method, direction));
-  }
-
   const waterfall = buildWaterfallData(result, method, factorMeta);
   const rows = factorReasoningRows(result, method, factorMeta);
 
@@ -71,35 +67,18 @@ export function MethodologyDiagnostics({
           </p>
         </div>
         <div className="card-heading-actions">
-          <div
+          <ChoiceGroup<AttributionMethod>
+            ariaLabel="Diagnostic attribution method"
             className="segmented"
-            role="radiogroup"
-            aria-label="Diagnostic attribution method"
-            onKeyDown={(event) => {
-              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                event.preventDefault();
-                move(1);
-              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                event.preventDefault();
-                move(-1);
-              }
-            }}
-          >
-            {options.map((option) => (
-              <button
-                key={option.method}
-                role="radio"
-                aria-checked={method === option.method}
-                tabIndex={method === option.method ? 0 : -1}
-                className={method === option.method ? "active" : ""}
-                onClick={() => setMethod(option.method)}
-                disabled={option.disabled}
-                title={option.title}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+            value={method}
+            onChange={setMethod}
+            options={options.map((option) => ({
+              key: option.method,
+              label: option.label,
+              disabled: option.disabled,
+              title: option.title
+            }))}
+          />
           <FullscreenButton controller={fullscreen} surface="diagnostics waterfall" />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getTickerMetadata } from "../api";
 import { formatPercent, groupByTag } from "../charts";
+import { ChoiceGroup } from "../ChoiceGroup";
 import { CollapsibleCard } from "../CollapsibleCard";
 import { TableScroll } from "../TableScroll";
 import type { ScenarioResult, TickerMetadata } from "../types";
@@ -38,24 +39,16 @@ export function ExposureBreakdown({ result }: { result: ScenarioResult }) {
       fullscreenable
       surface="exposure breakdown"
       action={
-        <div className="segmented" role="radiogroup" aria-label="Exposure dimension">
-          <button
-            role="radio"
-            aria-checked={dimension === "sector"}
-            className={dimension === "sector" ? "active" : ""}
-            onClick={() => setDimension("sector")}
-          >
-            Sector
-          </button>
-          <button
-            role="radio"
-            aria-checked={dimension === "country"}
-            className={dimension === "country" ? "active" : ""}
-            onClick={() => setDimension("country")}
-          >
-            Country
-          </button>
-        </div>
+        <ChoiceGroup
+          ariaLabel="Exposure dimension"
+          className="segmented"
+          value={dimension}
+          onChange={setDimension}
+          options={[
+            { key: "sector", label: "Sector" },
+            { key: "country", label: "Country" }
+          ]}
+        />
       }
     >
       <TableScroll>

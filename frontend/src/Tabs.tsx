@@ -36,6 +36,7 @@ export function Tabs<K extends string>({
   className?: string;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef(new Map<K, HTMLButtonElement>());
   const hasOverflow = useScrollFade(listRef);
 
   function select(key: K) {
@@ -47,7 +48,13 @@ export function Tabs<K extends string>({
   function move(direction: 1 | -1) {
     const index = items.findIndex((item) => item.key === active);
     const next = items[(index + direction + items.length) % items.length];
+    tabRefs.current.get(next.key)?.focus();
     select(next.key);
+  }
+
+  function focusAndSelect(key: K) {
+    tabRefs.current.get(key)?.focus();
+    select(key);
   }
 
   return (
@@ -67,16 +74,20 @@ export function Tabs<K extends string>({
               move(-1);
             } else if (event.key === "Home") {
               event.preventDefault();
-              select(items[0].key);
+              focusAndSelect(items[0].key);
             } else if (event.key === "End") {
               event.preventDefault();
-              select(items[items.length - 1].key);
+              focusAndSelect(items[items.length - 1].key);
             }
           }}
         >
           {items.map((item) => (
             <button
               key={item.key}
+              ref={(node) => {
+                if (node) tabRefs.current.set(item.key, node);
+                else tabRefs.current.delete(item.key);
+              }}
               type="button"
               role="tab"
               id={`${idBase}-tab-${item.key}`}

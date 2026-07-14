@@ -752,7 +752,8 @@ export default function App() {
   );
 
   const libraryArea = (
-    <>
+    <section className="library-area" aria-labelledby="library-area-heading">
+      <h2 id="library-area-heading" className="area-heading">Library</h2>
       <CollapsibleCard
         className="panel-shell"
         eyebrow="Library"
@@ -805,7 +806,7 @@ export default function App() {
           }}
         />
       </CollapsibleCard>
-    </>
+    </section>
   );
 
   const areaItems: TabItem<AreaKey>[] = [

@@ -1,6 +1,7 @@
 import { Download } from "lucide-react";
 import { useRef, useState } from "react";
 import { buildBookProfileRows, formatPercent } from "./charts";
+import { ChoiceGroup } from "./ChoiceGroup";
 import { GLOSSARY } from "./copy/glossary";
 import { InfoTip } from "./copy/InfoTip";
 import { csvFilename, downloadCsv } from "./csv";
@@ -50,26 +51,16 @@ export function KnowYourBook({
           <p className="muted card-subtitle">Pure engine math, no LLM call.</p>
         </div>
         <div className="card-heading-actions">
-          <div className="segmented" role="radiogroup" aria-label="Pre-run analytic">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={tab === "profile"}
-              className={tab === "profile" ? "active" : ""}
-              onClick={() => setTab("profile")}
-            >
-              Book profile
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={tab === "events"}
-              className={tab === "events" ? "active" : ""}
-              onClick={() => setTab("events")}
-            >
-              Event replay
-            </button>
-          </div>
+          <ChoiceGroup
+            ariaLabel="Pre-run analytic"
+            className="segmented"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { key: "profile", label: "Book profile" },
+              { key: "events", label: "Event replay" }
+            ]}
+          />
           <FullscreenButton controller={fs} surface="book analytics" />
         </div>
       </div>

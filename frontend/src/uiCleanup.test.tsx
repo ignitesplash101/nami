@@ -145,10 +145,17 @@ describe("first-screen UI cleanup", () => {
       />
     );
 
-    expect(screen.getByRole("group", { name: "Example scenarios" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Example scenarios" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "COVID-like pandemic shock" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Explore a stress narrative" })
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText("Sample scenario")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Scenario text/)).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Custom" })).toBeInTheDocument();
     expect(document.querySelector(".scenario-controls")).toContainElement(
       screen.getByRole("button", { name: /Run hypothetical stress/ })
     );

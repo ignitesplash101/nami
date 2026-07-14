@@ -21,6 +21,7 @@ import { factorDescription } from "../factors";
 import { formatFxRate, formatMarkPrice, formatShares } from "../format";
 import { AdjustmentPanel } from "../AdjustmentPanel";
 import { CollapsibleCard } from "../CollapsibleCard";
+import { ChoiceGroup } from "../ChoiceGroup";
 import { EvidenceBlock } from "../EvidenceBlock";
 import { FullscreenButton } from "../FullscreenButton";
 import { TableScroll } from "../TableScroll";
@@ -354,43 +355,25 @@ export function ResultsPanel({
                 </p>
               </div>
               <div className="card-heading-actions">
-                <div
+                <ChoiceGroup<AttributionZoom>
+                  ariaLabel="Attribution view"
                   className="segmented"
-                  role="radiogroup"
-                  aria-label="Attribution view"
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === "ArrowRight" ||
-                      event.key === "ArrowDown" ||
-                      event.key === "ArrowLeft" ||
-                      event.key === "ArrowUp"
-                    ) {
-                      event.preventDefault();
-                      setZoom(zoom === "factor" ? "group" : "factor");
+                  value={zoom}
+                  onChange={setZoom}
+                  options={[
+                    {
+                      key: "factor",
+                      label: "By factor",
+                      title: "One bar per shocked factor"
+                    },
+                    {
+                      key: "group",
+                      label: "By group",
+                      title:
+                        "The same numbers rolled up into market / sector / style / macro"
                     }
-                  }}
-                >
-                  <button
-                    role="radio"
-                    aria-checked={zoom === "factor"}
-                    tabIndex={zoom === "factor" ? 0 : -1}
-                    className={zoom === "factor" ? "active" : ""}
-                    onClick={() => setZoom("factor")}
-                    title="One bar per shocked factor"
-                  >
-                    By factor
-                  </button>
-                  <button
-                    role="radio"
-                    aria-checked={zoom === "group"}
-                    tabIndex={zoom === "group" ? 0 : -1}
-                    className={zoom === "group" ? "active" : ""}
-                    onClick={() => setZoom("group")}
-                    title="The same numbers rolled up into market / sector / style / macro"
-                  >
-                    By group
-                  </button>
-                </div>
+                  ]}
+                />
                 <FullscreenButton
                   controller={waterfallFullscreen}
                   surface="contribution waterfall"
@@ -830,26 +813,16 @@ export function ResultsPanel({
             </span>
           ) : null}
           {hasNav ? (
-            <div className="segmented results-units" role="radiogroup" aria-label="P&L units">
-              <button
-                role="radio"
-                aria-checked={!showDollars}
-                className={!showDollars ? "active" : ""}
-                onClick={() => setDisplayMode("pct")}
-                title="Show P&L as percentages"
-              >
-                %
-              </button>
-              <button
-                role="radio"
-                aria-checked={showDollars}
-                className={showDollars ? "active" : ""}
-                onClick={() => setDisplayMode("usd")}
-                title="Show P&L in dollars"
-              >
-                $
-              </button>
-            </div>
+            <ChoiceGroup
+              ariaLabel="P&L units"
+              className="segmented results-units"
+              value={displayMode}
+              onChange={setDisplayMode}
+              options={[
+                { key: "pct", label: "%", title: "Show P&L as percentages" },
+                { key: "usd", label: "$", title: "Show P&L in dollars" }
+              ]}
+            />
           ) : null}
         </div>
         {envelope.reproducibility ? (

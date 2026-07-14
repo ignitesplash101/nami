@@ -38,7 +38,7 @@ export function BookArea({
     <section className="book-area" aria-label="Your book">
       <div className="result-card book-header">
         <p className="eyebrow">Your book</p>
-        <h3>{name}</h3>
+        <h2>{name}</h2>
         {description ? <p className="muted">{description}</p> : null}
         {!isCustomBook && selectedPortfolio?.benchmark ? (
           <p className="muted">
