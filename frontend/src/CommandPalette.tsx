@@ -109,26 +109,27 @@ export function CommandPalette({ isOpen, onClose, actions }: CommandPaletteProps
         />
       </div>
       <ul id={listboxId} className="command-list" role="listbox" aria-label="Commands">
-        {filtered.length === 0 ? (
-          <li className="command-empty">No matching commands</li>
-        ) : (
-          filtered.map((action, index) => (
-            <li
-              key={action.id}
-              id={optionId(action)}
-              className={`command-item${index === active ? " active" : ""}`}
-              onMouseEnter={() => setActive(index)}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => choose(action)}
-              role="option"
-              aria-selected={index === active}
-            >
-              <span>{action.label}</span>
-              {action.hint ? <span className="command-hint">{action.hint}</span> : null}
-            </li>
-          ))
-        )}
+        {filtered.map((action, index) => (
+          <li
+            key={action.id}
+            id={optionId(action)}
+            className={`command-item${index === active ? " active" : ""}`}
+            onMouseEnter={() => setActive(index)}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => choose(action)}
+            role="option"
+            aria-selected={index === active}
+          >
+            <span>{action.label}</span>
+            {action.hint ? <span className="command-hint">{action.hint}</span> : null}
+          </li>
+        ))}
       </ul>
+      {filtered.length === 0 ? (
+        <p className="command-empty" role="status" aria-live="polite">
+          No matching commands
+        </p>
+      ) : null}
     </OverlayShell>
   );
 }

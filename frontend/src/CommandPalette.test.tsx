@@ -77,7 +77,12 @@ describe("CommandPalette", () => {
     const input = screen.getByRole("combobox", { name: "Command search" });
     fireEvent.change(input, { target: { value: "no such command" } });
 
-    expect(screen.getByText("No matching commands")).toBeInTheDocument();
+    const listbox = screen.getByRole("listbox", { name: "Commands" });
+    const emptyStatus = screen.getByRole("status");
+    expect(emptyStatus).toHaveTextContent("No matching commands");
+    expect(emptyStatus).toHaveAttribute("aria-live", "polite");
+    expect(listbox).toBeEmptyDOMElement();
+    expect(listbox).not.toContainElement(emptyStatus);
     expect(input).not.toHaveAttribute("aria-activedescendant");
     expect(() => {
       fireEvent.keyDown(input, { key: "ArrowDown" });

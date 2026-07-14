@@ -22,6 +22,25 @@ function Harness() {
   );
 }
 
+function DisabledSelectionHarness() {
+  const [value, setValue] = useState<Choice>("beta");
+  return (
+    <>
+      <button type="button" onClick={() => setValue("beta")}>Reset disabled selection</button>
+      <ChoiceGroup
+        ariaLabel="Disabled selection"
+        value={value}
+        onChange={setValue}
+        options={[
+          { key: "alpha", label: "Alpha" },
+          { key: "beta", label: "Beta", disabled: true },
+          { key: "gamma", label: "Gamma" }
+        ]}
+      />
+    </>
+  );
+}
+
 describe("ChoiceGroup", () => {
   it("uses radio semantics and a single roving tab stop", () => {
     render(<Harness />);
@@ -67,5 +86,38 @@ describe("ChoiceGroup", () => {
 
     fireEvent.click(gamma);
     expect(gamma).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("navigates from the focused fallback when the controlled value becomes disabled", () => {
+    render(<DisabledSelectionHarness />);
+    const reset = screen.getByRole("button", { name: "Reset disabled selection" });
+    const alpha = screen.getByRole("radio", { name: "Alpha" });
+    const beta = screen.getByRole("radio", { name: "Beta" });
+    const gamma = screen.getByRole("radio", { name: "Gamma" });
+    expect(beta).toHaveAttribute("aria-checked", "true");
+    expect(alpha).toHaveAttribute("tabindex", "0");
+
+    alpha.focus();
+    fireEvent.keyDown(alpha, { key: "ArrowRight" });
+    expect(gamma).toHaveAttribute("aria-checked", "true");
+    expect(gamma).toHaveFocus();
+
+    fireEvent.click(reset);
+    alpha.focus();
+    fireEvent.keyDown(alpha, { key: "ArrowLeft" });
+    expect(gamma).toHaveAttribute("aria-checked", "true");
+    expect(gamma).toHaveFocus();
+
+    fireEvent.click(reset);
+    alpha.focus();
+    fireEvent.keyDown(alpha, { key: "End" });
+    expect(gamma).toHaveAttribute("aria-checked", "true");
+    expect(gamma).toHaveFocus();
+
+    fireEvent.click(reset);
+    alpha.focus();
+    fireEvent.keyDown(alpha, { key: "Home" });
+    expect(alpha).toHaveAttribute("aria-checked", "true");
+    expect(alpha).toHaveFocus();
   });
 });

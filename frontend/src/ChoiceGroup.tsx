@@ -38,14 +38,17 @@ export function ChoiceGroup<K extends string>({
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (!enabled.length) return;
-    const currentIndex = enabled.findIndex((option) => option.key === value);
+    const focusedIndex = enabled.findIndex(
+      (option) => optionRefs.current.get(option.key) === document.activeElement
+    );
+    const tabStopIndex = enabled.findIndex((option) => option.key === tabStopKey);
+    const currentIndex = focusedIndex >= 0 ? focusedIndex : Math.max(0, tabStopIndex);
     let next: ChoiceOption<K> | undefined;
 
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       next = enabled[(currentIndex + 1) % enabled.length];
     } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      const previousIndex =
-        currentIndex < 0 ? enabled.length - 1 : (currentIndex - 1 + enabled.length) % enabled.length;
+      const previousIndex = (currentIndex - 1 + enabled.length) % enabled.length;
       next = enabled[previousIndex];
     } else if (event.key === "Home") {
       next = enabled[0];

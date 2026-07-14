@@ -906,19 +906,28 @@ input[type="range"]::-moz-range-thumb {
   margin-left: 4px;
 }
 .infotip-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   color: var(--muted);
   padding: 2px;
-  min-width: 44px;
-  min-height: 44px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   border-radius: 50%;
   cursor: pointer;
   transition:
     color var(--dur-fast) var(--ease),
     background var(--dur-fast) var(--ease);
+}
+.infotip-btn::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
 }
 .infotip-btn:hover,
 .infotip-btn[aria-expanded="true"] {
@@ -3491,7 +3500,7 @@ th.sortable.num button {
   /* The scenario-name button was padding: 0 — bump for a real tap area
      now that it's more isolated after the head stacks. */
   .saved-open {
-    min-height: 40px;
+    min-height: 44px;
     padding: 6px 0;
   }
 
