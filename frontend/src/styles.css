@@ -2955,6 +2955,12 @@ a {
   .workbench {
     padding: 16px 14px 32px;
   }
+  .topbar-nav-cluster > div {
+    min-width: 0;
+  }
+  .topbar h1 {
+    white-space: normal;
+  }
   .results-toolbar-actions,
   .results-toolbar-display {
     width: 100%;

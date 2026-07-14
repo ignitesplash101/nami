@@ -67,5 +67,17 @@ jobs:
       - name: Vitest
         run: npm test
 
+      - name: Bundle budget unit tests
+        run: npm run test:budget
+
       - name: Production build
         run: npm run build
+
+      - name: Enforce bundle budgets
+        run: npm run bundle:check
+
+      - name: Install browser runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Deterministic browser suite
+        run: npm run e2e
