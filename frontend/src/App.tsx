@@ -220,11 +220,13 @@ export default function App() {
     opsDrawer,
     purgeConfirm,
     saveDialog,
+    savedDeleteConfirm,
     openMethodology,
     openRailDrawer,
     openOpsDrawer,
     openCommandPalette,
     openSaveDialog,
+    openSavedDeleteConfirm,
     requestPurge
   } = useOverlayManager();
   const [purgeBusy, setPurgeBusy] = useState(false);
@@ -810,6 +812,7 @@ export default function App() {
       selectedPortfolio={selectedPortfolio}
       isCustomBook={portfolioMode === "custom"}
       customName={customName}
+      customBenchmark={customBenchmark}
       profile={bookProfile}
       replay={eventsReplay}
       profileBusy={profileBusy}
@@ -849,6 +852,9 @@ export default function App() {
             setResultsTab("drivers");
           }}
           onForbidden={() => void refreshAccess().catch(() => {})}
+          isDeleteConfirmOpen={savedDeleteConfirm.isOpen}
+          onOpenDeleteConfirm={openSavedDeleteConfirm}
+          onCloseDeleteConfirm={savedDeleteConfirm.close}
         />
       </CollapsibleCard>
 

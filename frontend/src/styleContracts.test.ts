@@ -56,4 +56,32 @@ describe("responsive composition contracts", () => {
       /@media\s*\(min-width:\s*1600px\)[\s\S]*?\.book-profile-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*2fr\)\s+minmax\(0,\s*3fr\)/
     );
   });
+
+  it("places the phone toolbar alignment override after the desktop baseline", () => {
+    const baseline = styles.search(
+      /\.results-toolbar-display\s*\{\s*justify-content:\s*flex-end;/
+    );
+    const phoneOverrides = Array.from(
+      styles.matchAll(
+        /\.results-toolbar-display\s*\{\s*width:\s*100%;\s*justify-content:\s*flex-start;/g
+      )
+    );
+    const phoneOverride = phoneOverrides.at(-1)?.index ?? -1;
+
+    expect(baseline).toBeGreaterThan(-1);
+    expect(phoneOverride).toBeGreaterThan(baseline);
+  });
+
+  it("lets the scenario-chip wrapper span the ultrawide composer grid", () => {
+    expect(styles).toMatch(
+      /\.scenario-workspace\.is-first-run\s+\.scenario-chips-wrap\s*\{\s*grid-column:\s*1\s*\/\s*-1;/
+    );
+  });
+
+  it("keeps standalone overlay state out of the saved-scenario panel", () => {
+    const savedScenariosPanel = readFileSync("src/SavedScenariosPanel.tsx", "utf8");
+
+    expect(savedScenariosPanel).not.toContain('from "./useOverlay"');
+    expect(savedScenariosPanel).not.toMatch(/\bconfirmDelete\.open\(/);
+  });
 });

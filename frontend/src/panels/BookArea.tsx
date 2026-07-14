@@ -8,6 +8,7 @@ export function BookArea({
   selectedPortfolio,
   isCustomBook,
   customName,
+  customBenchmark,
   profile,
   replay,
   profileBusy,
@@ -20,6 +21,7 @@ export function BookArea({
   selectedPortfolio?: SamplePortfolio;
   isCustomBook: boolean;
   customName: string;
+  customBenchmark?: string;
   profile: BookProfile | null;
   replay: EventsReplay | null;
   profileBusy: boolean;
@@ -33,13 +35,16 @@ export function BookArea({
   const description = isCustomBook
     ? "Your custom holdings — edit them in the portfolio setup."
     : selectedPortfolio?.description ?? "";
+  const benchmark = isCustomBook
+    ? customBenchmark?.trim() || null
+    : selectedPortfolio?.benchmark ?? null;
   return (
     <section className="book-area" aria-label="Your book">
       <h2 className="area-heading">Your book</h2>
       <KnowYourBook
         bookName={name}
         bookDescription={description}
-        benchmark={!isCustomBook ? selectedPortfolio?.benchmark ?? null : null}
+        benchmark={benchmark}
         profile={profile}
         replay={replay}
         profileBusy={profileBusy}

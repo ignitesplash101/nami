@@ -2958,8 +2958,6 @@ a {
   .results-toolbar-actions,
   .results-toolbar-display {
     width: 100%;
-    justify-content: flex-start;
-    margin-left: 0;
   }
   .topbar h1 {
     font-size: 1.35rem;
@@ -3252,7 +3250,7 @@ a {
     align-content: start;
   }
   .scenario-workspace.is-first-run .scenario-card > :first-child,
-  .scenario-workspace.is-first-run .scenario-chips {
+  .scenario-workspace.is-first-run .scenario-chips-wrap {
     grid-column: 1 / -1;
   }
   .scenario-workspace.is-first-run .scenario-grid {
@@ -3282,6 +3280,13 @@ a {
 .results-toolbar-display {
   justify-content: flex-end;
   margin-left: auto;
+}
+@media (max-width: 640px) {
+  .results-toolbar-display {
+    width: 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
 }
 /* Compact %/$ units toggle in the results toolbar (reuses .segmented styling). */
 .results-units {

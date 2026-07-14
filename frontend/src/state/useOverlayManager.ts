@@ -31,6 +31,7 @@ export function useOverlayManager() {
   const opsDrawer = useOverlay();
   const purgeConfirm = useOverlay();
   const saveDialog = useOverlay();
+  const savedDeleteConfirm = useOverlay();
 
   const closeAllOverlays = useCallback(() => {
     methodologyDrawer.close();
@@ -39,13 +40,15 @@ export function useOverlayManager() {
     opsDrawer.close();
     purgeConfirm.close();
     saveDialog.close();
+    savedDeleteConfirm.close();
   }, [
     commandPalette.close,
     methodologyDrawer.close,
     opsDrawer.close,
     purgeConfirm.close,
     railDrawer.close,
-    saveDialog.close
+    saveDialog.close,
+    savedDeleteConfirm.close
   ]);
 
   const prepareOverlayOpen = useCallback(() => {
@@ -82,6 +85,11 @@ export function useOverlayManager() {
     saveDialog.open();
   }
 
+  function openSavedDeleteConfirm() {
+    prepareOverlayOpen();
+    savedDeleteConfirm.open();
+  }
+
   // Purge flow: the ops drawer CLOSES before the confirm dialog opens — two
   // useOverlay overlays must never be open at once (window-level Esc would
   // close both together).
@@ -111,11 +119,13 @@ export function useOverlayManager() {
     opsDrawer,
     purgeConfirm,
     saveDialog,
+    savedDeleteConfirm,
     openMethodology,
     openRailDrawer,
     openOpsDrawer,
     openCommandPalette,
     openSaveDialog,
+    openSavedDeleteConfirm,
     requestPurge
   };
 }

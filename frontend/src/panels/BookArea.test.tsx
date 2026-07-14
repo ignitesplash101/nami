@@ -33,4 +33,26 @@ describe("BookArea", () => {
     expect(analytics).toHaveTextContent("Benchmark: SPY");
     expect(document.querySelector(".book-header")).toBeNull();
   });
+
+  it("keeps the trimmed custom benchmark in the custom-book context", () => {
+    render(
+      <BookArea
+        isCustomBook
+        customName="Tokyo income"
+        customBenchmark="  ACWI  "
+        profile={null}
+        replay={null}
+        profileBusy={false}
+        replayBusy={false}
+        onProfile={() => {}}
+        onReplay={() => {}}
+        unavailableReason={null}
+        factorMeta={{}}
+      />
+    );
+
+    const analytics = screen.getByLabelText("Understand this book");
+    expect(analytics).toHaveTextContent("Tokyo income");
+    expect(analytics).toHaveTextContent("Benchmark: ACWI");
+  });
 });

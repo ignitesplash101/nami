@@ -123,67 +123,67 @@ function ProfileBody({
   return (
     <div className="know-book-body book-profile-layout" aria-label="Book profile">
       <div className="book-profile-summary">
-      <p className="muted book-profile-asof">
-        {profile.portfolio_name} · as of {profile.as_of} · {profile.n_factors} factors
-      </p>
-      <div className="exposure-bars" role="list" aria-label="Portfolio factor exposures">
-        {rows.map((row) => (
-          <div key={row.key} className="exposure-bar-row" role="listitem">
-            <span className="exposure-bar-label">{row.label}</span>
-            <span className="exposure-bar-track" aria-hidden="true">
-              <span
-                className={`exposure-bar-fill ${row.exposure < 0 ? "neg" : "pos"}`}
-                style={{ width: `${(Math.abs(row.exposure) / maxAbs) * 100}%` }}
-              />
-            </span>
-            <span className="exposure-bar-value">{row.exposure.toFixed(2)}</span>
-          </div>
-        ))}
-      </div>
-      <p className="hint">
-        How hard a 1% move in each factor would hit this book (top {rows.length} of{" "}
-        {profile.n_factors} by size)
-        <InfoTip label="About portfolio beta">
-          {GLOSSARY.portfolioBeta.detail} Shown ±{formatPercent(profile.idio_band_weekly)} weekly
-          idio — a dispersion floor, not a confidence interval.
-        </InfoTip>
-      </p>
+        <p className="muted book-profile-asof">
+          {profile.portfolio_name} · as of {profile.as_of} · {profile.n_factors} factors
+        </p>
+        <div className="exposure-bars" role="list" aria-label="Portfolio factor exposures">
+          {rows.map((row) => (
+            <div key={row.key} className="exposure-bar-row" role="listitem">
+              <span className="exposure-bar-label">{row.label}</span>
+              <span className="exposure-bar-track" aria-hidden="true">
+                <span
+                  className={`exposure-bar-fill ${row.exposure < 0 ? "neg" : "pos"}`}
+                  style={{ width: `${(Math.abs(row.exposure) / maxAbs) * 100}%` }}
+                />
+              </span>
+              <span className="exposure-bar-value">{row.exposure.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+        <p className="hint">
+          How hard a 1% move in each factor would hit this book (top {rows.length} of{" "}
+          {profile.n_factors} by size)
+          <InfoTip label="About portfolio beta">
+            {GLOSSARY.portfolioBeta.detail} Shown ±{formatPercent(profile.idio_band_weekly)} weekly
+            idio — a dispersion floor, not a confidence interval.
+          </InfoTip>
+        </p>
       </div>
       <div className="book-profile-diagnostics">
-      <TableScroll>
-        <table>
-          <thead>
-            <tr>
-              <th>Ticker</th>
-              <th className="num">Weight</th>
-              <th className="num">
-                R² adj
-                <InfoTip label="About adjusted R-squared">{GLOSSARY.rSquaredAdj.plain}</InfoTip>
-              </th>
-              <th className="num">Weeks</th>
-              <th className="num">
-                Idio vol (wk)
-                <InfoTip label="About idiosyncratic volatility">
-                  {GLOSSARY.idioVolWeekly.plain}
-                </InfoTip>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {profile.per_name.map((row) => (
-              <tr key={row.ticker}>
-                <td>{row.ticker}</td>
-                <td className="num">{formatPercent(row.weight, 1)}</td>
-                <td className="num">{row.r2_adj != null ? row.r2_adj.toFixed(2) : "—"}</td>
-                <td className="num">{row.n_obs ?? "—"}</td>
-                <td className="num">
-                  {row.idio_vol_weekly != null ? formatPercent(row.idio_vol_weekly) : "—"}
-                </td>
+        <TableScroll>
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th className="num">Weight</th>
+                <th className="num">
+                  R² adj
+                  <InfoTip label="About adjusted R-squared">{GLOSSARY.rSquaredAdj.plain}</InfoTip>
+                </th>
+                <th className="num">Weeks</th>
+                <th className="num">
+                  Idio vol (wk)
+                  <InfoTip label="About idiosyncratic volatility">
+                    {GLOSSARY.idioVolWeekly.plain}
+                  </InfoTip>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </TableScroll>
+            </thead>
+            <tbody>
+              {profile.per_name.map((row) => (
+                <tr key={row.ticker}>
+                  <td>{row.ticker}</td>
+                  <td className="num">{formatPercent(row.weight, 1)}</td>
+                  <td className="num">{row.r2_adj != null ? row.r2_adj.toFixed(2) : "—"}</td>
+                  <td className="num">{row.n_obs ?? "—"}</td>
+                  <td className="num">
+                    {row.idio_vol_weekly != null ? formatPercent(row.idio_vol_weekly) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
       </div>
     </div>
   );

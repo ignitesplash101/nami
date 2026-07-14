@@ -43,12 +43,35 @@ describe("useOverlayManager", () => {
     expect(result.current.purgeConfirm.isOpen).toBe(true);
   });
 
+  it("keeps saved-delete and the command palette mutually exclusive with one scroll lock", () => {
+    const { result } = renderHook(() => useOverlayManager());
+
+    act(() => result.current.openSavedDeleteConfirm());
+    expect(result.current.savedDeleteConfirm.isOpen).toBe(true);
+    expect(result.current.commandPalette.isOpen).toBe(false);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    act(() => result.current.openCommandPalette());
+    expect(result.current.savedDeleteConfirm.isOpen).toBe(false);
+    expect(result.current.commandPalette.isOpen).toBe(true);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    act(() => result.current.openSavedDeleteConfirm());
+    expect(result.current.commandPalette.isOpen).toBe(false);
+    expect(result.current.savedDeleteConfirm.isOpen).toBe(true);
+    expect(document.body.style.overflow).toBe("hidden");
+
+    act(() => result.current.savedDeleteConfirm.close());
+    expect(document.body.style.overflow).toBe("");
+  });
+
   it.each([
     ["openMethodology", "methodologyDrawer"],
     ["openRailDrawer", "railDrawer"],
     ["openOpsDrawer", "opsDrawer"],
     ["openCommandPalette", "commandPalette"],
-    ["openSaveDialog", "saveDialog"]
+    ["openSaveDialog", "saveDialog"],
+    ["openSavedDeleteConfirm", "savedDeleteConfirm"]
   ] as const)("%s closes an already-open purge confirmation", (opener, target) => {
     const { result } = renderHook(() => useOverlayManager());
     act(() => result.current.requestPurge());
@@ -79,6 +102,7 @@ describe("useOverlayManager", () => {
     "openRailDrawer",
     "openOpsDrawer",
     "openSaveDialog",
+    "openSavedDeleteConfirm",
     "requestPurge"
   ] as const)(
     "%s collapses an expanded card (mutual exclusion)",

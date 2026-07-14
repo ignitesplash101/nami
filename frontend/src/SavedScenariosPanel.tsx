@@ -13,24 +13,39 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorNotice } from "./ErrorNotice";
 import { relativeTime, slugify } from "./format";
 import { useToasts } from "./toast";
-import { useOverlay } from "./useOverlay";
 import type { ScenarioRunResponse, SavedScenarioListItem } from "./types";
 
 interface SavedScenariosPanelProps {
   reloadKey: number;  // bump to trigger refresh after a new save
   onOpen: (envelope: ScenarioRunResponse) => void;
   onForbidden?: () => void;
+  isDeleteConfirmOpen: boolean;
+  onOpenDeleteConfirm: () => void;
+  onCloseDeleteConfirm: () => void;
 }
 
-export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedScenariosPanelProps) {
+export function SavedScenariosPanel({
+  reloadKey,
+  onOpen,
+  onForbidden,
+  isDeleteConfirmOpen,
+  onOpenDeleteConfirm,
+  onCloseDeleteConfirm
+}: SavedScenariosPanelProps) {
   const [items, setItems] = useState<SavedScenarioListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [tagFilter, setTagFilter] = useState<string>("");
   const [error, setError] = useState<ApiError | string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SavedScenarioListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const confirmDelete = useOverlay();
   const { push } = useToasts();
+
+  // The registry can close this dialog indirectly (for example, Cmd/Ctrl+K).
+  // Clear its item at the state boundary so a later open cannot inherit stale
+  // destructive context.
+  useEffect(() => {
+    if (!isDeleteConfirmOpen) setPendingDelete(null);
+  }, [isDeleteConfirmOpen]);
 
   function reportError(exc: unknown) {
     const err = toApiError(exc);
@@ -82,7 +97,7 @@ export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedSce
 
   function requestDelete(item: SavedScenarioListItem) {
     setPendingDelete(item);
-    confirmDelete.open();
+    onOpenDeleteConfirm();
   }
 
   async function handleDeleteConfirmed() {
@@ -92,11 +107,10 @@ export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedSce
       await deleteSavedScenario(pendingDelete.id);
       setItems((prev) => prev.filter((i) => i.id !== pendingDelete.id));
       push({ variant: "success", message: "Saved scenario deleted." });
-      confirmDelete.close();
-      setPendingDelete(null);
+      onCloseDeleteConfirm();
     } catch (exc) {
       reportError(exc);
-      confirmDelete.close();
+      onCloseDeleteConfirm();
     } finally {
       setDeleting(false);
     }
@@ -185,11 +199,8 @@ export function SavedScenariosPanel({ reloadKey, onOpen, onForbidden }: SavedSce
         </ol>
       )}
       <ConfirmDialog
-        isOpen={confirmDelete.isOpen}
-        onClose={() => {
-          confirmDelete.close();
-          setPendingDelete(null);
-        }}
+        isOpen={isDeleteConfirmOpen}
+        onClose={onCloseDeleteConfirm}
         onConfirm={handleDeleteConfirmed}
         title="Delete saved scenario"
         body={
