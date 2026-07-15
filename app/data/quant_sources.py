@@ -17,6 +17,7 @@ import re
 import urllib.request
 import zipfile
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -42,11 +43,9 @@ _SOURCE_COLUMNS = (
 
 
 class FrameCacheProtocol(Protocol):
-    def get(self, key: str, ttl_hours: int = ...) -> pd.DataFrame | None:
-        ...
+    def get(self, key: str, ttl_hours: int = ...) -> pd.DataFrame | None: ...
 
-    def put(self, key: str, frame: pd.DataFrame) -> None:
-        ...
+    def put(self, key: str, frame: pd.DataFrame) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -77,6 +76,14 @@ class SourceVersion:
 class PublicDataset:
     frame: pd.DataFrame
     source: SourceVersion
+
+
+@dataclass(frozen=True)
+class QuantPublicInputs:
+    regional_factors: dict[str, pd.DataFrame]
+    us_industries: pd.DataFrame
+    state_levels: pd.DataFrame
+    sources: dict[str, SourceVersion]
 
 
 _FIVE_FACTOR_COLUMNS = (
@@ -471,3 +478,59 @@ class PublicDataClient:
             with contextlib.suppress(Exception):
                 self._cache.put(key, _cache_frame(dataset))
         return dataset
+
+
+def load_quant_public_inputs(
+    *,
+    client: PublicDataClient | None = None,
+    end: object | None = None,
+) -> QuantPublicInputs:
+    """Load every Quant V2 public dataset concurrently and retain exact provenance."""
+    resolved = client or PublicDataClient()
+
+    def load_region(
+        region: str,
+        specs: tuple[ResearchDatasetSpec, ResearchDatasetSpec],
+    ) -> tuple[str, pd.DataFrame, tuple[SourceVersion, SourceVersion]]:
+        five = resolved.research(specs[0], end=end)
+        momentum = resolved.research(specs[1], end=end)
+        return (
+            region,
+            merge_region_factors(five.frame, momentum.frame),
+            (five.source, momentum.source),
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        region_futures = [
+            pool.submit(load_region, region, specs)
+            for region, specs in REGION_RESEARCH_SPECS.items()
+        ]
+        industry_future = pool.submit(resolved.research, US_INDUSTRY_SPEC, end=end)
+        observation_futures = {
+            name: pool.submit(resolved.observation, spec, end=end)
+            for name, spec in OBSERVATION_SPECS.items()
+        }
+
+        regional_factors: dict[str, pd.DataFrame] = {}
+        sources: dict[str, SourceVersion] = {}
+        for future in region_futures:
+            region, frame, region_sources = future.result()
+            regional_factors[region] = frame
+            sources.update({source.dataset_id: source for source in region_sources})
+        industry = industry_future.result()
+        sources[industry.source.dataset_id] = industry.source
+        observations = [future.result() for future in observation_futures.values()]
+        for observation in observations:
+            sources[observation.source.dataset_id] = observation.source
+
+    state_levels = pd.concat(
+        [observation.frame for observation in observations],
+        axis=1,
+        join="outer",
+    ).sort_index()
+    return QuantPublicInputs(
+        regional_factors=regional_factors,
+        us_industries=industry.frame,
+        state_levels=state_levels,
+        sources=sources,
+    )

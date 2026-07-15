@@ -15,6 +15,7 @@ export interface AccessResponse {
   // Frozen sample cap-weight snapshot date (Phase 26) — backs the PIT-drift
   // disclosure on backdated runs. Optional so older test fixtures stay valid.
   sample_weights_as_of?: string;
+  engine_mode?: "legacy" | "shadow" | "quant_v2";
 }
 
 export interface SamplePortfolio {
@@ -223,6 +224,52 @@ export interface ScenarioResult {
   benchmark_ticker?: string | null;
   benchmark_pnl?: PortfolioPnL | null;
   active_return?: number | null;
+  engine_mode?: "legacy" | "quant_v2";
+  engine_version?: string | null;
+  methodology?: "llm_shock_envelope" | "joint_historical_neighbors";
+  horizon_trading_days?: 5 | 21 | 63 | null;
+  severity_multiplier?: 1 | 1.5 | 2 | null;
+  historical_model_range?: {
+    label: "historical_model_range";
+    p10: number;
+    p50: number;
+    p90: number;
+    draws: number;
+    seed: number;
+  } | null;
+  quant_support?: {
+    candidate_count: number;
+    direction_compatible_count: number;
+    neighbor_count: number;
+    effective_sample_size: number;
+    medoid_date: string;
+    nearest_distance: number;
+    kernel_bandwidth: number;
+    query_dates: string[];
+    data_start: string;
+    data_end: string;
+  } | null;
+  quant_exposures?: Record<
+    string,
+    {
+      region: "north_america" | "developed_ex_us" | "japan" | "generic";
+      tier: "estimated" | "strongly_shrunk" | "prior_proxy";
+      n_obs: number;
+      data_weight: number;
+      coefficients: Record<string, number>;
+      industry_factor?: string | null;
+      industry_mapping?: string | null;
+    }
+  >;
+  quant_source_versions?: Record<
+    string,
+    {
+      dataset_id: string;
+      url: string;
+      sha256: string;
+      retrieved_at: string;
+    }
+  >;
 }
 
 export interface ScenarioReproducibility {
@@ -239,8 +286,13 @@ export interface ScenarioReproducibility {
   selected_event_ids: string[];
   portfolio_holdings: Record<string, number>;
   portfolio_key: string;
-  market_data_source: "yfinance";
+  market_data_source: "yfinance" | "French Data Library + FRED + yfinance";
   nami_engine_version: string;
+  engine_mode?: "legacy" | "quant_v2";
+  engine_version?: string | null;
+  methodology?: "llm_shock_envelope" | "joint_historical_neighbors";
+  horizon_trading_days?: 5 | 21 | 63 | null;
+  severity_multiplier?: 1 | 1.5 | 2 | null;
   portfolio_nav?: number | null;
   reporting_currency?: string | null;
   position_quantities?: Record<string, number> | null;
@@ -406,6 +458,7 @@ export interface StatusResponse {
   prompt_version: string;
   model_id: string;
   environment: string;
+  engine_mode?: "legacy" | "shadow" | "quant_v2";
   ready: boolean;
   disclaimer: string;
   rate_limits: Record<string, string>;

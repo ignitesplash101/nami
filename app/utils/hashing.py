@@ -29,6 +29,11 @@ def scenario_cache_key(
     regression_spec: str,
     position_quantities: dict[str, float] | None = None,
     pinned_event_ids: list[str] | None = None,
+    engine_mode: str = "legacy",
+    horizon: int = 21,
+    severity: float = 1.0,
+    engine_spec: str | None = None,
+    benchmark_ticker: str | None = None,
 ) -> str:
     """SHA256 hex digest of normalized inputs.
 
@@ -51,6 +56,10 @@ def scenario_cache_key(
         # Folded UNCONDITIONALLY (unlike the back-compat conditional inputs below):
         # engine-math changes must invalidate every key exactly once.
         "regression_spec": regression_spec,
+        "engine_mode": engine_mode,
+        "horizon": horizon,
+        "severity": severity,
+        "engine_spec": engine_spec,
     }
     if position_quantities:
         payload_obj["position_quantities"] = sorted(
@@ -61,5 +70,7 @@ def scenario_cache_key(
         # narrative — semantically distinct from a normal run of the same text, so
         # they get their own keyspace (and don't collide with / pollute it).
         payload_obj["pinned_event_ids"] = sorted(pinned_event_ids)
+    if benchmark_ticker:
+        payload_obj["benchmark_ticker"] = benchmark_ticker.upper()
     payload = json.dumps(payload_obj, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

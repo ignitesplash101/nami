@@ -56,7 +56,10 @@ from app.utils.disclaimers import DISCLAIMER_LONG
 # v10 -> v11: Grounded-narrative source quality. Search now prefers public
 #      authorities, academic/institutional research, and major news coverage,
 #      while treating lower-quality commercial explainers as fallback evidence.
-PROMPT_VERSION = "v11"
+# v11 -> v12: Quant V2 adds semantic market-state directions to analog selection
+#      and additive result metadata. Legacy selection remains compatible, but new
+#      cache entries must be derived against the extended response schema.
+PROMPT_VERSION = "v12"
 
 
 ANALOG_SELECTION_PROMPT = f"""\
@@ -75,7 +78,15 @@ scenario. Match on how factors and markets typically respond, not on headline al
 For each selected event, give a 1-2 sentence justification grounded in the event's
 description.
 
-Return JSON matching the AnalogSelectionOutput schema. No extra fields, no commentary
+Also classify the hypothetical scenario's direction for EVERY one of these five
+public market-state dimensions: volatility, rates, dollar, oil, and credit. Use
+exactly one of `up`, `down`, or `neutral` for each and give one concise mechanism-
+based reason. `credit` means credit stress, so `up` means worsening stress.
+
+Do not propose numeric factor shocks, numeric state changes, or per-security shocks.
+The numerical engine derives magnitudes from joint historical observations.
+
+Return JSON matching the provided response schema. No extra fields, no commentary
 outside the JSON.
 
 REMINDER: this engine is illustrative and educational, not investment advice.
@@ -221,6 +232,23 @@ Write a concise 3-5 sentence narrative that:
 
 Plain text only — no JSON, no headers, no bullets. No URLs or citations
 beyond the analog event names themselves.
+"""
+
+
+QUANT_ANALOG_NARRATIVE_PROMPT = f"""\
+You are a quantitative scenario analyst writing a backdated evidence narrative
+for a joint-historical equity stress model.
+
+{DISCLAIMER_LONG}
+
+Use only the selected analog records, semantic state directions, historical-neighbor
+model summary, and portfolio supplied in the user message. Do not use Google Search
+and do not mention anything after the explicit as-of date.
+
+Write 3-5 concise sentences explaining the hypothetical mechanism, why the analogs
+are relevant, and what the model's historical support says. Any numeric range is a
+historical model range, not a forecast or confidence interval. Do not recommend trades.
+Output plain text only: no JSON, headers, or bullets.
 """
 
 
@@ -388,6 +416,50 @@ def format_analog_grounded_narrative_user_message(
             "INSTRUCTION",
             "Write a 3-5 sentence narrative grounded ONLY in the analog events above.",
             "Do not invoke Google Search. Do not reference anything after the as-of date.",
+        ]
+    )
+
+
+def format_quant_narrative_user_message(
+    *,
+    scenario_text: str,
+    as_of_date: date,
+    selected_analog_events: list[dict[str, Any]],
+    state_directions: list[dict[str, Any]],
+    factor_ranges: dict[str, dict[str, float]],
+    support: dict[str, Any],
+    portfolio_holdings: dict[str, float],
+    analog_grounded: bool,
+) -> str:
+    instruction = (
+        "Write a 3-5 sentence narrative using only the supplied historical evidence."
+        if analog_grounded
+        else "Use Google Search to ground a 3-5 sentence narrative in current evidence."
+    )
+    return "\n".join(
+        [
+            f"AS-OF DATE: {as_of_date.isoformat()}",
+            "",
+            "SCENARIO",
+            scenario_text.strip(),
+            "",
+            "SELECTED HISTORICAL ANALOG EVENTS",
+            json.dumps(selected_analog_events, indent=2),
+            "",
+            "SEMANTIC MARKET-STATE DIRECTIONS",
+            json.dumps(state_directions, indent=2),
+            "",
+            "HISTORICAL NEIGHBOR FACTOR RANGES (not a forecast or confidence interval)",
+            json.dumps(factor_ranges, indent=2),
+            "",
+            "MODEL SUPPORT",
+            json.dumps(support, indent=2, default=str),
+            "",
+            "PORTFOLIO HOLDINGS (ticker -> weight)",
+            json.dumps(_rounded_holdings(portfolio_holdings), indent=2),
+            "",
+            "INSTRUCTION",
+            instruction,
         ]
     )
 

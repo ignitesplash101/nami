@@ -321,6 +321,73 @@ export function buildResultsCsvBundle(input: BuildResultsCsvBundleInput): CsvBun
       ])
     });
   }
+  if (result.historical_model_range) {
+    files.push({
+      filename: "historical-model-range.csv",
+      headers: ["label", "p10", "p50", "p90", "draws", "seed"],
+      rows: [
+        [
+          result.historical_model_range.label,
+          result.historical_model_range.p10,
+          result.historical_model_range.p50,
+          result.historical_model_range.p90,
+          result.historical_model_range.draws,
+          result.historical_model_range.seed
+        ]
+      ]
+    });
+  }
+  if (result.quant_support) {
+    files.push({
+      filename: "quant-support.csv",
+      headers: ["field", "value"],
+      rows: Object.entries(result.quant_support).map(([field, value]) => [field, scalar(value)])
+    });
+  }
+  const quantExposures = result.quant_exposures ?? {};
+  if (Object.keys(quantExposures).length > 0) {
+    files.push({
+      filename: "quant-exposures.csv",
+      headers: [
+        "ticker",
+        "region",
+        "tier",
+        "observations",
+        "data_weight",
+        "industry_factor",
+        "industry_mapping",
+        "factor",
+        "coefficient"
+      ],
+      rows: Object.entries(quantExposures).flatMap(([ticker, exposure]) =>
+        Object.entries(exposure.coefficients).map(([factor, coefficient]) => [
+          ticker,
+          exposure.region,
+          exposure.tier,
+          exposure.n_obs,
+          exposure.data_weight,
+          exposure.industry_factor ?? null,
+          exposure.industry_mapping ?? null,
+          factor,
+          coefficient
+        ])
+      )
+    });
+  }
+  const quantSourceVersions = result.quant_source_versions ?? {};
+  if (Object.keys(quantSourceVersions).length > 0) {
+    files.push({
+      filename: "quant-sources.csv",
+      headers: ["source", "dataset_id", "url", "sha256", "retrieved_at"],
+      rows: Object.entries(quantSourceVersions).map(([source, version]) => [
+        source,
+        version.dataset_id,
+        version.url,
+        version.sha256,
+        version.retrieved_at
+      ])
+    });
+  }
   return files;
 }
 

@@ -20,6 +20,10 @@ export function ScenarioPanel({
   asOfDate,
   setAsOfDate,
   latestClose,
+  horizon = 21,
+  setHorizon = () => {},
+  severity = 1,
+  setSeverity = () => {},
   textareaRef
 }: {
   access: AccessResponse | null;
@@ -36,6 +40,10 @@ export function ScenarioPanel({
   asOfDate: string;
   setAsOfDate: (v: string) => void;
   latestClose: string;
+  horizon?: 5 | 21 | 63;
+  setHorizon?: (value: 5 | 21 | 63) => void;
+  severity?: 1 | 1.5 | 2;
+  setSeverity?: (value: 1 | 1.5 | 2) => void;
   // Forwarded so App can focus the composer after an "Edit & re-run" hydration.
   textareaRef?: RefObject<HTMLTextAreaElement>;
 }) {
@@ -96,6 +104,34 @@ export function ScenarioPanel({
         </label>
       </div>
       <div className="scenario-controls">
+        {access?.engine_mode === "quant_v2" ? (
+          <div className="quant-run-controls" aria-label="Quant model controls">
+            <label>
+              Horizon
+              <select
+                value={horizon}
+                onChange={(event) => setHorizon(Number(event.target.value) as 5 | 21 | 63)}
+                disabled={isRunning}
+              >
+                <option value={5}>5 trading days</option>
+                <option value={21}>21 trading days</option>
+                <option value={63}>63 trading days</option>
+              </select>
+            </label>
+            <label>
+              Severity
+              <select
+                value={severity}
+                onChange={(event) => setSeverity(Number(event.target.value) as 1 | 1.5 | 2)}
+                disabled={isRunning}
+              >
+                <option value={1}>1× historical move</option>
+                <option value={1.5}>1.5× historical move</option>
+                <option value={2}>2× historical move</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
         {isAdmin ? (
           <AsOfDatePicker
             value={asOfDate}

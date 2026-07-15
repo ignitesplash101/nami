@@ -173,3 +173,32 @@ test("a transient transport failure retries once and leaves no startup banner", 
   expect(api.accessAttempts()).toBe(settledAttempts);
   expectCleanNetworkPolicy(api);
 });
+
+for (const theme of ["dark", "light"] as const) {
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 }
+  ]) {
+    test(`Quant V2 result is simple in ${theme} at ${viewport.width}px`, async ({ page }) => {
+      await setPersistedTheme(page, theme);
+      await page.setViewportSize(viewport);
+      const api = await installApiMocks(page, { admin: true, quant: true });
+      await page.goto("/");
+
+      await page.getByLabel("Horizon").selectOption("63");
+      await page.getByLabel("Severity").selectOption("2");
+      await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+
+      await expect(page.getByRole("heading", { name: "Historical model range" })).toBeVisible();
+      await expect(page.getByText(/Direct factor contribution/)).toBeVisible();
+      await expect(page.getByRole("tab", { name: "Adjust" })).toHaveCount(0);
+      await expect(page.getByRole("tab", { name: "Advanced" })).toHaveCount(0);
+      expect(api.runPayloads.at(-1)).toMatchObject({ horizon: 63, severity: 2 });
+      const overflow = await expectNoDocumentOverflow(page);
+      expect(overflow.scrollWidth, JSON.stringify(overflow.offenders)).toBeLessThanOrEqual(
+        overflow.clientWidth + 1
+      );
+      expectCleanNetworkPolicy(api);
+    });
+  }
+}

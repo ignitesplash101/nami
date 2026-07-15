@@ -121,6 +121,9 @@ export function selectMainAttribution(result: ScenarioResult): {
   method: AttributionMethod;
   degraded: boolean;
 } {
+  if (result.engine_mode === "quant_v2") {
+    return { method: "naive", degraded: false };
+  }
   if (result.portfolio_pnl.by_factor_conditional_shapley_explicit) {
     return { method: "conditional_explicit", degraded: false };
   }

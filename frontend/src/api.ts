@@ -311,6 +311,8 @@ export interface RunScenarioPayload {
   // Benchmark ticker for relative (active) return. Custom books must pass one;
   // sample books fall back to their own assigned benchmark server-side.
   benchmark?: string;
+  horizon?: 5 | 21 | 63;
+  severity?: 1 | 1.5 | 2;
 }
 
 export function runScenario(payload: RunScenarioPayload): Promise<ScenarioRunResponse> {

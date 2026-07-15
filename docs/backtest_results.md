@@ -4,6 +4,9 @@
 > The engine calls real Gemini with Google Search grounding. News drifts, search rankings
 > change, and the LLM is not bit-deterministic across months even with `temperature=0`.
 > Re-run `RUN_NETWORK_TESTS=1 uv run pytest tests/test_live_evals.py -v` to refresh.
+> This snapshot predates Quant V2 and documents the legacy v11 pipeline only. It is not
+> challenger evidence for promotion. `PROMPT_VERSION=v12` intentionally regenerates current
+> scenario caches instead of reusing these results.
 
 ---
 

@@ -8,6 +8,8 @@
 > 3. **Portfolio composition drift** — sample portfolios reflect a 2024–26 view of "large-cap tech" or "defensive mix" and may not match what a 2020 investor would have held (e.g. NVDA was a $250B name pre-COVID vs >$3T today).
 >
 > All three cases are reproducible via [`scripts/run_case_studies.py`](../scripts/run_case_studies.py). Source data: [`scripts/case_studies_output.json`](../scripts/case_studies_output.json). Generated 2026-05-28.
+>
+> These archived cases evaluate the legacy engine and are not Quant V2 challenger evidence.
 
 ---
 
@@ -92,14 +94,14 @@
 ## What these cases ARE evidence of
 
 - **Pipeline integrity end-to-end on a backdated path**: vintage-controlled analog filtering by `end_date <= as_of` works (the COVID case correctly excluded `covid-crash-2020` from eligible; the 2022 case correctly included it). Google Search is correctly disabled in `analog_only` mode (all three returned zero citations, matching `narrative_mode = "analog_only"`).
-- **Reproducibility**: re-running [`scripts/run_case_studies.py`](../scripts/run_case_studies.py) at `temperature=0` against a warm cache returns byte-for-byte identical results. The cache key incorporates `PROMPT_VERSION` so a future prompt bump would invalidate these snapshots cleanly.
+- **Reproducibility**: the archived JSON remains the receipt for this dated run. The current `PROMPT_VERSION=v12` invalidates its old scenario-cache entries, so re-running now regenerates results under current prompt/schema semantics rather than claiming byte-for-byte equivalence with the 2026-05-28 snapshot.
 - **Mechanism-level analog selection**: Case 2 picked the right reference events; Case 3 picked the right banking-stress family.
 - **Periphery-ticker plausibility**: COVID picked XOM/GE/AAPL/JPM (energy, industrials, supply-chain, financials); 2022 picked the FAANG+ stack; SVB picked defensives. All thematically defensible. This is a concentration-visibility check, not proof that idiosyncratic magnitudes are calibrated.
 
 ## What they are NOT evidence of
 
 - **Predictive power**. These cases do not establish it. The magnitude error in Case 1 (~4× too small) and Case 2 (~4× too small) is substantial. nami's structural model treats factor shocks as drawn from the historical *envelope* of the selected analogs — if the selected analogs were a regime weaker than the realized regime, modeled stress outcomes will systematically understate realized moves. This is by design; the alternative is unfounded magnitude extrapolation.
-- **Calibration**. Scenario-shocks attribution sums to the factor-driven P&L (Case 1: −6.91% vs −6.71% naive; Case 2: −4.95% vs −7.96% naive — the divergence between naive and Shapley reflects correlation structure between the explicitly shocked factors, not a bug). Periphery is a separate idiosyncratic overlay. For interpretability work the relative ordering of factor contributions and visibility of material per-name periphery matter more than treating any one decomposition as the absolute truth.
+- **Legacy calibration**. Scenario-shocks attribution sums to the factor-driven P&L (Case 1: −6.91% vs −6.71% naive; Case 2: −4.95% vs −7.96% naive — the divergence between naive and Shapley reflects correlation structure between the explicitly shocked factors, not a bug). Periphery is a separate idiosyncratic overlay. For interpretability work the relative ordering of factor contributions and visibility of material per-name periphery matter more than treating any one decomposition as the absolute truth.
 - **Robustness to prompt variation**. The three prompts here are crafted to read as honest abstractions, but small wording changes ("sudden" vs "gradual", "cyclicals" vs "growth") would shift which analogs the LLM picks. A real eval would require running matched prompt variants and reporting the spread.
 
 ## A real backtest would require

@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+from pydantic import ValidationError
 
 from app.config import Config
 from app.data.sample_portfolios import Portfolio
@@ -23,12 +24,14 @@ from app.llm.prompts import (
     ANALOG_SELECTION_PROMPT,
     DECOMPOSITION_PROMPT,
     GROUNDED_NARRATIVE_PROMPT,
+    QUANT_ANALOG_NARRATIVE_PROMPT,
     SHOCK_EDIT_PROMPT,
     SHOCK_EXTRACTION_PROMPT,
     format_analog_grounded_narrative_user_message,
     format_analog_selection_user_message,
     format_decomposition_user_message,
     format_grounded_narrative_user_message,
+    format_quant_narrative_user_message,
     format_shock_edit_user_message,
     format_shock_extraction_user_message,
 )
@@ -36,6 +39,7 @@ from app.llm.schemas import (
     AnalogSelectionOutput,
     Citation,
     DecompositionOutput,
+    QuantAnalogSelectionOutput,
     ShockEditPatch,
     ShockProposalOutput,
 )
@@ -132,6 +136,39 @@ class GeminiClient:
         )
         return AnalogSelectionOutput.model_validate_json(response.text)
 
+    def select_quant_analogs(
+        self,
+        scenario_text: str,
+        event_summaries: list[dict],
+        *,
+        max_retries: int = 1,
+    ) -> QuantAnalogSelectionOutput:
+        """Select Quant analogs with one bounded repair for missing state directions."""
+        base_msg = format_analog_selection_user_message(scenario_text, event_summaries)
+        user_msg = base_msg
+        for attempt in range(max_retries + 1):
+            response = self._generate_content(
+                contents=user_msg,
+                config=self._types.GenerateContentConfig(
+                    system_instruction=ANALOG_SELECTION_PROMPT,
+                    temperature=self._temperature,
+                    response_mime_type="application/json",
+                    response_schema=QuantAnalogSelectionOutput,
+                ),
+            )
+            try:
+                return QuantAnalogSelectionOutput.model_validate_json(response.text)
+            except ValidationError as exc:
+                if attempt >= max_retries:
+                    raise
+                user_msg = (
+                    f"{base_msg}\n\n"
+                    "REPAIR: Your previous JSON did not satisfy the Quant response schema. "
+                    "Return exactly one direction for each of volatility, rates, dollar, "
+                    f"oil, and credit. Validation error: {exc}"
+                )
+        raise AssertionError("unreachable")
+
     def propose_shocks_with_retry(
         self,
         *,
@@ -197,6 +234,49 @@ class GeminiClient:
         raise RuntimeError(
             f"Shock proposal failed validation after {max_retries + 1} attempts: {prior_errors}"
         )
+
+    def narrate_quant_scenario(
+        self,
+        *,
+        scenario_text: str,
+        as_of_date: date,
+        selected_analog_events: list[dict],
+        state_directions: list[dict],
+        factor_ranges: dict[str, dict[str, float]],
+        support: dict,
+        portfolio: Portfolio,
+        analog_grounded: bool,
+    ) -> tuple[str, list[Citation]]:
+        """Write the evidence layer without asking Gemini for numerical shocks."""
+        user_msg = format_quant_narrative_user_message(
+            scenario_text=scenario_text,
+            as_of_date=as_of_date,
+            selected_analog_events=selected_analog_events,
+            state_directions=state_directions,
+            factor_ranges=factor_ranges,
+            support=support,
+            portfolio_holdings=portfolio.holdings,
+            analog_grounded=analog_grounded,
+        )
+        config_kwargs: dict[str, object] = {
+            "system_instruction": (
+                QUANT_ANALOG_NARRATIVE_PROMPT if analog_grounded else GROUNDED_NARRATIVE_PROMPT
+            ),
+            "temperature": self._temperature,
+        }
+        if not analog_grounded:
+            config_kwargs["tools"] = [self._types.Tool(google_search=self._types.GoogleSearch())]
+        response = self._generate_content(
+            contents=user_msg,
+            config=self._types.GenerateContentConfig(**config_kwargs),
+        )
+        citations = [] if analog_grounded else extract_citations(response)
+        if not analog_grounded and not citations:
+            raise RuntimeError(
+                "Grounded narrative call returned no citations. Gemini did not invoke "
+                "Google Search, so current-market stress context cannot be returned."
+            )
+        return response.text or "", citations
 
     def _analog_grounded_narrative(
         self,

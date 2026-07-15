@@ -23,4 +23,24 @@ describe("RunProgress", () => {
     expect(stageLabel("done")).toBeNull();
     expect(stageLabel("error")).toBeNull();
   });
+
+  it("uses the shorter ordered Quant V2 stages without legacy-only work", () => {
+    render(
+      <RunProgress
+        currentStage="attribution"
+        stageStatus="start"
+        completedStages={new Set(["cache_check", "market", "analogs"])}
+        cacheHit={false}
+        engineMode="quant_v2"
+      />
+    );
+
+    expect(screen.getByText("Building historical model").closest("li")).toHaveAttribute(
+      "aria-current",
+      "step"
+    );
+    expect(screen.queryByText("Computing analog envelope")).not.toBeInTheDocument();
+    expect(screen.queryByText("Estimating factor betas")).not.toBeInTheDocument();
+    expect(stageLabel("narrative", "quant_v2")).toBe("Writing scenario explanation");
+  });
 });

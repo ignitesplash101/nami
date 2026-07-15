@@ -1,6 +1,9 @@
 import type { SsePipelineStage } from "./types";
 
-const STAGE_LABELS: Record<Exclude<SsePipelineStage, "done" | "error" | "cache_hit">, string> = {
+type DisplayStage = Exclude<SsePipelineStage, "done" | "error" | "cache_hit">;
+type ProgressEngineMode = "legacy" | "quant_v2";
+
+const LEGACY_STAGE_LABELS: Record<DisplayStage, string> = {
   cache_check: "Checking cache",
   market: "Fetching market data",
   analogs: "Selecting historical analogs",
@@ -10,13 +13,27 @@ const STAGE_LABELS: Record<Exclude<SsePipelineStage, "done" | "error" | "cache_h
   attribution: "Computing attribution"
 };
 
+const QUANT_STAGE_LABELS: Partial<Record<DisplayStage, string>> = {
+  cache_check: "Checking cache",
+  market: "Loading public market history",
+  analogs: "Selecting historical analogs",
+  attribution: "Building historical model",
+  narrative: "Writing scenario explanation"
+};
+
 /** Human label for a pipeline stage; used by the stepper AND the App-level
  * aria-live announcer so screen readers hear the same text the stepper shows. */
-export function stageLabel(stage: SsePipelineStage): string | null {
-  return stage in STAGE_LABELS ? STAGE_LABELS[stage as keyof typeof STAGE_LABELS] : null;
+export function stageLabel(
+  stage: SsePipelineStage,
+  engineMode: ProgressEngineMode = "legacy"
+): string | null {
+  if (stage === "done" || stage === "error" || stage === "cache_hit") return null;
+  return engineMode === "quant_v2"
+    ? (QUANT_STAGE_LABELS[stage] ?? null)
+    : LEGACY_STAGE_LABELS[stage];
 }
 
-const STAGE_ORDER: (keyof typeof STAGE_LABELS)[] = [
+const LEGACY_STAGE_ORDER: DisplayStage[] = [
   "cache_check",
   "market",
   "analogs",
@@ -25,12 +42,20 @@ const STAGE_ORDER: (keyof typeof STAGE_LABELS)[] = [
   "betas",
   "attribution"
 ];
+const QUANT_STAGE_ORDER: DisplayStage[] = [
+  "cache_check",
+  "market",
+  "analogs",
+  "attribution",
+  "narrative"
+];
 
 export interface RunProgressProps {
   currentStage: SsePipelineStage | null;
   stageStatus: "start" | "done" | null;
   completedStages: Set<SsePipelineStage>;
   cacheHit: boolean;
+  engineMode?: ProgressEngineMode;
   onCancel?: () => void;
 }
 
@@ -39,6 +64,7 @@ export function RunProgress({
   stageStatus,
   completedStages,
   cacheHit,
+  engineMode = "legacy",
   onCancel
 }: RunProgressProps) {
   if (cacheHit) {
@@ -49,17 +75,18 @@ export function RunProgress({
       </div>
     );
   }
+  const stageOrder = engineMode === "quant_v2" ? QUANT_STAGE_ORDER : LEGACY_STAGE_ORDER;
   return (
     <div className="run-progress">
       <ol>
-        {STAGE_ORDER.map((stage) => {
+        {stageOrder.map((stage) => {
           const isActive = currentStage === stage && stageStatus === "start";
           const isDone = completedStages.has(stage);
           const className = isActive ? "active" : isDone ? "done" : "pending";
           return (
             <li key={stage} className={className} aria-current={isActive ? "step" : undefined}>
               <span className="dot" />
-              <span className="label">{STAGE_LABELS[stage]}</span>
+              <span className="label">{stageLabel(stage, engineMode)}</span>
             </li>
           );
         })}

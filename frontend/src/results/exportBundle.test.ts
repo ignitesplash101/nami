@@ -171,6 +171,79 @@ describe("all-results export bundle", () => {
     expect(names).not.toContain("theme-sensitivity.csv");
   });
 
+  it("includes Quant V2 range, support, exposure, and source provenance", () => {
+    const envelope = envelopeFixture();
+    envelope.result.engine_mode = "quant_v2";
+    envelope.result.historical_model_range = {
+      label: "historical_model_range",
+      p10: -0.2,
+      p50: -0.1,
+      p90: -0.03,
+      draws: 4096,
+      seed: 1729
+    };
+    envelope.result.quant_support = {
+      candidate_count: 1000,
+      direction_compatible_count: 300,
+      neighbor_count: 50,
+      effective_sample_size: 41.2,
+      medoid_date: "2020-03-16",
+      nearest_distance: 0.4,
+      kernel_bandwidth: 1.2,
+      query_dates: ["2020-03-16"],
+      data_start: "2007-07-01",
+      data_end: "2026-07-15"
+    };
+    envelope.result.quant_exposures = {
+      AAPL: {
+        region: "north_america",
+        tier: "estimated",
+        n_obs: 156,
+        data_weight: 1,
+        coefficients: { "NA:MKT_RF": 1.1 }
+      }
+    };
+    envelope.result.quant_source_versions = {
+      north_america: {
+        dataset_id: "ff-na",
+        url: "https://example.com/factors",
+        sha256: "abc123",
+        retrieved_at: "2026-07-15T00:00:00Z"
+      }
+    };
+
+    const files = buildResultsCsvBundle({ envelope, factorMeta: {}, nav: null });
+    const names = files.map((file) => file.filename);
+    expect(names).toContain("historical-model-range.csv");
+    expect(names).toContain("quant-support.csv");
+    expect(names).toContain("quant-exposures.csv");
+    expect(names).toContain("quant-sources.csv");
+    expect(files.find((file) => file.filename === "quant-exposures.csv")?.rows).toContainEqual([
+      "AAPL",
+      "north_america",
+      "estimated",
+      156,
+      1,
+      null,
+      null,
+      "NA:MKT_RF",
+      1.1
+    ]);
+  });
+
+  it("omits Quant CSVs for serialized legacy empty defaults", () => {
+    const envelope = envelopeFixture();
+    envelope.result.quant_exposures = {};
+    envelope.result.quant_source_versions = {};
+
+    const names = buildResultsCsvBundle({ envelope, factorMeta: {}, nav: null }).map(
+      (file) => file.filename
+    );
+
+    expect(names).not.toContain("quant-exposures.csv");
+    expect(names).not.toContain("quant-sources.csv");
+  });
+
   it("writes a real ZIP whose every CSV has a UTF-8 BOM and formula protection", async () => {
     const createObjectURL = vi.fn((_blob: Blob) => "blob:all-results");
     const revokeObjectURL = vi.fn();

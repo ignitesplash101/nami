@@ -223,6 +223,51 @@ def test_source_version_hashes_exact_downloaded_bytes() -> None:
     assert source_sha256(first) != source_sha256(second)
 
 
+def test_quant_public_bundle_merges_all_regions_states_and_provenance() -> None:
+    from app.data.quant_sources import (
+        OBSERVATION_SPECS,
+        REGION_RESEARCH_SPECS,
+        US_INDUSTRY_SPEC,
+        PublicDataset,
+        SourceVersion,
+        load_quant_public_inputs,
+    )
+
+    index = pd.date_range("2024-01-02", periods=3, freq="B")
+    retrieved = datetime(2024, 2, 1, tzinfo=UTC)
+
+    class _Client:
+        def research(self, spec, *, end=None):
+            assert end == index[-1]
+            frame = pd.DataFrame(
+                {destination: [0.001, 0.002, 0.003] for _source, destination in spec.columns},
+                index=index,
+            )
+            return PublicDataset(
+                frame,
+                SourceVersion(spec.dataset_id, spec.url, "a" * 64, retrieved),
+            )
+
+        def observation(self, spec, *, end=None):
+            assert end == index[-1]
+            return PublicDataset(
+                pd.DataFrame({spec.output_column: [1.0, 2.0, 3.0]}, index=index),
+                SourceVersion(spec.dataset_id, spec.url, "b" * 64, retrieved),
+            )
+
+    bundle = load_quant_public_inputs(client=_Client(), end=index[-1])
+
+    assert set(bundle.regional_factors) == set(REGION_RESEARCH_SPECS)
+    assert all("MOM" in frame and "RF" in frame for frame in bundle.regional_factors.values())
+    assert list(bundle.us_industries.columns) == [
+        output for _source, output in US_INDUSTRY_SPEC.columns
+    ]
+    assert set(bundle.state_levels.columns) == {
+        spec.output_column for spec in OBSERVATION_SPECS.values()
+    }
+    assert len(bundle.sources) == 2 * len(REGION_RESEARCH_SPECS) + len(OBSERVATION_SPECS) + 1
+
+
 def test_client_reuses_30_day_parquet_cache_with_source_metadata() -> None:
     from app.data.quant_sources import PUBLIC_DATA_CACHE_TTL_HOURS, PublicDataClient
 

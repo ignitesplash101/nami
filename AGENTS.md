@@ -8,10 +8,10 @@ roadmap live in [README.md](README.md).
 
 ## Mission
 
-nami (波) is an LLM-driven hypothetical stress explorer for equity portfolios.
-User describes a market stress in natural language → Gemini grounds it against
-current news + historical analogs → derives factor shocks → the engine computes
-modeled portfolio P&L with cited reasoning.
+nami (波) is a natural-language hypothetical stress explorer for equity portfolios.
+Gemini grounds a scenario against current news + historical analogs. The default
+legacy engine derives validated shocks; the optional Quant V2 challenger maps
+semantic directions to a supported joint historical factor vector.
 
 **Educational/research tool only** — not investment advice, not a forecast. The
 disclaimer is enforced in `app/utils/disclaimers.py` and rendered on every page.
@@ -22,7 +22,8 @@ disclaimer is enforced in `app/utils/disclaimers.py` and rendered on every page.
 
 - **Python 3.12** + **uv**; **FastAPI** backend at `app/api/main.py`
 - **React + TypeScript + Vite + Plotly.js** frontend under `frontend/`
-- **GCP** — Vertex AI (`gemini-3.5-flash`, region `global`), Cloud Storage
+- **GCP** — Vertex AI (`gemini-3.5-flash`, region `global`), public research/FRED
+  data, Cloud Storage
   (cache), Firestore (persistence), Cloud Run + Cloud Build (deploy, region
   `asia-northeast1` — the region split matters; see deploy-ops).
 
@@ -59,6 +60,7 @@ uv run ruff check .                # lint
 uv run black --check .             # format check
 cd frontend; npm run typecheck; npm test; npm run build
 uv run python scripts/run_engine_replay.py   # regenerate engine-replay artifacts (network)
+uv run python scripts/run_quant_challenger.py --input cases.json --fail-on-gate
 ```
 
 To exercise the GCS cache or Vertex AI, the local `.env` must have all 4
@@ -110,6 +112,6 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–35 shipped (most recently Phase 35: simpler results, stronger sources,
-and faster replay/scenario runs). The full append-only log — one dated entry per phase with scope
+Phases 0–36 shipped (most recently Phase 36: optional Quant V2 methodology,
+public-data provenance, simple controls, and offline promotion gates). The full append-only log — one dated entry per phase with scope
 and rationale — lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

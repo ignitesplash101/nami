@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-from app.data.market import compute_weekly_returns, fetch_weekly_prices
+from app.data.market import compute_weekly_returns, fetch_daily_prices, fetch_weekly_prices
 from app.data.market_cache import MarketCacheProtocol
 from app.data.marking import (
     MarkingError,
@@ -50,6 +50,36 @@ def convert_weekly_returns_to_usd(
     unavailable: silently regressing local-currency returns would reintroduce
     the currency mismatch this function exists to fix.
     """
+    return _convert_returns_to_usd(
+        local_returns,
+        end=end,
+        cache=cache,
+        frequency="weekly",
+    )
+
+
+def convert_daily_returns_to_usd(
+    local_returns: pd.DataFrame,
+    *,
+    end: date | datetime | str | None = None,
+    cache: MarketCacheProtocol | None | str = "default",
+) -> pd.DataFrame:
+    """Convert local-currency daily returns to USD with vintage-bounded daily FX."""
+    return _convert_returns_to_usd(
+        local_returns,
+        end=end,
+        cache=cache,
+        frequency="daily",
+    )
+
+
+def _convert_returns_to_usd(
+    local_returns: pd.DataFrame,
+    *,
+    end: date | datetime | str | None,
+    cache: MarketCacheProtocol | None | str,
+    frequency: str,
+) -> pd.DataFrame:
     if local_returns.empty:
         return local_returns
 
@@ -60,23 +90,29 @@ def convert_weekly_returns_to_usd(
     if not needed:
         return local_returns
 
-    # FX prices start one week before the local window so the first local return
-    # row has an FX return bar (compute_weekly_returns drops the first FX row).
-    start = local_returns.index.min() - timedelta(days=7)
+    lead_days = 7 if frequency == "weekly" else 3
+    start = local_returns.index.min() - timedelta(days=lead_days)
     fx_returns: dict[str, pd.Series] = {}
     for major in needed:
         symbol, invert = fx_pair_for_currency(major)
-        prices = fetch_weekly_prices([symbol], start=start, end=end, cache=cache)
+        if frequency == "weekly":
+            prices = fetch_weekly_prices([symbol], start=start, end=end, cache=cache)
+        else:
+            prices = fetch_daily_prices([symbol], start=start, end=end, cache=cache)
         if symbol not in prices.columns or prices[symbol].dropna().empty:
             affected = sorted(t for t, m in majors_by_ticker.items() if m == major)
             raise MarkingError(
                 f"FX series unavailable for {major} ({symbol}); cannot convert "
-                f"{affected} weekly returns to USD."
+                f"{affected} {frequency} returns to USD."
             )
         rate = prices[symbol]
         if invert:
             rate = 1.0 / rate
-        fx_returns[major] = compute_weekly_returns(rate.to_frame(name=symbol))[symbol]
+        if frequency == "weekly":
+            fx_return = compute_weekly_returns(rate.to_frame(name=symbol))[symbol]
+        else:
+            fx_return = rate.pct_change(fill_method=None).dropna()
+        fx_returns[major] = fx_return
 
     out = local_returns.copy()
     for ticker, major in majors_by_ticker.items():

@@ -13,6 +13,7 @@ import math
 import statistics
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
@@ -21,7 +22,9 @@ from app.config import Config, load_config
 from app.data.cache import CacheProtocol, CloudStorageCache
 from app.data.fx import convert_weekly_returns_to_usd
 from app.data.market import compute_weekly_returns, fetch_weekly_prices
+from app.data.market_cache import MARKET_CACHE_VERSION
 from app.data.marking import MarkResult, mark_book
+from app.data.quant_sources import PUBLIC_DATA_CACHE_VERSION
 from app.data.sample_portfolios import CASH_TICKER, Portfolio, get_portfolio, sample_benchmark
 from app.factors.analogs import (
     HistoricalEvent,
@@ -31,6 +34,15 @@ from app.factors.analogs import (
     filter_events_as_of,
     load_events,
     summarize_events,
+)
+from app.factors.quant_exposure import QUANT_EXPOSURE_SPEC
+from app.factors.quant_inputs import prepare_quant_inputs
+from app.factors.quant_scenario import (
+    QUANT_SCENARIO_SPEC,
+    direct_attribution,
+)
+from app.factors.quant_scenario import (
+    run_quant_scenario as run_quant_model,
 )
 from app.factors.regression import (
     MIN_REGRESSION_WEEKS,
@@ -57,8 +69,12 @@ from app.llm.schemas import (
     AnalogReplayEntry,
     AnalogSelection,
     FactorShock,
+    HistoricalModelRangeResult,
     PnLUncertainty,
     PortfolioPnL,
+    QuantExposureResult,
+    QuantSourceVersionResult,
+    QuantSupportResult,
     RegressionQuality,
     ScenarioResult,
     SeverityLadder,
@@ -70,6 +86,12 @@ from app.utils.calendar import latest_market_date, resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
 
 logger = logging.getLogger(__name__)
+
+QUANT_ENGINE_SPEC = (
+    f"quant-v2|market={MARKET_CACHE_VERSION}|public={PUBLIC_DATA_CACHE_VERSION}|"
+    f"exposure={QUANT_EXPOSURE_SPEC}|scenario={QUANT_SCENARIO_SPEC}"
+)
+QUANT_MIN_EVENT_END = date(2007, 7, 31)
 
 # Minimum number of historical analog events required for envelope computation.
 # Surfaces as a 422 error from the API layer rather than a raw Gemini failure.
@@ -104,6 +126,9 @@ def compute_scenario_cache_key(
     config: Config | None = None,
     market_date: date | None = None,
     position_quantities: dict[str, float] | None = None,
+    horizon: int = 21,
+    severity: float = 1.0,
+    benchmark: str | None = None,
 ) -> str:
     """Compute the cache key the same way `run_scenario` does.
 
@@ -122,6 +147,10 @@ def compute_scenario_cache_key(
     requested_as_of = market_date or live_as_of
     effective_as_of = resolve_effective_market_date(requested_as_of, today_fn=lambda: live_as_of)
     portfolio_obj, resolved_key = _resolve_portfolio(portfolio, None)
+    is_quant = config.engine_mode == "quant_v2"
+    benchmark_ticker = (
+        _resolve_benchmark(portfolio_obj, resolved_key, benchmark) if is_quant else None
+    )
     return scenario_cache_key(
         scenario_text=scenario_text,
         portfolio_key=resolved_key,
@@ -135,6 +164,11 @@ def compute_scenario_cache_key(
             lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
         ),
         position_quantities=position_quantities,
+        engine_mode=config.engine_mode,
+        horizon=horizon if is_quant else 21,
+        severity=severity if is_quant else 1.0,
+        engine_spec=QUANT_ENGINE_SPEC if config.engine_mode != "legacy" else None,
+        benchmark_ticker=benchmark_ticker,
     )
 
 
@@ -608,6 +642,295 @@ def _benchmark_overlay(
         return result
 
 
+def _quant_direction_map(state_directions) -> dict[str, int]:
+    expected = {"volatility", "rates", "dollar", "oil", "credit"}
+    names = [item.state for item in state_directions]
+    if len(names) != len(expected) or set(names) != expected:
+        raise ValueError(
+            "Quant V2 analog selection must provide each market-state direction exactly once"
+        )
+    mapping = {"up": 1, "down": -1, "neutral": 0}
+    return {item.state: mapping[item.direction] for item in state_directions}
+
+
+def _direct_pnl_model(
+    total: float, by_factor: dict[str, float], by_ticker: dict[str, float]
+) -> PortfolioPnL:
+    return PortfolioPnL(
+        total_pnl=total,
+        by_factor_naive=by_factor,
+        by_factor_conditional_shapley=None,
+        by_factor_conditional_shapley_explicit=None,
+        by_factor_conditional_shapley_grouped=None,
+        by_ticker_factor=by_ticker,
+        by_ticker_periphery=dict.fromkeys(by_ticker, 0.0),
+        by_ticker_total=by_ticker,
+    )
+
+
+def _run_quant_v2_scenario(
+    scenario_text: str,
+    portfolio: str | Portfolio | None = None,
+    *,
+    config: Config,
+    gemini: GeminiClient | None = None,
+    cache: CacheProtocol | None = None,
+    market_date: date | None = None,
+    skip_cache: bool = False,
+    portfolio_key: str | None = None,
+    progress: ProgressCallback | None = None,
+    position_quantities: dict[str, float] | None = None,
+    portfolio_nav: float | None = None,
+    reporting_currency: str | None = None,
+    pinned_event_ids: list[str] | None = None,
+    benchmark: str | None = None,
+    horizon: int = 21,
+    severity: float = 1.0,
+) -> ScenarioResult:
+    if pinned_event_ids is not None:
+        raise ValueError("Narrative Shapley is unavailable for Quant V2 results")
+    portfolio_obj, resolved_key = _resolve_portfolio(portfolio, portfolio_key)
+    gemini = gemini or GeminiClient(config)
+    if cache is None:
+        cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
+    progress = progress or _noop
+
+    live_as_of = latest_market_date()
+    requested_as_of = market_date or live_as_of
+    effective_as_of = resolve_effective_market_date(requested_as_of, today_fn=lambda: live_as_of)
+    is_backdated = effective_as_of < live_as_of
+    benchmark_ticker = _resolve_benchmark(portfolio_obj, resolved_key, benchmark)
+    key = scenario_cache_key(
+        scenario_text=scenario_text,
+        portfolio_key=resolved_key,
+        portfolio_holdings={} if position_quantities else portfolio_obj.holdings,
+        market_date=effective_as_of,
+        model_id=config.vertex_model_id,
+        prompt_version=PROMPT_VERSION,
+        factor_universe_version=factor_universe_version(),
+        events_version=events_version(),
+        regression_spec=regression_spec(
+            lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
+        ),
+        position_quantities=position_quantities,
+        engine_mode="quant_v2",
+        horizon=horizon,
+        severity=severity,
+        engine_spec=QUANT_ENGINE_SPEC,
+        benchmark_ticker=benchmark_ticker,
+    )
+    progress("cache_check", "start")
+    if not skip_cache:
+        cached = cache.get_json(key, ttl_hours=24 * config.llm_cache_ttl_days)
+        if cached is not None:
+            progress("cache_hit", "done")
+            return _apply_mtm(
+                ScenarioResult.model_validate(cached),
+                position_quantities=position_quantities,
+                portfolio_nav=portfolio_nav,
+                reporting_currency=reporting_currency,
+            )
+    progress("cache_check", "done")
+
+    mark_result: MarkResult | None = None
+    if position_quantities:
+        mark_result = mark_book(
+            position_quantities,
+            as_of=effective_as_of,
+            reporting_currency=reporting_currency or "USD",
+        )
+        portfolio_obj = Portfolio(
+            name=portfolio_obj.name,
+            description=portfolio_obj.description,
+            holdings=mark_result.weights,
+        )
+
+    events = {
+        event_id: event
+        for event_id, event in load_events().items()
+        if event.end_date >= QUANT_MIN_EVENT_END and event.end_date <= effective_as_of
+    }
+    if len(events) < MIN_ELIGIBLE_ANALOG_EVENTS:
+        raise ValueError(
+            f"Quant V2 has fewer than {MIN_ELIGIBLE_ANALOG_EVENTS} eligible analogs "
+            f"at {effective_as_of.isoformat()}"
+        )
+
+    progress("market", "start")
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        prepared_future = pool.submit(
+            prepare_quant_inputs,
+            portfolio_obj,
+            as_of=effective_as_of,
+            benchmark_ticker=benchmark_ticker,
+        )
+        analog_out = gemini.select_quant_analogs(scenario_text, summarize_events(events))
+        prepared = prepared_future.result()
+    progress("market", "done")
+
+    progress("analogs", "start")
+    selected_events = analog_out.selected_events
+    selected_ids = [item.event_id for item in selected_events]
+    unique_ids = set(selected_ids)
+    unknown_ids = sorted({event_id for event_id in selected_ids if event_id not in events})
+    if unknown_ids:
+        raise ValueError(f"Quant V2 analog selector returned unavailable events: {unknown_ids}")
+    if len(unique_ids) != len(selected_ids):
+        raise ValueError("Quant V2 analog selection contains duplicate event ids")
+    if not (MIN_SELECTED_ANALOGS <= len(unique_ids) <= MAX_SELECTED_ANALOGS):
+        raise ValueError(
+            f"Analog selection must contain {MIN_SELECTED_ANALOGS} to "
+            f"{MAX_SELECTED_ANALOGS} unique events"
+        )
+    directions = _quant_direction_map(analog_out.state_directions)
+    progress("analogs", "done")
+
+    progress("attribution", "start")
+    modeled = run_quant_model(
+        factor_returns=prepared.factor_returns,
+        state_levels=prepared.state_levels,
+        betas=prepared.betas,
+        holdings=portfolio_obj.holdings,
+        event_end_dates=[events[event_id].end_date for event_id in selected_ids],
+        directions=directions,
+        horizon=horizon,
+        severity=severity,
+        as_of=effective_as_of,
+    )
+    portfolio_pnl_model = _direct_pnl_model(modeled.total_pnl, modeled.by_factor, modeled.by_ticker)
+    progress("attribution", "done")
+
+    support_payload = {
+        "candidate_count": modeled.support.candidate_count,
+        "direction_compatible_count": modeled.support.direction_compatible_count,
+        "neighbor_count": modeled.support.neighbor_count,
+        "effective_sample_size": modeled.support.effective_sample_size,
+        "medoid_date": modeled.support.medoid_date.date(),
+        "nearest_distance": modeled.support.nearest_distance,
+        "kernel_bandwidth": modeled.support.kernel_bandwidth,
+        "query_dates": [timestamp.date() for timestamp in modeled.support.query_dates],
+        "data_start": modeled.support.data_start.date(),
+        "data_end": modeled.support.data_end.date(),
+    }
+    selected_analog_events = [
+        {
+            "id": event.id,
+            "name": event.name,
+            "start_date": event.start_date.isoformat(),
+            "end_date": event.end_date.isoformat(),
+            "tags": list(event.tags),
+            "description": event.description,
+        }
+        for event in (events[event_id] for event_id in selected_ids)
+    ]
+    progress("narrative", "start")
+    narrative, citations = gemini.narrate_quant_scenario(
+        scenario_text=scenario_text,
+        as_of_date=effective_as_of,
+        selected_analog_events=selected_analog_events,
+        state_directions=[item.model_dump() for item in analog_out.state_directions],
+        factor_ranges=modeled.factor_ranges,
+        support=support_payload,
+        portfolio=portfolio_obj,
+        analog_grounded=is_backdated,
+    )
+    progress("narrative", "done")
+
+    factor_shocks = [
+        FactorShock(
+            factor=factor,
+            shock=shock,
+            reasoning=(
+                f"Observed weighted medoid of {modeled.support.neighbor_count} joint "
+                f"historical neighbors, scaled {severity:g}x."
+            ),
+        )
+        for factor, shock in modeled.factor_shocks.items()
+    ]
+    benchmark_pnl: PortfolioPnL | None = None
+    active_return: float | None = None
+    if benchmark_ticker and prepared.benchmark_beta is not None:
+        benchmark_betas = pd.DataFrame(
+            [prepared.benchmark_beta.to_dict()], index=[benchmark_ticker]
+        )
+        benchmark_direct = direct_attribution(
+            benchmark_betas,
+            {benchmark_ticker: 1.0},
+            pd.Series(modeled.factor_shocks),
+        )
+        benchmark_pnl = _direct_pnl_model(
+            benchmark_direct.total_pnl,
+            benchmark_direct.by_factor,
+            benchmark_direct.by_ticker,
+        )
+        active_return = modeled.total_pnl - benchmark_direct.total_pnl
+
+    result = ScenarioResult(
+        scenario_text=scenario_text,
+        market_date=effective_as_of,
+        portfolio_key=resolved_key,
+        portfolio_name=portfolio_obj.name,
+        portfolio_holdings=dict(portfolio_obj.holdings),
+        analogs_selected=selected_events,
+        factor_shocks=factor_shocks,
+        periphery_shocks=[],
+        narrative=narrative,
+        citations=citations,
+        factor_envelope=modeled.factor_ranges,
+        portfolio_pnl=portfolio_pnl_model,
+        requested_as_of_date=requested_as_of,
+        narrative_mode="analog_only" if is_backdated else "grounded",
+        selected_event_ids=selected_ids,
+        position_quantities=dict(position_quantities) if position_quantities else None,
+        reporting_currency=(reporting_currency or "USD") if position_quantities else None,
+        benchmark_ticker=benchmark_ticker,
+        benchmark_pnl=benchmark_pnl,
+        active_return=active_return,
+        engine_mode="quant_v2",
+        engine_version=QUANT_ENGINE_SPEC,
+        methodology="joint_historical_neighbors",
+        horizon_trading_days=horizon,
+        severity_multiplier=severity,
+        historical_model_range=HistoricalModelRangeResult(
+            p10=modeled.model_range.p10,
+            p50=modeled.model_range.p50,
+            p90=modeled.model_range.p90,
+            draws=modeled.model_range.draws,
+            seed=modeled.model_range.seed,
+        ),
+        quant_support=QuantSupportResult(**support_payload),
+        quant_exposures={
+            ticker: QuantExposureResult(
+                region=estimate.region,
+                tier=estimate.tier,
+                n_obs=estimate.n_obs,
+                data_weight=estimate.data_weight,
+                coefficients=estimate.coefficients,
+                industry_factor=estimate.industry_factor,
+                industry_mapping=estimate.industry_mapping,
+            )
+            for ticker, estimate in prepared.exposures.items()
+        },
+        quant_source_versions={
+            dataset_id: QuantSourceVersionResult(
+                dataset_id=source.dataset_id,
+                url=source.url,
+                sha256=source.sha256,
+                retrieved_at=source.retrieved_at,
+            )
+            for dataset_id, source in prepared.sources.items()
+        },
+    )
+    cache.put_json(key, result.model_dump(mode="json"))
+    return _apply_mtm(
+        result,
+        position_quantities=position_quantities,
+        portfolio_nav=portfolio_nav,
+        reporting_currency=reporting_currency,
+        precomputed=mark_result,
+    )
+
+
 def run_scenario(
     scenario_text: str,
     portfolio: str | Portfolio | None = None,
@@ -624,6 +947,67 @@ def run_scenario(
     reporting_currency: str | None = None,
     pinned_event_ids: list[str] | None = None,
     benchmark: str | None = None,
+    horizon: int = 21,
+    severity: float = 1.0,
+) -> ScenarioResult:
+    """Dispatch to the configured engine while preserving the legacy default."""
+    resolved_config = config or load_config()
+    common = {
+        "config": resolved_config,
+        "gemini": gemini,
+        "cache": cache,
+        "market_date": market_date,
+        "skip_cache": skip_cache,
+        "portfolio_key": portfolio_key,
+        "progress": progress,
+        "position_quantities": position_quantities,
+        "portfolio_nav": portfolio_nav,
+        "reporting_currency": reporting_currency,
+        "pinned_event_ids": pinned_event_ids,
+        "benchmark": benchmark,
+        "horizon": horizon,
+        "severity": severity,
+    }
+    if resolved_config.engine_mode == "quant_v2":
+        return _run_quant_v2_scenario(scenario_text, portfolio, **common)
+
+    legacy = _run_legacy_scenario(scenario_text, portfolio, **common)
+    if resolved_config.engine_mode == "shadow" and pinned_event_ids is None:
+        try:
+            challenger = _run_quant_v2_scenario(
+                scenario_text,
+                portfolio,
+                **{**common, "config": replace(resolved_config, engine_mode="quant_v2")},
+            )
+            logger.info(
+                "Quant V2 shadow comparison legacy_total=%s quant_total=%s delta=%s",
+                legacy.portfolio_pnl.total_pnl,
+                challenger.portfolio_pnl.total_pnl,
+                challenger.portfolio_pnl.total_pnl - legacy.portfolio_pnl.total_pnl,
+            )
+        except Exception as exc:  # noqa: BLE001 - challenger must never fail the primary run
+            logger.warning("Quant V2 shadow run unavailable: %s", exc)
+    return legacy
+
+
+def _run_legacy_scenario(
+    scenario_text: str,
+    portfolio: str | Portfolio | None = None,
+    *,
+    config: Config | None = None,
+    gemini: GeminiClient | None = None,
+    cache: CacheProtocol | None = None,
+    market_date: date | None = None,
+    skip_cache: bool = False,
+    portfolio_key: str | None = None,
+    progress: ProgressCallback | None = None,
+    position_quantities: dict[str, float] | None = None,
+    portfolio_nav: float | None = None,
+    reporting_currency: str | None = None,
+    pinned_event_ids: list[str] | None = None,
+    benchmark: str | None = None,
+    horizon: int = 21,
+    severity: float = 1.0,
 ) -> ScenarioResult:
     """End-to-end pipeline.
 
@@ -701,6 +1085,10 @@ def run_scenario(
         ),
         position_quantities=position_quantities,
         pinned_event_ids=pinned_event_ids,
+        engine_mode=config.engine_mode,
+        horizon=21,
+        severity=1.0,
+        engine_spec=QUANT_ENGINE_SPEC if config.engine_mode == "shadow" else None,
     )
 
     if not skip_cache:
@@ -978,6 +1366,11 @@ def run_scenario(
         requested_as_of_date=requested_as_of,
         narrative_mode="analog_only" if use_analog_only else "grounded",
         selected_event_ids=selected_ids,
+        engine_mode="legacy",
+        engine_version=regression_spec(
+            lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
+        ),
+        methodology="llm_shock_envelope",
         # Cache the quantity INPUTS (already in the key, deterministic) so a hit or
         # an adjustment can re-mark; the marked dollar OUTPUTS (nav/values/marks/fx)
         # are deliberately left None here and attached post-retrieval, never cached.
@@ -1051,6 +1444,11 @@ def adjust_scenario_shocks(
     if cached is None:
         raise LookupError(f"Scenario result not found for cache_key={cache_key!r}.")
     canonical = ScenarioResult.model_validate(cached)
+    if canonical.engine_mode == "quant_v2":
+        raise RuntimeError(
+            "Quant V2 derives one joint historical vector; edit the scenario and rerun "
+            "instead of adjusting individual factor shocks."
+        )
 
     # Reconstruct the portfolio from the CANONICAL holdings for ALL portfolios
     # (not just custom). The holdings dict is part of the cache-key hash, so it is

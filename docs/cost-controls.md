@@ -10,20 +10,22 @@ Every endpoint that calls Vertex AI / Gemini is gated as follows in [app/api/mai
 
 | endpoint | visitor mode | admin mode | LLM cost per request |
 |---|---|---|---|
-| `POST /api/scenarios/run` | restricted to `SAMPLE_SCENARIOS` × `SAMPLE_PORTFOLIOS` only ([main.py:148–164](../app/api/main.py)) | free-text + custom portfolio + backdating allowed | ~$0.003 on cache miss; $0 on cache hit |
+| `POST /api/scenarios/run` | restricted to `SAMPLE_SCENARIOS` × `SAMPLE_PORTFOLIOS` only | free-text + custom portfolio + backdating allowed | Legacy: ~3 Gemini calls; Quant V2: normally 2, up to 3 after one schema repair; $0 on cache hit |
 | `POST /api/scenarios/run-stream` | same gates via `_resolve_*` helpers | same as above | same |
-| `POST /api/scenarios/adjust-shocks` | **403** ([main.py:348–349](../app/api/main.py)) | one Gemini call | ~$0.0005 |
-| `POST /api/scenarios/decompose` | **403** ([main.py:384–386](../app/api/main.py)) | 1 + 2^N − 1 Gemini calls (N=2..4) | ~$0.005–$0.05 |
+| `POST /api/scenarios/adjust-shocks` | **403** | Legacy only: one Gemini call; Quant V2 returns 422 | ~$0.0005 when available |
+| `POST /api/scenarios/decompose` | **403** | Legacy only: 1 + 2^N − 1 Gemini calls (N=2..4); Quant V2 returns 422 | ~$0.005–$0.05 when available |
 | `POST /api/saved-scenarios` and all Firestore endpoints | **403** ([main.py:408–410](../app/api/main.py)) | Firestore writes, no LLM | Firestore-only |
 | `GET /api/portfolios/samples`, `/api/scenarios/samples`, `/api/health`, `/api/access`, `/api/meta`, `/api/docs/methodology`, `/api/portfolio/validate` | open | open | $0 (no LLM) |
 
-**Visitor cost ceiling**: 4 sample scenarios × 4 sample portfolios = **16 unique combinations**. The scenario cache key includes `effective_as_of`, which advances once per NYSE trading day, so each combination produces ~5 unique cache entries per week. Worst-case per-week spend from anonymous traffic, assuming infinite visitors:
+**Visitor cost ceiling in the deployed default (`ENGINE_MODE=legacy`)**: 4 sample scenarios × 4 sample portfolios = **16 unique combinations**. The scenario cache key includes `effective_as_of`, which advances once per NYSE trading day, so each combination produces ~5 unique cache entries per week. Worst-case per-week spend from anonymous traffic, assuming infinite visitors:
 
 ```
 16 combinations × 5 NYSE days × $0.003 per first miss = ~$0.24 / week
 ```
 
 The cache (GCS, 7-day TTL, [`app/data/cache.py`](../app/data/cache.py)) absorbs all subsequent identical requests at $0. So the cost is bounded *regardless of visitor traffic volume* — a 1000-visitor day costs the same as a 1-visitor day after the cache warms.
+
+If Quant V2 is promoted, its 3 horizons × 3 severity levels expand the visitor cache surface to at most 144 combinations per effective date. Quant V2 normally uses two Gemini calls (with at most one extra selector-repair call) and public-data caches, so operators must remeasure the per-miss cost before changing `ENGINE_MODE`. `shadow` deliberately runs both engines synchronously and can roughly double run latency and LLM spend; it is an evaluation mode, not the public default.
 
 **Admin cost ceiling**: not bounded by code. The admin passcode is the gate. If the passcode leaks, abuse is bounded only by Vertex AI quotas (see below).
 
@@ -92,7 +94,7 @@ Cloud Run will roll the revision and existing admin cookies will be invalidated 
 
 | risk | mitigation | mitigated by |
 |---|---|---|
-| Anonymous visitor spam Gemini → $1000 bill | Visitor mode locked to 16 cached sample combinations | Code (auth gates + GCS cache) |
+| Anonymous visitor spam Gemini → $1000 bill | Default legacy mode is locked to 16 cached sample combinations | Code (auth gates + GCS cache) |
 | Admin passcode leak | Rotate passcode in Secret Manager | Operator action |
 | Logic bug bypasses gate | Monthly budget alert at $20 | GCP billing budget (Console) |
 | Pricing change / cache outage | Vertex AI per-minute and per-day quota cap | GCP quotas (Console) |

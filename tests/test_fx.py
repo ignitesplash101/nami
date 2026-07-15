@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from app.data import fx
-from app.data.fx import convert_weekly_returns_to_usd
+from app.data.fx import convert_daily_returns_to_usd, convert_weekly_returns_to_usd
 from app.data.marking import MarkingError
 
 _W0 = pd.Timestamp("2024-01-01")
@@ -95,3 +95,22 @@ def test_entirely_missing_fx_series_fails_closed(monkeypatch):
 
     with pytest.raises(MarkingError, match="FX series unavailable for JPY"):
         convert_weekly_returns_to_usd(local)
+
+
+def test_daily_jpy_conversion_uses_daily_fx_and_preserves_vintage(monkeypatch):
+    captured: dict[str, object] = {}
+    d0 = pd.Timestamp("2024-01-02")
+    d1 = pd.Timestamp("2024-01-03")
+
+    def _fake_fetch(tickers, start=None, end=None, lookback_days=None, *, cache="default"):
+        captured["end"] = end
+        assert tickers == ["USDJPY=X"]
+        return pd.DataFrame({"USDJPY=X": [100.0, 1.0 / 0.0098]}, index=[d0, d1])
+
+    monkeypatch.setattr(fx, "fetch_daily_prices", _fake_fetch)
+    local = pd.DataFrame({"7203.T": [0.01]}, index=[d1])
+
+    out = convert_daily_returns_to_usd(local, end=date(2024, 1, 4))
+
+    assert captured["end"] == date(2024, 1, 4)
+    assert out.loc[d1, "7203.T"] == pytest.approx(-0.0102, abs=1e-12)

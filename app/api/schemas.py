@@ -26,6 +26,7 @@ class AccessResponse(BaseModel):
     # Frozen sample cap-weight snapshot date — backs the backdated-mode PIT-drift
     # disclosure (sample books replay TODAY'S weights onto historical dates).
     sample_weights_as_of: str
+    engine_mode: Literal["legacy", "shadow", "quant_v2"] = "legacy"
 
 
 class UnlockRequest(BaseModel):
@@ -47,6 +48,7 @@ class StatusResponse(BaseModel):
     prompt_version: str
     model_id: str
     environment: str
+    engine_mode: Literal["legacy", "shadow", "quant_v2"] = "legacy"
     ready: bool
     disclaimer: str
     rate_limits: dict[str, str]
@@ -152,6 +154,11 @@ class ScenarioRunRequest(BaseModel):
     # Benchmark ticker for relative (active) return. None falls back to the sample
     # portfolio's own benchmark; custom books must pass one to get an active return.
     benchmark: str | None = None
+    # Quant V2 controls. Legacy mode accepts these for request compatibility but
+    # does not apply them; Quant V2 uses exact trading-day windows and whole-vector
+    # severity scaling.
+    horizon: Literal[5, 21, 63] = 21
+    severity: Literal[1.0, 1.5, 2.0] = 1.0
 
 
 class BookProfileRequest(BaseModel):
@@ -246,8 +253,13 @@ class ScenarioReproducibility(BaseModel):
     selected_event_ids: list[str]
     portfolio_holdings: dict[str, float]
     portfolio_key: str
-    market_data_source: Literal["yfinance"] = "yfinance"
+    market_data_source: Literal["yfinance", "French Data Library + FRED + yfinance"] = "yfinance"
     nami_engine_version: str
+    engine_mode: Literal["legacy", "quant_v2"] = "legacy"
+    engine_version: str | None = None
+    methodology: Literal["llm_shock_envelope", "joint_historical_neighbors"] = "llm_shock_envelope"
+    horizon_trading_days: Literal[5, 21, 63] | None = None
+    severity_multiplier: Literal[1.0, 1.5, 2.0] | None = None
     # Frozen mark-to-market block (None on return-only runs). Snapshotting the
     # NAV, the exact marks, and the FX rates + dates makes a saved MTM scenario
     # re-render identically even after live prices/FX drift.

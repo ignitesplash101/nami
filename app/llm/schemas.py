@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AnalogSelection(BaseModel):
@@ -36,10 +36,41 @@ class Citation(BaseModel):
     grounding_metadata: dict[str, Any] | None = None
 
 
+class StateDirection(BaseModel):
+    """LLM-selected sign constraint for one public market-state dimension."""
+
+    model_config = ConfigDict(extra="forbid")
+    state: Literal["volatility", "rates", "dollar", "oil", "credit"]
+    direction: Literal["up", "down", "neutral"]
+    reasoning: str
+
+
 class AnalogSelectionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     selected_events: list[AnalogSelection]
     reasoning: str
+    state_directions: list[StateDirection] = Field(default_factory=list)
+
+
+class QuantAnalogSelectionOutput(AnalogSelectionOutput):
+    """Quant selection contract: all five state directions are mandatory and unique."""
+
+    state_directions: list[StateDirection]
+
+    @model_validator(mode="after")
+    def validate_state_directions(self) -> QuantAnalogSelectionOutput:
+        required = {"volatility", "rates", "dollar", "oil", "credit"}
+        states = [item.state for item in self.state_directions]
+        if len(states) != len(set(states)):
+            raise ValueError("Quant state_directions must not contain duplicate states")
+        if set(states) != required:
+            missing = sorted(required - set(states))
+            extra = sorted(set(states) - required)
+            raise ValueError(
+                f"Quant state_directions must cover all five states; "
+                f"missing={missing}, extra={extra}"
+            )
+        return self
 
 
 class ShockProposalOutput(BaseModel):
@@ -306,6 +337,57 @@ class SeverityLadder(BaseModel):
     n_held: int
 
 
+class HistoricalModelRangeResult(BaseModel):
+    """Weighted historical-neighbor P&L range; neither forecast nor confidence interval."""
+
+    model_config = ConfigDict(extra="forbid")
+    label: Literal["historical_model_range"] = "historical_model_range"
+    p10: float
+    p50: float
+    p90: float
+    draws: int
+    seed: int
+
+
+class QuantSupportResult(BaseModel):
+    """Observable support diagnostics for a joint-historical Quant V2 estimate."""
+
+    model_config = ConfigDict(extra="forbid")
+    candidate_count: int
+    direction_compatible_count: int
+    neighbor_count: int
+    effective_sample_size: float
+    medoid_date: date
+    nearest_distance: float
+    kernel_bandwidth: float
+    query_dates: list[date]
+    data_start: date
+    data_end: date
+
+
+class QuantExposureResult(BaseModel):
+    """Per-holding exposure provenance and shrinkage tier."""
+
+    model_config = ConfigDict(extra="forbid")
+    region: Literal["north_america", "developed_ex_us", "japan", "generic"]
+    tier: Literal["estimated", "strongly_shrunk", "prior_proxy"]
+    n_obs: int
+    data_weight: float
+    coefficients: dict[str, float]
+    industry_factor: str | None = None
+    industry_mapping: str | None = None
+
+
+class QuantSourceVersionResult(BaseModel):
+    """Exact public response identity retained with a Quant V2 result."""
+
+    model_config = ConfigDict(extra="forbid")
+    dataset_id: str
+    url: str
+    sha256: str
+    retrieved_at: datetime
+
+
 class ScenarioResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario_text: str
@@ -375,3 +457,15 @@ class ScenarioResult(BaseModel):
     benchmark_ticker: str | None = None
     benchmark_pnl: PortfolioPnL | None = None
     active_return: float | None = None
+    # Additive Quant V2 metadata. Defaults preserve every legacy cached/saved
+    # payload; the legacy engine remains the deployment default until challenger
+    # gates explicitly promote Quant V2.
+    engine_mode: Literal["legacy", "quant_v2"] = "legacy"
+    engine_version: str | None = None
+    methodology: Literal["llm_shock_envelope", "joint_historical_neighbors"] = "llm_shock_envelope"
+    horizon_trading_days: Literal[5, 21, 63] | None = None
+    severity_multiplier: Literal[1.0, 1.5, 2.0] | None = None
+    historical_model_range: HistoricalModelRangeResult | None = None
+    quant_support: QuantSupportResult | None = None
+    quant_exposures: dict[str, QuantExposureResult] = Field(default_factory=dict)
+    quant_source_versions: dict[str, QuantSourceVersionResult] = Field(default_factory=dict)

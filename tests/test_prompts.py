@@ -51,7 +51,7 @@ def test_edit_and_analog_prompts_carry_units_contract():
 
 def test_grounded_narrative_prioritizes_high_quality_sources():
     flat = _flat(GROUNDED_NARRATIVE_PROMPT).lower()
-    assert PROMPT_VERSION == "v11"
+    assert PROMPT_VERSION == "v12"
     assert "government" in flat
     assert "central-bank" in flat
     assert "regulator" in flat

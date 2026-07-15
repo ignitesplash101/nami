@@ -763,6 +763,14 @@ input[type="range"]::-moz-range-thumb {
 .scenario-controls .asof-picker {
   margin-top: 0;
 }
+.quant-run-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+.quant-run-controls label {
+  margin: 0;
+}
 .rail-ops-button {
   display: none;
   width: 100%;
@@ -1058,6 +1066,47 @@ input[type="range"]::-moz-range-thumb {
 }
 .results-answer-band > :only-child {
   grid-column: 1 / -1;
+}
+.quant-model-summary {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+.quant-model-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.quant-model-heading h3 {
+  margin: 0;
+}
+.quant-range-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.quant-range-grid > div {
+  border-left: 2px solid var(--accent-2);
+  padding-left: var(--space-3);
+}
+.quant-range-grid span,
+.quant-range-grid strong {
+  display: block;
+  font-family: var(--font-mono);
+}
+.quant-range-grid span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.quant-range-grid strong {
+  margin-top: 4px;
+  font-size: var(--step-1);
+}
+.quant-model-note {
+  margin: var(--space-3) 0 0;
 }
 
 /* Prior results dim (NOT unmount) while a re-run streams — a class toggle on
@@ -2954,8 +3003,14 @@ a {
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
   }
+  .quant-run-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .scenario-controls .primary-button {
     width: 100%;
+  }
+  .quant-model-heading {
+    flex-direction: column;
   }
 
   /* Card heading: stack the h3 above any inline button/toggle so the segmented

@@ -193,7 +193,7 @@ with contextlib.suppress(Exception):
 # release-significant change to the engine; not in lockstep with PROMPT_VERSION.
 # (Display metadata only — the cache-invalidation lever for engine math is the
 # `regression_spec` component inside the scenario cache key.)
-NAMI_ENGINE_VERSION = "0.2.0"
+NAMI_ENGINE_VERSION = "0.3.0"
 MIN_SCENARIO_TEXT_CHARS = 10
 MAX_SCENARIO_TEXT_CHARS = 2000
 
@@ -322,7 +322,17 @@ def _build_reproducibility(
         selected_event_ids=list(result.selected_event_ids),
         portfolio_holdings=dict(result.portfolio_holdings),
         portfolio_key=portfolio_key,
+        market_data_source=(
+            "French Data Library + FRED + yfinance"
+            if result.engine_mode == "quant_v2"
+            else "yfinance"
+        ),
         nami_engine_version=NAMI_ENGINE_VERSION,
+        engine_mode=result.engine_mode,
+        engine_version=result.engine_version,
+        methodology=result.methodology,
+        horizon_trading_days=result.horizon_trading_days,
+        severity_multiplier=result.severity_multiplier,
         # Frozen mark-to-market block (None on return-only runs) so a saved MTM
         # scenario re-renders with the same NAV / marks / FX it was run against.
         portfolio_nav=result.portfolio_nav,
@@ -346,12 +356,14 @@ def _permissions(mode: AccessMode) -> Permissions:
 
 def _access_response(request: Request) -> AccessResponse:
     mode = access_mode_for_request(request)
+    config = load_config()
     return AccessResponse(
         access_mode=mode,
         admin_available=configured_passcode() is not None,
         permissions=_permissions(mode),
         latest_market_date=latest_market_date().isoformat(),
         sample_weights_as_of=sample_as_of(),
+        engine_mode=config.engine_mode,
     )
 
 
@@ -540,18 +552,21 @@ def unlock(body: UnlockRequest, request: Request, response: Response) -> AccessR
         permissions=_permissions("admin"),
         latest_market_date=latest_market_date().isoformat(),
         sample_weights_as_of=sample_as_of(),
+        engine_mode=config.engine_mode,
     )
 
 
 @api.post("/api/auth/lock", response_model=AccessResponse)
 def lock(request: Request, response: Response) -> AccessResponse:
     clear_admin_cookie(response, request)
+    config = load_config()
     return AccessResponse(
         access_mode="visitor",
         admin_available=configured_passcode() is not None,
         permissions=_permissions("visitor"),
         latest_market_date=latest_market_date().isoformat(),
         sample_weights_as_of=sample_as_of(),
+        engine_mode=config.engine_mode,
     )
 
 
@@ -738,6 +753,8 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
             portfolio_nav=nav,
             reporting_currency=currency,
             benchmark=body.benchmark,
+            horizon=body.horizon,
+            severity=body.severity,
         )
     except BudgetExceededError as exc:
         raise _budget_http_error(exc) from exc
@@ -760,7 +777,13 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
         # own statuses.
         raise http_error(503, "unavailable", str(exc)) from exc
     cache_key = compute_scenario_cache_key(
-        scenario_text, portfolio, market_date=result.market_date, position_quantities=quantities
+        scenario_text,
+        portfolio,
+        market_date=result.market_date,
+        position_quantities=quantities,
+        horizon=body.horizon,
+        severity=body.severity,
+        benchmark=body.benchmark,
     )
     portfolio_key = portfolio if isinstance(portfolio, str) else "custom"
     reproducibility = _build_reproducibility(
@@ -815,12 +838,17 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
                 portfolio_nav=nav,
                 reporting_currency=currency,
                 benchmark=body.benchmark,
+                horizon=body.horizon,
+                severity=body.severity,
             )
             cache_key = compute_scenario_cache_key(
                 scenario_text,
                 portfolio,
                 market_date=result.market_date,
                 position_quantities=quantities,
+                horizon=body.horizon,
+                severity=body.severity,
+                benchmark=body.benchmark,
             )
             portfolio_key = portfolio if isinstance(portfolio, str) else "custom"
             reproducibility = _build_reproducibility(
@@ -903,6 +931,11 @@ def decompose_endpoint(
     mode = access_mode_for_request(request)
     if not can_use_narrative_decomposition(mode):
         raise HTTPException(status_code=403, detail="Narrative decomposition requires admin mode.")
+    if body.result.engine_mode == "quant_v2":
+        raise HTTPException(
+            status_code=422,
+            detail="Narrative Shapley is unavailable for Quant V2 results.",
+        )
 
     config = load_config()
     try:
@@ -944,6 +977,11 @@ def decompose_stream_endpoint(
     mode = access_mode_for_request(request)
     if not can_use_narrative_decomposition(mode):
         raise HTTPException(status_code=403, detail="Narrative decomposition requires admin mode.")
+    if body.result.engine_mode == "quant_v2":
+        raise HTTPException(
+            status_code=422,
+            detail="Narrative Shapley is unavailable for Quant V2 results.",
+        )
 
     config = load_config()
     try:
@@ -1258,6 +1296,7 @@ def status_endpoint(request: Request) -> StatusResponse:
         prompt_version=PROMPT_VERSION,
         model_id=config.vertex_model_id,
         environment=config.environment,
+        engine_mode=config.engine_mode,
         ready=ready_flag,
         disclaimer=DISCLAIMER_SHORT,
         rate_limits={"llm": config.rate_limit_llm, "unlock": config.rate_limit_unlock},

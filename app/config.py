@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Literal, cast
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+EngineMode = Literal["legacy", "shadow", "quant_v2"]
 
 
 @dataclass(frozen=True)
@@ -38,12 +41,20 @@ class Config:
     # for cost ESTIMATION/budgeting only, not billing — keep them conservative.
     price_input_per_mtok: float = 0.30
     price_output_per_mtok: float = 2.50
+    engine_mode: EngineMode = "legacy"
 
 
 def _split_origins(raw: str | None) -> tuple[str, ...]:
     if not raw:
         return ()
     return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
+
+
+def _engine_mode(raw: str | None) -> EngineMode:
+    value = (raw or "legacy").strip().lower()
+    if value not in {"legacy", "shadow", "quant_v2"}:
+        raise ValueError("ENGINE_MODE must be one of: legacy, shadow, quant_v2")
+    return cast(EngineMode, value)
 
 
 def load_config() -> Config:
@@ -80,4 +91,5 @@ def load_config() -> Config:
         daily_llm_cost_cap_usd=float(os.getenv("DAILY_LLM_COST_CAP_USD", "25.0")),
         price_input_per_mtok=float(os.getenv("PRICE_INPUT_PER_MTOK", "0.30")),
         price_output_per_mtok=float(os.getenv("PRICE_OUTPUT_PER_MTOK", "2.50")),
+        engine_mode=_engine_mode(os.getenv("ENGINE_MODE")),
     )

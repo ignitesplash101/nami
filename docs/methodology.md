@@ -9,7 +9,7 @@
 ## What nami does
 
 A user describes a hypothetical market stress in natural language ("60% US tariffs on
-China imports, prolonged trade war"). nami:
+China imports, prolonged trade war"). In the production-default **legacy** engine, nami:
 
 1. Asks Gemini to pick 2–5 **historical analog events** from a curated registry whose
    *mechanism* matches the scenario (the 2–5 cardinality is enforced in code — an
@@ -31,6 +31,163 @@ exchange, academic/institutional-research, and major-news sources in that order.
 discourages broker marketing, retail/crypto sites, SEO explainers, and Wikipedia when
 stronger evidence exists; this is search guidance rather than a brittle domain allowlist.
 Without citations the pipeline refuses to return.
+
+An optional **Quant V2** challenger keeps analog selection and narrative grounding but
+removes the LLM from numerical shock construction. It is documented next. Production
+remains explicitly configured as `ENGINE_MODE=legacy` until the offline challenger gates
+pass; `shadow` runs both engines for comparison, while `quant_v2` returns the challenger.
+
+---
+
+## Quant V2 methodology (optional challenger)
+
+Quant V2 asks the LLM for two semantic tasks only: select 2–5 eligible analogs and label
+the expected direction (`up`, `down`, or `neutral`) of volatility, rates, the broad dollar,
+oil, and credit stress. A Quant-specific schema requires all five unique directions; one
+invalid omission receives one bounded repair call before the run fails closed. It never asks
+the LLM for a number, a ticker-level periphery shock,
+or an attribution. The numerical scenario is selected from public history.
+
+### Public inputs and provenance
+
+| input | construction | role |
+|---|---|---|
+| Regional equity factors | Daily market excess return, size, value, profitability, investment, momentum, and risk-free returns from the [Kenneth French Data Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html), separately for North America, developed ex-US, Japan, and broad developed markets | Return outcomes and holding exposure estimation |
+| US industry proxy | Daily value-weighted 12-industry portfolio returns from the same research library | Optional coarse US industry-relative exposure |
+| Volatility | FRED `VIXCLS` | Market-state feature |
+| Rates | FRED `DGS10`, scaled from percent to decimal yield | Market-state feature |
+| Dollar | FRED `DTWEXBGS` broad dollar index | Market-state feature |
+| Oil | FRED `DCOILWTICO` WTI spot price | Market-state feature |
+| Credit | Yahoo adjusted closes for `HYG` and `SHY` | Liquid ETF proxy, not a proprietary credit spread |
+| Holdings and FX | Daily adjusted closes plus the existing suffix-based FX conversion | Exposure estimation and mark-to-market |
+
+Each official response is validated, hashed with full SHA-256, and stored with dataset id,
+source URL, and retrieval time in a version-keyed 30-day GCS parquet cache. A requested
+as-of slice is applied after every cache or network read, so no row after the vintage can
+reach the model. This is **row-date-safe but not fully point-in-time**: an official current
+file may contain later revisions to older observations. The exact source versions are
+stored on the result so that limitation is visible rather than hidden.
+
+### One joint historical state
+
+For horizon `h ∈ {5, 21, 63}` trading days, the six observed state levels become five
+changes:
+
+```text
+volatility = log(VIX_t) − log(VIX_t-h)
+rates      = yield10y_t − yield10y_t-h
+dollar     = log(Dollar_t) − log(Dollar_t-h)
+oil        = asinh(WTI_t / median(|WTI|)) − asinh(WTI_t-h / median(|WTI|))
+credit     = log(SHY_t / HYG_t) − log(SHY_t-h / HYG_t-h)
+```
+
+The inverse-hyperbolic-sine oil transform remains defined through the negative-price
+episode. A higher credit feature means short Treasuries outperformed high yield, a
+transparent risk-off proxy. Official observations may carry forward for at most five rows
+to bridge publication/holiday gaps. State changes and compounded factor outcomes are then
+rolled on the **same complete factor-market calendar**; mismatched rolling calendars are
+not compared.
+
+Each selected analog is anchored to the last complete joint observation on or before its
+end date, with a maximum seven-calendar-day gap. Multiple analog state vectors are combined
+by the component-wise median. The semantic direction labels filter the historical candidate
+set by exact sign; `neutral` leaves that dimension unconstrained. The engine does not relax
+directions to force a result.
+
+Candidate states are centered by the median and scaled by MAD (`1.4826 × median absolute
+deviation`), falling back to IQR and then standard deviation only when needed. A query
+outside the observed robust support of any dimension fails closed. The covariance of the
+standardized state vectors uses the [Ledoit–Wolf linear shrinkage estimator](https://doi.org/10.1016/S0047-259X(03)00096-4), then distance is
+
+```text
+d(x, q) = sqrt((x − q)' Σ_shrunk^-1 (x − q)).
+```
+
+The closest 50 compatible observations receive Gaussian weights
+`w_i ∝ exp(−0.5(d_i / b)^2)`, where `b` is the median positive neighbor distance. The run
+is rejected unless `20 ≤ Kish effective sample size (1 / Σw_i²) ≤ neighbor count ≤ 50`.
+The point scenario is
+the **weighted medoid**: one observed joint factor-return vector minimizing weighted robust
+distance to the other neighbors. This preserves cross-factor coherence; Quant V2 never
+assembles an impossible vector by choosing each factor independently.
+
+Severity `s ∈ {1.0, 1.5, 2.0}` multiplies that whole medoid vector. It is a transparent
+stress multiplier, not a probability statement. P10/P50/P90 are produced by 4,096 seeded
+weighted bootstrap draws of whole neighbor vectors through the same portfolio exposures.
+The UI and export call this a **historical model range**. It is not a forecast, prediction
+interval, confidence interval, or claim that a future event has an 80% chance of landing
+inside the range.
+
+### Regional, prior-shrunk exposures
+
+Each holding uses its known North America, developed ex-US, or Japan research factors; an
+unknown/custom region uses broad-developed factors as a disclosed generic fallback. US
+holdings may also receive one coarse 12-industry leg from the snapshot's broad sector tag.
+That mapping is not security-master-grade industry classification and is never applied to
+non-US holdings.
+
+Built-in ETF benchmarks are classified explicitly: QQQ and SPLV use North America, EWJ
+uses Japan, and URTH uses the broad-developed factor set. They are not allowed to inherit an
+accidental missing-metadata fallback; custom benchmark tickers without metadata still use the
+disclosed broad-developed prior.
+
+Daily stock, FX, factor, and risk-free returns are each compounded to Friday-ending weeks
+before alignment; the weekly index is the actual last source observation, not a fabricated
+Friday. The estimator uses at most five years, exponential weights with a two-year half-life,
+standardized regressors, and ridge around an explicit raw-unit prior:
+
+```text
+regional market beta = 1
+applicable US industry-relative beta = 1
+all other factor betas = 0
+```
+
+The US industry regressor is `industry total return − (regional MKT_RF + RF)`, so prior
+market `1` plus prior industry `1` reconstructs industry excess return without counting the
+market twice. Confidence is surfaced, not guessed:
+
+| overlapping weekly observations | treatment | result tier |
+|---|---|---|
+| `>= 156` | full data estimate around the prior | `estimated` |
+| `52–155` | continuous blend from prior to data estimate | `strongly_shrunk` |
+| `1–51` | prior only | `prior_proxy` |
+| `0` | reject the holding/run | no result |
+
+A missing known-region dataset also fails the run. A prior proxy is therefore transparent
+degradation for a short-history holding, never a substitute for missing required data.
+
+### P&L, attribution, and compatibility
+
+For holding `i`, factor `f`, weight `w_i`, exposure `β_i,f`, and selected historical move
+`m_f`, Quant V2 computes:
+
+```text
+factor contribution[f] = (Σ_i w_i β_i,f) × m_f
+ticker contribution[i] = w_i × Σ_f β_i,f m_f
+portfolio P&L          = Σ_f factor contribution[f]
+```
+
+This is exact direct linear attribution. Conditional Shapley maps are `null`, periphery is
+zero, and the UI does not show adjustment, methodology-diagnostic, or narrative-theme
+Shapley controls. A benchmark uses the same vector and direct attribution, preserving
+`active_return = portfolio − benchmark`. Legacy saved results remain valid because every new
+field has a backward-compatible default; saved Quant results retain engine/methodology,
+horizon, severity, range, support, exposure tier, and source provenance.
+
+### Promotion and remaining limits
+
+`scripts/run_quant_challenger.py` evaluates a paired held-out JSON dataset with no network or
+LLM calls. Promotion requires at least 12 cases spanning North America, developed ex-US,
+Japan and all three horizons; ESS-qualified support; exact repeated numerical output; Quant
+MAE no worse than legacy; sign hit-rate no worse than legacy; and at least 60% of realized
+holdouts inside the P10–P90 historical model range. Every gate must pass. These are minimum
+promotion checks, not proof of investment usefulness.
+
+Quant V2 still depends on LLM analog/direction semantics, current official files may revise
+history, HYG–SHY is only a liquid credit proxy, regional/industry metadata are coarse, priors
+can dominate short histories, and nearest historical states do not make a future scenario
+stationary or probable. It deliberately adds no idiosyncratic shock and no correlation-credit
+allocation. Outputs remain educational scenario estimates, not forecasts.
 
 ---
 
@@ -682,7 +839,7 @@ stress text, not an automatic sign hack or post-hoc clamp.
 
 ## Fixed-context theme sensitivity (narrative Shapley)
 
-The opt-in "Run theme sensitivity" action splits the scenario text into N ∈ {2, 3, 4}
+This legacy-only opt-in action splits the scenario text into N ∈ {2, 3, 4}
 self-contained sub-narratives and assigns each its exact Shapley value over the payoff
 `v(S) = total_pnl(run_scenario(" ".join(S)))`, with `v(∅) := 0`.
 
@@ -726,16 +883,22 @@ news-drift variance the theme-sensitivity sum previously carried.
   + regression_spec                # estimator id|lookback|alpha|min_obs — engine-math lever
   + position_quantities            # only when present (MTM share counts)
   + pinned_event_ids               # only when present (fixed-context theme-sensitivity subsets)
+  + engine_mode                    # legacy / shadow / quant_v2
+  + horizon + severity             # Quant V2 numerical semantics
+  + engine_spec                    # Quant public-data/exposure/scenario versions
+  + benchmark_ticker               # Quant benchmark is part of the canonical result
   ```
 - TTL = 7 days (`LLM_CACHE_TTL_DAYS`) on cache reads.
 - Cache backend: `CloudStorageCache` (GCS, prefix `scenario_cache/`), JSON serialized via
   `ScenarioResult.model_dump(mode="json")`. Tests inject `InMemoryCache` instead.
 
-`PROMPT_VERSION` is the invalidation lever for prompt/schema semantics; the
-`regression_spec` component is the lever for engine math — changing the estimator,
-`RIDGE_ALPHA`, or `BETA_LOOKBACK_WEEKS` produces new keys automatically, so stale P&L is
-never served after a regression change. Same-day re-runs of an unchanged scenario hit
-cache in <500ms; the 7-day TTL forces eventual refresh against drifted news.
+`PROMPT_VERSION` is the invalidation lever for prompt/schema semantics. Legacy regression
+math rides `regression_spec`; Quant V2 public-data, exposure, and joint-history math ride
+their combined `engine_spec`. Same-day re-runs of an unchanged scenario normally hit the
+JSON cache; the 7-day TTL forces eventual refresh against drifted news. Quant public datasets
+have a separate 30-day versioned parquet cache and carry their exact source hash/time in the
+result. Public-data revisions remain possible after that TTL, so cache reproducibility is not
+the same as a permanent point-in-time database.
 
 ---
 
@@ -798,6 +961,11 @@ Pearson r plus every per-pair row and skip reason — lives in
 error into its two layers: how much comes from the linear engine itself versus from the
 severity of the LLM-proposed, envelope-banded shocks.
 
+Quant V2 is evaluated separately with `scripts/run_quant_challenger.py` on paired held-out
+legacy/Quant/realized records. The command is offline and deterministic; its promotion gates
+are described in the Quant V2 section. No passing artifact has been committed yet, so this
+document does not claim that the challenger has earned production promotion.
+
 ---
 
 ## What this is NOT
@@ -812,17 +980,20 @@ severity of the LLM-proposed, envelope-banded shocks.
   cap-weight snapshot replayed onto the as-of date — point-in-time weight drift and
   survivorship apply. The backdated-mode banner discloses this in-product, with the
   snapshot date.
-- **Not deterministic in narrative wording.** Shocks are reproducible by cache hash;
-  narrative text varies slightly across runs even at `temperature=0`.
+- **Not a fully point-in-time public-factor archive.** Quant rows are sliced to the as-of date,
+  but a current official file can revise an old observation after the fact.
+- **Not deterministic in uncached narrative wording.** Cached results are stable; an uncached
+  model call can vary slightly even at `temperature=0`.
 - **Not investment advice.** Period.
 
 ---
 
 ## Where things live
 
-- Engine math: `app/factors/{universe,regression,shocks,analogs}.py`
+- Legacy engine math: `app/factors/{universe,regression,shocks,analogs,attribution}.py`
+- Quant V2 math: `app/factors/{quant_exposure,quant_inputs,quant_scenario,quant_challenger}.py`
 - LLM pipeline: `app/llm/{schemas,prompts,grounding,validation,gemini_client,scenario}.py`
-- Caching: `app/data/cache.py` (GCS parquet + JSON), `app/utils/hashing.py`
+- Caching/data: `app/data/{cache,quant_cache,quant_sources}.py`, `app/utils/hashing.py`
 - Sample portfolios: `app/data/sample_portfolios.py`
 - API: `app/api/main.py`
 - UI: `frontend/src/` (React + TypeScript + Plotly.js)
@@ -847,6 +1018,11 @@ swap in a verified link.
   nonorthogonal problems.* *Technometrics* 12(1), 55–67.
   DOI: [10.1080/00401706.1970.10488634](https://doi.org/10.1080/00401706.1970.10488634).
   Foundation of the ridge regularization the beta-estimation step relies on.
+- **Ledoit, O., & Wolf, M. (2004).** *A well-conditioned estimator for
+  large-dimensional covariance matrices.* *Journal of Multivariate Analysis* 88(2),
+  365–411. DOI: [10.1016/S0047-259X(03)00096-4](https://doi.org/10.1016/S0047-259X(03)00096-4).
+  Quant V2 uses this linear shrinkage estimator before inverting the state covariance
+  for Mahalanobis distance.
 - **Fama, E. F., & French, K. R. (1993).** *Common risk factors in the returns on
   stocks and bonds.* *Journal of Financial Economics* 33(1), 3–56.
   <https://www.sciencedirect.com/science/article/abs/pii/0304405X93900235>.

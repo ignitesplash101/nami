@@ -134,6 +134,50 @@ def test_run_reproducibility_carries_regression_spec(client, monkeypatch):
     assert "alpha=" in spec and "min_obs=" in spec
 
 
+def test_run_forwards_quant_horizon_and_severity(client, monkeypatch):
+    captured = {}
+
+    def _fake_run_scenario(text, portfolio, **kwargs):
+        captured.update(kwargs)
+        return _fake_result(text)
+
+    monkeypatch.setattr("app.api.main.run_scenario", _fake_run_scenario)
+    response = client.post(
+        "/api/scenarios/run",
+        json={
+            "scenario_text": "Custom visitor stress",
+            "portfolio_key": "us_tech_growth",
+            "horizon": 63,
+            "severity": 2.0,
+        },
+    )
+    assert response.status_code == 200
+    assert captured["horizon"] == 63
+    assert captured["severity"] == 2.0
+
+
+def test_quant_reproducibility_names_all_market_data_sources(client, monkeypatch):
+    quant_result = _fake_result("Custom visitor stress").model_copy(
+        update={
+            "engine_mode": "quant_v2",
+            "engine_version": "quant-v2-test",
+            "methodology": "joint_historical_neighbors",
+            "horizon_trading_days": 21,
+            "severity_multiplier": 1.0,
+        }
+    )
+    monkeypatch.setattr("app.api.main.run_scenario", lambda *args, **kwargs: quant_result)
+    response = client.post(
+        "/api/scenarios/run",
+        json={"scenario_text": "Custom visitor stress", "portfolio_key": "us_tech_growth"},
+    )
+    assert response.status_code == 200
+    assert (
+        response.json()["reproducibility"]["market_data_source"]
+        == "French Data Library + FRED + yfinance"
+    )
+
+
 def test_visitor_rejects_admin_only_run_inputs(client):
     custom_portfolio = client.post(
         "/api/scenarios/run",
@@ -234,6 +278,21 @@ def test_decomposition_is_admin_only(client):
     result = _fake_result("x").model_dump(mode="json")
     response = client.post("/api/scenarios/decompose", json={"result": result})
     assert response.status_code == 403
+
+
+def test_quant_decomposition_is_rejected_before_compute(client, monkeypatch):
+    client.post("/api/auth/unlock", json={"passcode": "test-passcode"})
+    result = _fake_result("quant result").model_copy(update={"engine_mode": "quant_v2"})
+
+    def _unexpected(*args, **kwargs):
+        raise AssertionError("Quant V2 must not start narrative Shapley")
+
+    monkeypatch.setattr("app.api.main.compute_narrative_shapley", _unexpected)
+    response = client.post(
+        "/api/scenarios/decompose", json={"result": result.model_dump(mode="json")}
+    )
+    assert response.status_code == 422
+    assert "unavailable for Quant V2" in response.json()["detail"]
 
 
 def test_portfolio_validation_matches_weight_rules(client):

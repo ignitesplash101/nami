@@ -152,8 +152,8 @@ export function OpsDrawer({ isOpen, onClose, onRequestPurge, onForbidden }: OpsD
             </div>
             {status ? (
               <p className="muted ops-status-line">
-                {status.environment} · {status.model_id} · prompt {status.prompt_version} ·{" "}
-                {status.ready ? "ready" : "degraded"}
+                {status.environment} · {status.engine_mode} · {status.model_id} · prompt{" "}
+                {status.prompt_version} · {status.ready ? "ready" : "degraded"}
               </p>
             ) : null}
           </section>

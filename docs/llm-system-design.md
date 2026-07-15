@@ -6,19 +6,19 @@ Source-of-truth for everything below is [`docs/methodology.md`](methodology.md),
 
 ---
 
-## 1. Three-call Gemini pipeline (not one mega-prompt)
+## 1. Two numerical contracts, one grounding discipline
 
-A scenario run executes three distinct Gemini calls in sequence, with different `(system_instruction, tools, response_schema)` configs per call. Orchestration is in [`app/llm/scenario.py::run_scenario`](../app/llm/scenario.py); the calls themselves in [`app/llm/gemini_client.py::GeminiClient`](../app/llm/gemini_client.py).
+The production-default legacy path executes three distinct Gemini calls. The optional Quant V2 path executes two and keeps the LLM out of numerical shock construction. Orchestration is in [`app/llm/scenario.py::run_scenario`](../app/llm/scenario.py); `ENGINE_MODE=legacy|shadow|quant_v2` selects the path and defaults to `legacy`.
 
 | call | tools | response_schema | purpose |
 |---|---|---|---|
-| `select_analogs` | none | `AnalogSelectionOutput` | Pick 2–5 events from the curated registry whose mechanism matches the scenario |
+| `select_analogs` / `select_quant_analogs` | none | legacy-compatible `AnalogSelectionOutput` / required `QuantAnalogSelectionOutput` | Pick 2–5 events; Quant V2 requires one semantic direction for every volatility/rates/dollar/oil/credit state and repairs one invalid omission |
 | `_grounded_narrative` (Call 2a) | `google_search` | **none** (free-form text) | Write a 3-5 sentence hypothetical stress narrative citing current news |
 | `_extract_structured_shocks` (Call 2b) | none | `ShockProposalOutput` | Translate that narrative into a `FactorShock` list + `PeripheryShock` list |
 
-Why split Call 2 in two? See section 2.
+Legacy uses all three rows. Quant V2 uses `select_analogs` plus `narrate_quant_scenario`; it does **not** call `_extract_structured_shocks`, does not request periphery, and computes its whole factor vector from public joint history. Why split legacy Call 2 in two? See section 2.
 
-The orchestrator runs Call 1 with the pre-fetched event registry, then *parallelizes* portfolio prices, factor history, and the Calls 2a/2b chain. Selected analog returns reuse the 30-day complete event matrix when present; otherwise only the selected events are fetched. Attribution computes full and explicit Conditional Shapley in parallel, then derives grouped attribution from the full result, avoiding a duplicate full explainer.
+The legacy orchestrator runs Call 1 with the pre-fetched event registry, then *parallelizes* portfolio prices, factor history, and the Calls 2a/2b chain. Selected analog returns reuse the 30-day complete event matrix when present; otherwise only the selected events are fetched. Attribution computes full and explicit Conditional Shapley in parallel, then derives grouped attribution from the full result, avoiding a duplicate full explainer. Quant V2 overlaps analog selection with public-data/exposure assembly, then uses direct attribution only.
 
 ---
 
@@ -38,7 +38,7 @@ This is documented in code, not just docs. Reviewers can grep for the assertion.
 
 ## 3. `PROMPT_VERSION` as the cache-invalidation lever
 
-Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v11"`. The version is mixed into the scenario cache key:
+Defined in [`app/llm/prompts.py::PROMPT_VERSION`](../app/llm/prompts.py) — currently `"v12"`. The version is mixed into the scenario cache key:
 
 ```python
 # app/utils/hashing.py::scenario_cache_key
@@ -48,6 +48,7 @@ key_inputs = (
     factor_universe_version, events_version,
     regression_spec,           # estimator id|lookback|alpha|min_obs — engine-math lever
     # + position_quantities / pinned_event_ids when present
+    # + engine_mode / horizon / severity / engine_spec / Quant benchmark
 )
 ```
 
@@ -62,12 +63,13 @@ The full version history is in the file header. Highlights:
 - v8 → v9: shock-units/horizon contract in the extraction prompt (cumulative episode total returns, not weekly) + honest rule-4 wording (the reasoning-based envelope escape hatch never existed in code), per-event envelope payload + window lengths, 2–5 analog cardinality enforced post-hoc, periphery hard band ±0.75, horizon-neutral factor descriptions, `ScenarioResult` gained `regression_quality` + `analog_event_returns`, and `.T`-suffix ticker returns are USD-converted before beta estimation. Engine-math changes (standardized ridge, per-ticker masks) are keyed separately via the new `regression_spec` cache-key component — that lever, not `PROMPT_VERSION`, owns estimator/alpha/lookback changes from here on.
 - v9 → v10: factor-universe breadth. Four new factors enter the LLM payload — `EFA` (developed ex-US equities), `HYG` (high-yield credit), `GLD` (gold), `SHY` (short-duration Treasuries), all decimal price returns with horizon-neutral descriptions — and rule 7's overlap enumeration gains `EFA`. The event registry grew 17 → 31 with four new tags (`technology`, `volatility`, `credit`, `disaster`); registry edits ride `events_version`, but the new factor descriptions alone require the prompt bump.
 - v10 → v11: grounded-narrative source quality. Google Search grounding now prefers official public-market sources, academic/institutional research, and major news, while discouraging broker marketing, retail/crypto sites, SEO explainers, and Wikipedia when stronger evidence exists. This is guidance, not an allowlist.
+- v11 → v12: Quant V2's semantic state directions and additive `ScenarioResult` provenance/range/support/exposure fields. The Quant selector uses a required five-direction schema plus one bounded schema-repair call; the legacy selector keeps optional directions for compatibility. Legacy prompts retain their existing numerical shock contract; old saved results deserialize through defaults, while scenario-cache entries are intentionally regenerated.
 
 ML-systems framing: this is *experiment versioning*. Same prompt + same model + same data + same code → byte-for-byte same output (modulo Gemini's own non-determinism, which `temperature=0` reduces but doesn't eliminate). Bump the version when any input to that contract changes.
 
 ---
 
-## 4. Semantic-only evals (no magnitude bounds)
+## 4. Semantic-only LLM evals (no magnitude bounds)
 
 Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py). Three tests, network-gated on `RUN_NETWORK_TESTS=1`, costs ~$0.003 total per run. The assertions are deliberately *semantic*, not numeric:
 
@@ -80,13 +82,13 @@ Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py)
 Why no magnitude bounds? Three reasons:
 1. **News drifts.** Same scenario text two months apart returns different grounded narratives because Google Search results have changed. The numbers ride that drift.
 2. **Gemini is not bit-deterministic** even at `temperature=0`. Same input can produce slightly different floats across runs and across model patch versions.
-3. **The deterministic invariants live elsewhere.** [`app/llm/validation.py::validate_shock_proposal`](../app/llm/validation.py) and the offline `tests/test_validation.py` suite enforce: every factor name is in `FACTORS`, no duplicates, no hallucinated tickers, factor shocks with envelope `count ≥ 3` stay inside `[p10, p90]`. The retry loop in `propose_shocks_with_retry` re-asks Gemini once with the violation list embedded; on second failure it raises.
+3. **The deterministic invariants live elsewhere.** Legacy shock bounds live in [`app/llm/validation.py::validate_shock_proposal`](../app/llm/validation.py). Quant V2 numerical invariants live in `app/factors/quant_*.py`: fixed horizons/severities, complete direction set, unique analog ids, vintage slicing, domain checks, `20≤ESS≤K≤50`, whole-vector medoid/range, and direct attribution.
 
 So the offline suite holds *structure* (codified contracts) while the network-gated suite holds *mechanism* (does the LLM's understanding of pandemics still link to pandemic analogs?). Together they let the snapshot in [`docs/backtest_results.md`](backtest_results.md) be an honest dated record rather than a stable benchmark.
 
 ---
 
-## 5. Iterative adjustment is structured editing, not re-proposal
+## 5. Legacy iterative adjustment is structured editing, not re-proposal
 
 The sliders + "make rates shock larger" prompt path in the UI does **not** re-run the full pipeline. [`app/llm/scenario.py::adjust_scenario_shocks`](../app/llm/scenario.py) takes a server-side `cache_key` (NOT a client-supplied prior result) and produces a derived `ScenarioResult` with the narrative, citations, analogs, periphery shocks, and factor envelope **guaranteed byte-for-byte unchanged** via `model_copy`. Only `factor_shocks`, `portfolio_pnl`, and `adjustment_history` change.
 
@@ -101,6 +103,8 @@ Three non-obvious validation rules:
 
 Why does this design matter? It means the LLM can't accidentally rewrite the narrative or citations while editing a single factor — the invariants are *structural*, enforced by `model_copy` and a separate `ShockEditPatch` schema. Reusing `ShockProposalOutput` for adjustments would have made every slider drag a potential narrative rewrite.
 
+Quant V2 rejects adjustment before any Gemini call. Its factors are one coherent observed vector, so changing a component independently would break the methodology; the supported action is edit the scenario and run the full joint selection again.
+
 ---
 
 ## 6. Vintage-controlled backdating (no look-ahead leakage)
@@ -111,6 +115,10 @@ Why does this design matter? It means the LLM can't accidentally rewrite the nar
 2. **yfinance fetches use `end=as_of + 1d`** (yfinance `end=` is exclusive). The same `end` is also threaded through the factor-history fetch and the adjustment-path refetch.
 3. **Warm cache bypassed** — [`app/factors/warm_cache.py`](../app/factors/warm_cache.py) keys only on `lookback_weeks` and always returns current data; the backdated path calls `fetch_factor_returns_with_history(end=...)` directly.
 4. **Narrative switches to `_analog_grounded_narrative`** ([`gemini_client.py:159`](../app/llm/gemini_client.py)) — Google Search is **not** invoked, the narrative is grounded in the selected analog events only, and `citations = []` is returned. `analogs_selected` becomes the audit trail instead of news URLs.
+
+Quant V2 applies the same eligible-event and analog-only narrative rules, rejects any selected event ending after the as-of date, slices every official/public frame before validation/modeling, and aligns state/factor windows on one vintage-bounded calendar. Its current official files can revise old rows later, so this is row-date-safe rather than a permanent point-in-time database.
+
+Quant scenario keys include the public-data, exposure, joint-history, and Yahoo market-cache versions. Holdings, FX, HYG/SHY, and benchmark prices all use the market wrapper, so omitting its version would let changed normalization semantics reuse an old Quant result.
 
 What is **not** vintage-controlled, honestly acknowledged: **Gemini's parametric knowledge.** The model still "knows" COVID happened even if `as_of = 2018`. The UI banner ([`frontend/src/AsOfDatePicker.tsx::BackdatedModeBanner`](../frontend/src/AsOfDatePicker.tsx)) makes this explicit. For reproducibility-grade work, treat the analog envelope and structural factor shocks as canonical; the narrative is illustrative.
 
@@ -131,6 +139,8 @@ Every saved scenario (Firestore `saved_scenarios/{id}`) stores a full `ScenarioR
 - `beta_lookback_weeks`, `ridge_alpha`, `regression_spec` (full estimator identity)
 - `selected_event_ids`, full `portfolio_holdings` dict, `portfolio_key`
 - `nami_engine_version`
+- `engine_mode`, `engine_version`, `methodology`, and optional Quant horizon/severity
+- Quant results also carry their historical range, support metrics, exposure tiers/coefficients, and exact public-source hashes in the result itself
 
 Saved records also inline the *full* `ScenarioResult` and the *full* event details for selected analogs — no foreign-keys, no GCS-cache dereferences. The GCS scenario cache has a 7-day TTL; a Firestore saved record outlives that without breakage.
 
@@ -141,5 +151,6 @@ What this buys: a scenario saved today can be re-rendered a year later from the 
 ## Footnotes for ML reviewers
 
 - **Attribution as ML interpretability.** The 4 attribution maps in [`app/factors/attribution.py`](../app/factors/attribution.py) treat the linear factor model `R_p = Σ β_i · w_i · F` as a multivariate function and apply Shapley credit allocation. The product split is deliberate: **Scenario shocks** is the production risk view, **Group totals** is the risk-committee view, and `Naive algebra` plus `Full conditional diagnostic` stay in advanced diagnostics. The backend grouped map remains factor-level after within-group redistribution; the UI waterfall sums it into true Market / Sector / Style / Macro totals and keeps factor detail in the table. The "Conditional Shapley" name follows Aas et al. (2021) and Janzing et al. (2020) — credit is allocated under the *historical conditional distribution* of factor returns, computed via `shap.LinearExplainer((coefs, intercept), masker=shap.maskers.Impute(background))`. This is not a causal decomposition. The full diagnostic can credit unshocked factors through correlation; it never drives the headline readout. Periphery remains outside factor Shapley and is surfaced as ticker-level idiosyncratic contribution when gross periphery is material.
+- **Attribution as ML interpretability.** The 4 legacy attribution maps in [`app/factors/attribution.py`](../app/factors/attribution.py) treat the linear factor model `R_p = Σ β_i · w_i · F` as a multivariate function and apply Shapley credit allocation. The product split is deliberate: **Scenario shocks** is the production risk view, **Group totals** is the risk-committee view, and `Naive algebra` plus `Full conditional diagnostic` stay in advanced diagnostics. The backend grouped map remains factor-level after within-group redistribution; the UI waterfall sums it into true Market / Sector / Style / Macro totals and keeps factor detail in the table. The "Conditional Shapley" name follows Aas et al. (2021) and Janzing et al. (2020) — credit is allocated under the *historical conditional distribution* of factor returns. This is not a causal decomposition. Quant V2 bypasses this layer and reports exact direct `exposure × historical move` contribution; all conditional maps are `null` by design, not failure.
 
 - **Theme-sensitivity Shapley** ([`app/llm/narrative_shapley.py`](../app/llm/narrative_shapley.py)) is fixed-context scenario-theme sensitivity: a scenario is decomposed into N=2..4 sub-narratives, then re-run on 2^N − 1 subsets in parallel (4-worker `ThreadPoolExecutor`), then Shapley-aggregated. Each subset **pins the source scenario's analog set and uses the analog-only narrative path (no Google re-grounding)** — only the shock proposal varies per fragment, so `v(S)` is deterministic. It measures the marginal shock each theme adds *within the original analog context*; illustrative, not causal risk attribution. Framed honestly in the UI as "Experimental:".

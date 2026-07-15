@@ -194,6 +194,7 @@ export function ResultsPanel({
   }
   const committedEnvelope = envelope;
   const { result, analog_events } = committedEnvelope;
+  const isQuant = result.engine_mode === "quant_v2";
   const currency = result.reporting_currency ?? "USD";
   // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
   // NAV is a client-side notional knob — instant what-if, no re-run.
@@ -229,8 +230,20 @@ export function ResultsPanel({
   const mainAttribution = selectMainAttribution(result);
   const waterfall =
     showDollars && nav != null
-      ? buildWaterfallDataDollars(result, mainAttribution.method, nav, currency, factorMeta, zoom)
-      : buildWaterfallData(result, mainAttribution.method, factorMeta, zoom);
+      ? buildWaterfallDataDollars(
+          result,
+          mainAttribution.method,
+          nav,
+          currency,
+          factorMeta,
+          isQuant ? "factor" : zoom
+        )
+      : buildWaterfallData(
+          result,
+          mainAttribution.method,
+          factorMeta,
+          isQuant ? "factor" : zoom
+        );
   const factorRows = factorReasoningRows(result, mainAttribution.method, factorMeta);
   const readoutMethod = preferredAttributionMethod(result);
   const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
@@ -244,6 +257,13 @@ export function ResultsPanel({
     waterfallViewportHeight
   );
   const reproducibility = envelope.reproducibility;
+  const quantExposureTiers = Object.values(result.quant_exposures ?? {}).reduce(
+    (counts, exposure) => {
+      counts[exposure.tier] += 1;
+      return counts;
+    },
+    { estimated: 0, strongly_shrunk: 0, prior_proxy: 0 }
+  );
 
   async function exportAllResults() {
     setExportBusy(true);
@@ -273,7 +293,12 @@ export function ResultsPanel({
   // The Adjust tab needs the full provenance chain: permission + the trusted
   // canonical + a live cache_key (the server re-fetches the canonical by key).
   const showAdjust = Boolean(
-    canAdjust && canonicalSnapshot && envelope.cache_key && onAdjustResult && onPrefillRerun
+    !isQuant &&
+      canAdjust &&
+      canonicalSnapshot &&
+      envelope.cache_key &&
+      onAdjustResult &&
+      onPrefillRerun
   );
 
   const resultsTabItems: TabItem<ResultsTabKey>[] = [
@@ -288,29 +313,33 @@ export function ResultsPanel({
                 <p className="eyebrow">Attribution</p>
                 <h3>What drove the P&amp;L</h3>
                 <p className="muted card-subtitle">
-                  Systematic contribution waterfall — explicit conditional Shapley
+                  {isQuant
+                    ? "Direct factor contribution · no correlation credit"
+                    : "Systematic contribution waterfall — explicit conditional Shapley"}
                 </p>
               </div>
               <div className="card-heading-actions">
-                <ChoiceGroup<AttributionZoom>
-                  ariaLabel="Attribution view"
-                  className="segmented"
-                  value={zoom}
-                  onChange={setZoom}
-                  options={[
-                    {
-                      key: "factor",
-                      label: "By factor",
-                      title: "One bar per shocked factor"
-                    },
-                    {
-                      key: "group",
-                      label: "By group",
-                      title:
-                        "The same numbers rolled up into market / sector / style / macro"
-                    }
-                  ]}
-                />
+                {!isQuant ? (
+                  <ChoiceGroup<AttributionZoom>
+                    ariaLabel="Attribution view"
+                    className="segmented"
+                    value={zoom}
+                    onChange={setZoom}
+                    options={[
+                      {
+                        key: "factor",
+                        label: "By factor",
+                        title: "One bar per shocked factor"
+                      },
+                      {
+                        key: "group",
+                        label: "By group",
+                        title:
+                          "The same numbers rolled up into market / sector / style / macro"
+                      }
+                    ]}
+                  />
+                ) : null}
                 <FullscreenButton
                   controller={waterfallFullscreen}
                   surface="contribution waterfall"
@@ -340,7 +369,7 @@ export function ResultsPanel({
           </div>
           <CollapsibleCard
             className="table-card"
-            title="Factor shocks and attribution"
+            title={isQuant ? "Historical factor moves and attribution" : "Factor shocks and attribution"}
             summary={summarizeFactorTable(result, factorMeta)}
             fullscreenable
             surface="factor shocks"
@@ -350,7 +379,7 @@ export function ResultsPanel({
               <thead>
                 <tr>
                   <th>Factor</th>
-                  <th className="num">Shock</th>
+                  <th className="num">{isQuant ? "Historical move" : "Shock"}</th>
                   <th className="num">P&L contrib</th>
                   <th>Reasoning</th>
                 </tr>
@@ -563,7 +592,7 @@ export function ResultsPanel({
           }
         ]
       : []),
-    ...(canDecompose
+    ...(!isQuant && canDecompose
       ? [
           {
             key: "advanced" as const,
@@ -669,13 +698,51 @@ export function ResultsPanel({
           nav={nav}
           currency={currency}
         />
-        <EvidenceBlock
-          result={result}
-          analogEvents={analog_events}
-          showDollars={showDollars}
-          nav={nav}
-          currency={currency}
-        />
+        {isQuant && result.historical_model_range && result.quant_support ? (
+          <section className="quant-model-summary" aria-label="Joint historical model">
+            <div className="quant-model-heading">
+              <div>
+                <p className="readout-eyebrow">Joint historical model</p>
+                <h3>Historical model range</h3>
+              </div>
+              <span className="muted">
+                {result.horizon_trading_days} trading days · {result.severity_multiplier}× severity
+              </span>
+            </div>
+            <div className="quant-range-grid">
+              <div>
+                <span>P10</span>
+                <strong>{formatPercent(result.historical_model_range.p10)}</strong>
+              </div>
+              <div>
+                <span>P50</span>
+                <strong>{formatPercent(result.historical_model_range.p50)}</strong>
+              </div>
+              <div>
+                <span>P90</span>
+                <strong>{formatPercent(result.historical_model_range.p90)}</strong>
+              </div>
+            </div>
+            <p className="muted quant-model-note">
+              Historical model range, not a forecast or confidence interval. Based on{" "}
+              {result.quant_support.neighbor_count} joint historical neighbors (effective sample
+              size {result.quant_support.effective_sample_size.toFixed(1)}).
+            </p>
+            <p className="muted quant-model-note">
+              Exposure support: {quantExposureTiers.estimated} estimated ·{" "}
+              {quantExposureTiers.strongly_shrunk} strongly shrunk ·{" "}
+              {quantExposureTiers.prior_proxy} prior proxy.
+            </p>
+          </section>
+        ) : (
+          <EvidenceBlock
+            result={result}
+            analogEvents={analog_events}
+            showDollars={showDollars}
+            nav={nav}
+            currency={currency}
+          />
+        )}
       </div>
       <div className="results-toolbar">
         <div className="results-toolbar-actions" role="group" aria-label="Result actions">

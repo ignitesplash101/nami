@@ -14,6 +14,7 @@ export const viewports = [
 const visitorAccess = {
   access_mode: "visitor",
   admin_available: true,
+  engine_mode: "legacy",
   latest_market_date: "2026-07-13",
   sample_weights_as_of: "2026-06-30",
   permissions: {
@@ -31,6 +32,11 @@ const adminAccess = {
     free_text_scenario: true,
     narrative_decomposition: true
   }
+};
+
+const quantAdminAccess = {
+  ...adminAccess,
+  engine_mode: "quant_v2"
 };
 
 const portfolios = [
@@ -125,8 +131,77 @@ export const scenarioEnvelope = {
   }
 };
 
+export const quantScenarioEnvelope = {
+  ...scenarioEnvelope,
+  result: {
+    ...scenarioEnvelope.result,
+    factor_shocks: [
+      { factor: "NA:MKT_RF", shock: -0.1, reasoning: "Observed joint-history medoid" }
+    ],
+    factor_envelope: {},
+    portfolio_pnl: {
+      ...scenarioEnvelope.result.portfolio_pnl,
+      by_factor_naive: { "NA:MKT_RF": -0.08 },
+      by_factor_conditional_shapley: null,
+      by_factor_conditional_shapley_explicit: null,
+      by_factor_conditional_shapley_grouped: null
+    },
+    engine_mode: "quant_v2",
+    methodology: "joint_historical_neighbors",
+    horizon_trading_days: 63,
+    severity_multiplier: 2,
+    historical_model_range: {
+      label: "historical_model_range",
+      p10: -0.18,
+      p50: -0.08,
+      p90: -0.03,
+      draws: 4096,
+      seed: 1729
+    },
+    quant_support: {
+      candidate_count: 3000,
+      direction_compatible_count: 400,
+      neighbor_count: 50,
+      effective_sample_size: 41.2,
+      medoid_date: "2020-03-16",
+      nearest_distance: 0.4,
+      kernel_bandwidth: 1.2,
+      query_dates: ["2020-03-16"],
+      data_start: "2007-07-01",
+      data_end: "2026-07-13"
+    },
+    quant_exposures: {
+      AAPL: {
+        region: "north_america",
+        tier: "estimated",
+        n_obs: 156,
+        data_weight: 1,
+        coefficients: { "NA:MKT_RF": 1.1 }
+      },
+      MSFT: {
+        region: "north_america",
+        tier: "estimated",
+        n_obs: 156,
+        data_weight: 1,
+        coefficients: { "NA:MKT_RF": 1.0 }
+      }
+    }
+  },
+  reproducibility: {
+    ...scenarioEnvelope.reproducibility,
+    prompt_version: "v12",
+    engine_mode: "quant_v2",
+    engine_version: "fixture-quant-engine",
+    methodology: "joint_historical_neighbors",
+    horizon_trading_days: 63,
+    severity_multiplier: 2,
+    market_data_source: "French Data Library + FRED + yfinance"
+  }
+};
+
 type MockOptions = {
   admin?: boolean;
+  quant?: boolean;
   failFirstAccessTransport?: boolean;
   savedScenario?: boolean;
 };
@@ -152,6 +227,7 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
   const handledExternal: string[] = [];
   const unexpectedExternal: string[] = [];
   const escapedExternal: string[] = [];
+  const runPayloads: unknown[] = [];
   let accessAttempts = 0;
 
   page.on("requestfinished", (request) => {
@@ -187,7 +263,10 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
         await route.abort("connectionrefused");
         return;
       }
-      await json(route, options.admin ? adminAccess : visitorAccess);
+      await json(
+        route,
+        options.quant ? quantAdminAccess : options.admin ? adminAccess : visitorAccess
+      );
       return;
     }
     if (key === "GET /api/portfolios/samples") return void (await json(route, portfolios));
@@ -197,10 +276,11 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
       return void (await route.fulfill({ status: 200, contentType: "text/plain", body: "# Methodology" }));
     }
     if (key === "POST /api/scenarios/run-stream") {
+      runPayloads.push(request.postDataJSON());
       const body = [
         { stage: "cache_check", status: "start" },
         { stage: "cache_check", status: "done" },
-        { stage: "done", result: scenarioEnvelope }
+        { stage: "done", result: options.quant ? quantScenarioEnvelope : scenarioEnvelope }
       ]
         .map((event) => `data: ${JSON.stringify(event)}\n\n`)
         .join("");
@@ -301,7 +381,8 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
     handledExternal,
     unexpectedExternal,
     escapedExternal,
-    accessAttempts: () => accessAttempts
+    accessAttempts: () => accessAttempts,
+    runPayloads
   };
 }
 

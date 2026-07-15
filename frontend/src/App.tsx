@@ -109,6 +109,8 @@ export default function App() {
   // Default = biggest losses first (the decision-relevant view for a shock).
   const [valuationSort, setValuationSort] = useState<ValuationSort>({ key: "delta", dir: "asc" });
   const [scenarioText, setScenarioText] = useState("");
+  const [horizon, setHorizon] = useState<5 | 21 | 63>(21);
+  const [severity, setSeverity] = useState<1 | 1.5 | 2>(1);
   // As-of date (YYYY-MM-DD). Seeded from access.latest_market_date on boot;
   // equal-to-latest-close means live, earlier means backdated.
   const [asOfDate, setAsOfDate] = useState<string>("");
@@ -198,10 +200,11 @@ export default function App() {
   // One polite live region announces run lifecycle to screen readers with the
   // same stage labels the visual stepper shows. Completion announces the
   // headline; errors are announced by the toast/notice components themselves.
+  const progressEngineMode = access?.engine_mode === "quant_v2" ? "quant_v2" : "legacy";
   const runAnnouncement = isRunning
     ? cacheHit
       ? "Loading cached result"
-      : (currentStage && stageLabel(currentStage)) || "Running scenario"
+      : (currentStage && stageLabel(currentStage, progressEngineMode)) || "Running scenario"
     : resultEnvelope
       ? `Scenario complete: modeled portfolio P&L ${formatPercent(
           resultEnvelope.result.portfolio_pnl.total_pnl
@@ -446,7 +449,9 @@ export default function App() {
   function buildRunPayload() {
     if (!access) return null;
     const sharesMode = portfolioMode === "custom" && customUnits === "shares";
+    const quantOptions = access.engine_mode === "quant_v2" ? { horizon, severity } : {};
     const baseAdmin = {
+      ...quantOptions,
       scenario_text: scenarioText || selectedScenario?.text,
       portfolio_key: portfolioMode === "sample" ? portfolioKey : undefined,
       portfolio_name: portfolioMode === "custom" ? customName : undefined,
@@ -472,10 +477,12 @@ export default function App() {
       ? baseAdmin
       : scenarioDraftMode === "custom"
         ? {
+            ...quantOptions,
             scenario_text: scenarioText.trim(),
             portfolio_key: portfolioKey
           }
         : {
+            ...quantOptions,
             sample_scenario_key: scenarioKey,
             portfolio_key: portfolioKey
           };
@@ -556,6 +563,8 @@ export default function App() {
     }
 
     setScenarioText(textOverride ?? draft.scenarioText);
+    if (result.horizon_trading_days) setHorizon(result.horizon_trading_days);
+    if (result.severity_multiplier) setSeverity(result.severity_multiplier);
     // Custom draft mode pins the restored text so the sample-resync effect can't
     // clobber it (that effect only rewrites text while draftMode === "sample").
     setScenarioDraftMode("custom");
@@ -641,7 +650,7 @@ export default function App() {
   if (isAdmin && resultEnvelope?.reproducibility) {
     commandActions.push({ id: "save", label: "Save scenario", run: openSaveDialog });
   }
-  if (isAdmin && resultEnvelope) {
+  if (isAdmin && resultEnvelope && resultEnvelope.result.engine_mode !== "quant_v2") {
     commandActions.push({
       id: "decompose",
       label: "Run theme sensitivity",
@@ -725,6 +734,10 @@ export default function App() {
         asOfDate={asOfDate}
         setAsOfDate={setAsOfDate}
         latestClose={access?.latest_market_date ?? ""}
+        horizon={horizon}
+        setHorizon={setHorizon}
+        severity={severity}
+        setSeverity={setSeverity}
         textareaRef={scenarioTextareaRef}
       />
 
@@ -748,6 +761,7 @@ export default function App() {
           stageStatus={stageStatus}
           completedStages={completedStages}
           cacheHit={cacheHit}
+          engineMode={progressEngineMode}
           onCancel={handleCancelRun}
         />
       ) : null}
@@ -775,7 +789,9 @@ export default function App() {
       onAdjustResult={handleAdjustmentResult}
       onPrefillRerun={handlePrefillRerun}
       onForbidden={() => void refreshAccess().catch(() => {})}
-      canDecompose={Boolean(isAdmin && resultEnvelope)}
+      canDecompose={Boolean(
+        isAdmin && resultEnvelope && resultEnvelope.result.engine_mode !== "quant_v2"
+      )}
       isDecomposing={isDecomposing}
       decomposeProgress={decomposeProgress}
       onDecompose={handleDecompose}
