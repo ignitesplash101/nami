@@ -477,10 +477,11 @@ evidence and is preserved byte-for-byte).
 - NO tools, `response_schema=ShockProposalOutput`
 - Output: structured `FactorShock` + `PeripheryShock` list
 
-**Why the split?** Gemini 3.5 Flash on Vertex AI honors `response_schema` faithfully but
-frequently skips invoking `google_search` when both are passed in one config. The result is
-valid JSON with no grounding metadata — i.e., the narrative *looks* current but isn't
-actually sourced. We refuse to return that. Splitting into two sub-calls guarantees the
+**Why the split?** Gemini Flash on Vertex AI honors `response_schema` faithfully but
+frequently skips invoking `google_search` when both are passed in one config (observed on
+3.5 Flash; nami keeps the split on 3.6 Flash). The result is valid JSON with no grounding
+metadata — i.e., the narrative *looks* current but isn't actually sourced. We refuse to
+return that. Splitting into two sub-calls guarantees the
 narrative is grounded (2a) and the structured output is well-formed (2b).
 
 The grounded narrative is generated **once** (outside the validation retry loop) — only 2b
@@ -719,7 +720,7 @@ news-drift variance the theme-sensitivity sum previously carried.
   + sorted(portfolio_holdings)
   + portfolio_key                  # "us_tech_growth" / "custom" / ...
   + market_date.isoformat()
-  + vertex_model_id                # gemini-3.5-flash
+  + vertex_model_id                # gemini-3.6-flash
   + PROMPT_VERSION                 # bumped for any prompt OR schema change
   + factor_universe_version()      # 12-char hash of FACTORS dict
   + events_version()               # 12-char hash of historical_events.yaml

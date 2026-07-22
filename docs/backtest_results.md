@@ -15,7 +15,8 @@ uv run --link-mode=copy pytest tests/test_live_evals.py -v
 Remove-Item Env:RUN_NETWORK_TESTS
 ```
 
-Each test costs ~$0.001 in Vertex AI Gemini + Google Search billable units.
+Each test costs ~$0.08 in Vertex AI Gemini billable tokens (gemini-3.6-flash list prices
+incl. thinking tokens, 2026-07-22); Google Search grounding stays within the free monthly tier.
 
 ---
 

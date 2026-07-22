@@ -22,7 +22,7 @@ disclaimer is enforced in `app/utils/disclaimers.py` and rendered on every page.
 
 - **Python 3.12** + **uv**; **FastAPI** backend at `app/api/main.py`
 - **React + TypeScript + Vite + Plotly.js** frontend under `frontend/`
-- **GCP** — Vertex AI (`gemini-3.5-flash`, region `global`), Cloud Storage
+- **GCP** — Vertex AI (`gemini-3.6-flash`, region `global`), Cloud Storage
   (cache), Firestore (persistence), Cloud Run + Cloud Build (deploy, region
   `asia-northeast1` — the region split matters; see deploy-ops).
 

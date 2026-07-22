@@ -52,7 +52,7 @@ def _config() -> Config:
         google_cloud_project="test",
         vertex_ai_location="global",
         gcs_bucket="test",
-        vertex_model_id="gemini-3.5-flash",
+        vertex_model_id="gemini-3.6-flash",
         beta_lookback_weeks=104,
     )
 
@@ -253,7 +253,7 @@ def test_decompose_scenario_validates_count(monkeypatch):
             cache=InMemoryCache(),
             market_date=date(2026, 5, 25),
             portfolio_key="us_tech_growth",
-            model_id="gemini-3.5-flash",
+            model_id="gemini-3.6-flash",
         )
 
     # N=6 → raise
@@ -264,5 +264,5 @@ def test_decompose_scenario_validates_count(monkeypatch):
             cache=InMemoryCache(),
             market_date=date(2026, 5, 25),
             portfolio_key="us_tech_growth",
-            model_id="gemini-3.5-flash",
+            model_id="gemini-3.6-flash",
         )

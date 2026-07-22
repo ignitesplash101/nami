@@ -104,7 +104,7 @@ def _config() -> Config:
         google_cloud_project="test-project",
         vertex_ai_location="global",
         gcs_bucket="test-bucket",
-        vertex_model_id="gemini-3.5-flash",
+        vertex_model_id="gemini-3.6-flash",
         llm_temperature=0.0,
         market_data_cache_ttl_hours=24,
         llm_cache_ttl_days=7,

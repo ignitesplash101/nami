@@ -24,7 +24,7 @@ The orchestrator runs Call 1 with the pre-fetched event registry, then *parallel
 
 ## 2. Why grounding and `response_schema` can't share a call
 
-Documented in [`app/llm/gemini_client.py`](../app/llm/gemini_client.py) docstring lines 1–9: when Gemini 3.5 Flash receives both a `tools=[google_search]` config and a `response_schema=...` config, **it frequently honors the schema and skips the search tool**. The result is valid JSON with no `grounding_metadata` — i.e., the narrative looks current but isn't actually sourced.
+Documented in [`app/llm/gemini_client.py`](../app/llm/gemini_client.py) docstring lines 1–9: when Gemini Flash (observed on 3.5 Flash) receives both a `tools=[google_search]` config and a `response_schema=...` config, **it frequently honors the schema and skips the search tool**. The result is valid JSON with no `grounding_metadata` — i.e., the narrative looks current but isn't actually sourced. The split is retained unchanged on Gemini 3.6 Flash.
 
 The fix is the Call 2a / Call 2b split:
 - **Call 2a** runs with `tools=[google_search]` and *no* schema → forces a real search → returns free text + citations
@@ -69,7 +69,7 @@ ML-systems framing: this is *experiment versioning*. Same prompt + same model + 
 
 ## 4. Semantic-only evals (no magnitude bounds)
 
-Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py). Three tests, network-gated on `RUN_NETWORK_TESTS=1`, costs ~$0.003 total per run. The assertions are deliberately *semantic*, not numeric:
+Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py). Three tests, network-gated on `RUN_NETWORK_TESTS=1`, costs ~$0.25 total per run (gemini-3.6-flash, 2026-07-22). The assertions are deliberately *semantic*, not numeric:
 
 | test | assertion |
 |---|---|
@@ -122,7 +122,7 @@ Tests: [`tests/test_scenario_backdating.py`](../tests/test_scenario_backdating.p
 
 Every saved scenario (Firestore `saved_scenarios/{id}`) stores a full `ScenarioReproducibility` block inline ([`app/api/main.py::_build_reproducibility`](../app/api/main.py)):
 
-- `model_id` (e.g. `gemini-3.5-flash`)
+- `model_id` (e.g. `gemini-3.6-flash`)
 - `prompt_version` (current `PROMPT_VERSION`)
 - `factor_universe_version` (hash of `FACTORS` dict)
 - `events_version` (hash of `historical_events.yaml`)

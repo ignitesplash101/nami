@@ -14,7 +14,7 @@ class Config:
     vertex_ai_location: str
     gcs_bucket: str
     google_application_credentials: str | None = None
-    vertex_model_id: str = "gemini-3.5-flash"
+    vertex_model_id: str = "gemini-3.6-flash"
     llm_temperature: float = 0.0
     market_data_cache_ttl_hours: int = 24
     llm_cache_ttl_days: int = 7
@@ -34,10 +34,12 @@ class Config:
     unlock_window_seconds: int = 900
     daily_llm_run_cap: int = 500
     daily_llm_cost_cap_usd: float = 25.0
-    # Rough list prices (USD per 1M tokens) for the daily-budget breaker. These are
-    # for cost ESTIMATION/budgeting only, not billing — keep them conservative.
-    price_input_per_mtok: float = 0.30
-    price_output_per_mtok: float = 2.50
+    # Vertex list prices (USD per 1M tokens) for the daily-budget breaker — cost
+    # ESTIMATION/budgeting only, not billing. gemini-3.6-flash standard tier as of
+    # 2026-07-22; output covers response AND thinking tokens. Update these (or the
+    # PRICE_*_PER_MTOK env overrides) whenever Google reprices or the model changes.
+    price_input_per_mtok: float = 1.50
+    price_output_per_mtok: float = 7.50
 
 
 def _split_origins(raw: str | None) -> tuple[str, ...]:
@@ -60,7 +62,7 @@ def load_config() -> Config:
         vertex_ai_location=os.environ["VERTEX_AI_LOCATION"],
         gcs_bucket=os.environ["GCS_BUCKET"],
         google_application_credentials=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-        vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.5-flash"),
+        vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.6-flash"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
         market_data_cache_ttl_hours=int(os.getenv("MARKET_DATA_CACHE_TTL_HOURS", "24")),
         llm_cache_ttl_days=int(os.getenv("LLM_CACHE_TTL_DAYS", "7")),
@@ -78,6 +80,6 @@ def load_config() -> Config:
         unlock_window_seconds=int(os.getenv("UNLOCK_WINDOW_SECONDS", "900")),
         daily_llm_run_cap=int(os.getenv("DAILY_LLM_RUN_CAP", "500")),
         daily_llm_cost_cap_usd=float(os.getenv("DAILY_LLM_COST_CAP_USD", "25.0")),
-        price_input_per_mtok=float(os.getenv("PRICE_INPUT_PER_MTOK", "0.30")),
-        price_output_per_mtok=float(os.getenv("PRICE_OUTPUT_PER_MTOK", "2.50")),
+        price_input_per_mtok=float(os.getenv("PRICE_INPUT_PER_MTOK", "1.50")),
+        price_output_per_mtok=float(os.getenv("PRICE_OUTPUT_PER_MTOK", "7.50")),
     )

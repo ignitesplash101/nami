@@ -14,7 +14,7 @@ def _base_kwargs(**overrides):
         "portfolio_key": "us_tech_growth",
         "portfolio_holdings": {"AAPL": 0.5, "MSFT": 0.5},
         "market_date": date(2026, 5, 25),
-        "model_id": "gemini-3.5-flash",
+        "model_id": "gemini-3.6-flash",
         "prompt_version": "v1",
         "factor_universe_version": "abcdef012345",
         "events_version": "0123456789ab",

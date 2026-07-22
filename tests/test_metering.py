@@ -79,6 +79,18 @@ def test_fanout_meters_every_call(monkeypatch):
     assert usage["spent"] > 0
 
 
+def test_thinking_tokens_book_at_output_rate(monkeypatch):
+    store = InMemoryFirestoreStore()
+    response = _FakeResponse(1000, 200)
+    response.usage_metadata.thoughts_token_count = 300
+    client = _metered(store, monkeypatch, response=response)
+    client._generate_content(contents="x", config=None)
+    # 200 response + 300 thinking tokens — Google bills both at the output rate.
+    assert client._telemetry.tokens_in == 1000
+    assert client._telemetry.tokens_out == 500
+    assert store.usage_daily(DAY)["tokens_out"] == 500
+
+
 def test_budget_cap_blocks_call(monkeypatch):
     store = InMemoryFirestoreStore()
     # Pre-spend right up to a tiny cap so the next reservation cannot fit.

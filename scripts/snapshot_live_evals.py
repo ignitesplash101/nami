@@ -4,8 +4,9 @@ Runs the same 3 scenarios as tests/test_live_evals.py (current-day market_date,
 Google Search grounding active) and dumps the full result payload to JSON so the
 maintainer can populate the markdown snapshot table.
 
-Cost: ~$0.003 per scenario × 3 = ~$0.009. Cache hits on identical scenario_text
-+ portfolio + NYSE day make repeat runs free.
+Cost: ~$0.08 per scenario × 3 = ~$0.25 (gemini-3.6-flash list prices incl. thinking
+tokens, 2026-07-22). Cache hits on identical scenario_text + portfolio + NYSE day make
+repeat runs free.
 
 Usage:
   uv run python scripts/snapshot_live_evals.py

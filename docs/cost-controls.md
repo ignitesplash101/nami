@@ -10,17 +10,17 @@ Every endpoint that calls Vertex AI / Gemini is gated as follows in [app/api/mai
 
 | endpoint | visitor mode | admin mode | LLM cost per request |
 |---|---|---|---|
-| `POST /api/scenarios/run` | restricted to `SAMPLE_SCENARIOS` × `SAMPLE_PORTFOLIOS` only ([main.py:148–164](../app/api/main.py)) | free-text + custom portfolio + backdating allowed | ~$0.003 on cache miss; $0 on cache hit |
+| `POST /api/scenarios/run` | restricted to `SAMPLE_SCENARIOS` × `SAMPLE_PORTFOLIOS` only ([main.py:148–164](../app/api/main.py)) | free-text + custom portfolio + backdating allowed | ~$0.08 on cache miss; $0 on cache hit |
 | `POST /api/scenarios/run-stream` | same gates via `_resolve_*` helpers | same as above | same |
-| `POST /api/scenarios/adjust-shocks` | **403** ([main.py:348–349](../app/api/main.py)) | one Gemini call | ~$0.0005 |
-| `POST /api/scenarios/decompose` | **403** ([main.py:384–386](../app/api/main.py)) | 1 + 2^N − 1 Gemini calls (N=2..4) | ~$0.005–$0.05 |
+| `POST /api/scenarios/adjust-shocks` | **403** ([main.py:348–349](../app/api/main.py)) | one Gemini call | ~$0.015 |
+| `POST /api/scenarios/decompose` | **403** ([main.py:384–386](../app/api/main.py)) | 1 + 2^N − 1 Gemini calls (N=2..4) | ~$0.15–$0.80 (estimate) |
 | `POST /api/saved-scenarios` and all Firestore endpoints | **403** ([main.py:408–410](../app/api/main.py)) | Firestore writes, no LLM | Firestore-only |
 | `GET /api/portfolios/samples`, `/api/scenarios/samples`, `/api/health`, `/api/access`, `/api/meta`, `/api/docs/methodology`, `/api/portfolio/validate` | open | open | $0 (no LLM) |
 
 **Visitor cost ceiling**: 4 sample scenarios × 4 sample portfolios = **16 unique combinations**. The scenario cache key includes `effective_as_of`, which advances once per NYSE trading day, so each combination produces ~5 unique cache entries per week. Worst-case per-week spend from anonymous traffic, assuming infinite visitors:
 
 ```
-16 combinations × 5 NYSE days × $0.003 per first miss = ~$0.24 / week
+16 combinations × 5 NYSE days × $0.08 per first miss = ~$6.40 / week
 ```
 
 The cache (GCS, 7-day TTL, [`app/data/cache.py`](../app/data/cache.py)) absorbs all subsequent identical requests at $0. So the cost is bounded *regardless of visitor traffic volume* — a 1000-visitor day costs the same as a 1-visitor day after the cache warms.
@@ -46,7 +46,7 @@ This sends an email when monthly project spend crosses thresholds. It does **not
 7. Email alerts: check "Email alerts to billing admins and users"
 8. **FINISH**
 
-Expected normal spend at this project's scale: well under $1/month. A breach to $10 would mean ~3000 LLM calls beyond cache hits — strong signal of either admin-mode abuse or a logic bug.
+Expected normal spend at this project's scale: a few dollars/month. A breach to $10 would mean ~400 LLM calls beyond cache hits — strong signal of admin-mode abuse, a logic bug, or a broken cache write path. Note the theoretical visitor ceiling above (~$28/month worst case) can alone cross the 50% threshold; if alerts fire without matching admin activity, check cache health first.
 
 (The `gcloud billing budgets create` CLI requires JSON body parameters that the simple flag form doesn't accept; the Console form is faster and more reliable.)
 
@@ -56,13 +56,13 @@ Caps the number of Gemini requests per minute / per day at the project level. If
 
 1. Open https://console.cloud.google.com/iam-admin/quotas?project=nami-497405
 2. Filter: `Service: Vertex AI API`
-3. Find the relevant quota for `gemini-3.5-flash` (typical name: `Generate content requests per minute per project per base model`)
+3. Find the relevant quota for `gemini-3.6-flash` (typical name: `Generate content requests per minute per project per base model`). Quotas are **per base model** — an override set for `gemini-3.5-flash` does NOT cover `gemini-3.6-flash`; re-create it after a model upgrade.
 4. Select → **EDIT QUOTAS** → request override → set a low limit (e.g. `60 per minute`, `5000 per day`)
 5. Submit
 
 Recommended starting caps (room for legitimate use, no room for runaway):
 - Requests per minute: `60` (enough for streaming UI + a few simultaneous users)
-- Requests per day: `5000` (a hard ~$15/day worst case if all are cache-miss-grade scenario runs)
+- Requests per day: `1000` (a hard ~$27/day worst case at ~$0.027 per cache-miss-grade call — aligned with the in-app $25/day cost breaker)
 
 If you ever legitimately need more, raise the cap from the same page in 30 seconds.
 
@@ -82,7 +82,7 @@ Cloud Run will roll the revision and existing admin cookies will be invalidated 
 
 ## What is NOT mitigated
 
-- **Gemini unit-price changes**: Google can change Gemini 3.5 Flash pricing unilaterally. The quota cap above bounds *units*, not *dollars per unit*.
+- **Gemini unit-price changes**: Google can change Gemini 3.6 Flash pricing unilaterally. The quota cap above bounds *units*, not *dollars per unit*. The in-app estimator's prices live in `app/config.py` (`PRICE_INPUT_PER_MTOK` / `PRICE_OUTPUT_PER_MTOK` overridable via env) and must be updated on repricing — on 2026-07-22 they were found stale at 2.5-Flash-era rates, under-counting real spend ~5×; they now match 3.6 Flash list prices and thinking tokens are booked at the output rate.
 - **Cache infrastructure failure**: if the GCS bucket becomes unwritable, every request becomes a cache miss. The billing alert catches this within 24 hrs.
 - **Side-channel cost**: yfinance is free but rate-limited; Firestore reads/writes are sub-cent at this scale; Cloud Run egress on free-tier-adjacent volumes. Negligible.
 

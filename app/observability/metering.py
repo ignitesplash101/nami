@@ -77,7 +77,11 @@ def _usage_tokens(response: object) -> tuple[int, int]:
     if meta is None:
         return 0, 0
     tokens_in = int(getattr(meta, "prompt_token_count", 0) or 0)
-    tokens_out = int(getattr(meta, "candidates_token_count", 0) or 0)
+    # Thinking tokens are billed at the output rate ("response and reasoning"),
+    # so they must count toward tokens_out or the breaker under-books real spend.
+    tokens_out = int(getattr(meta, "candidates_token_count", 0) or 0) + int(
+        getattr(meta, "thoughts_token_count", 0) or 0
+    )
     return tokens_in, tokens_out
 
 
