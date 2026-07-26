@@ -246,6 +246,20 @@ X̃ = X − mean(X, axis=0)             # T × F factor returns, centered
   it is folded into the scenario cache key when set so capped and uncapped results
   can never be served for one another. Revisit with a larger sample if list prices
   move materially.
+- **Why analog-selection thinking also stays uncapped (dated decision record,
+  2026-07-26).** A strictly narrower follow-up to the above: cap thinking to `LOW`
+  on the analog-SELECTION call only, leaving shock extraction and the narrative at
+  the default. The hypothesis was that picking 2–5 event ids needs less reasoning
+  than proposing magnitudes. The bar was fixed before running: adopt only if the
+  same analogs are chosen and shock count and modelled P&L stay inside the
+  already-measured run-to-run spread (11–13 shocks; −18.6% / −19.9% on the
+  reference scenario). It cut selection-call output from 1,151–1,805 to 609 tokens
+  and run cost ~19% (to $0.070), but produced **19 factor shocks and −13.9% P&L** —
+  both well outside the default spread. Cheaper reasoning about *which* analogs to
+  pick propagates: a different analog set is a different envelope, which is a
+  different answer. Rejected; the fifth in this series. The lever survives as the
+  `SELECTION_THINKING_LEVEL` env knob (default unset, falling back to
+  `STRUCTURED_THINKING_LEVEL`) and is folded into the scenario cache key when set.
 - **Currency:** non-USD listings (e.g. the Japan book's `.T` tickers) have their weekly
   returns converted to USD (`(1 + r_local)(1 + r_FX) − 1`, vintage-correct FX series)
   *before* the regression, so betas absorb FX exposure and active return vs a USD-quoted

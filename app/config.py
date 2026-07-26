@@ -23,6 +23,11 @@ class Config:
     # run's cost, so this is the largest available cost lever; see the dated decision
     # record in docs/methodology.md before changing the default.
     structured_thinking_level: str | None = None
+    # Narrower lever than the above: analog SELECTION only. Its output is 2-5 event
+    # ids plus short justifications, so it is the schema call least likely to need
+    # deep reasoning — but it feeds the envelope, the shocks and the narrative, so
+    # it is gated on evidence like everything else. None = server default.
+    selection_thinking_level: str | None = None
     market_data_cache_ttl_hours: int = 24
     llm_cache_ttl_days: int = 7
     beta_lookback_weeks: int = 156
@@ -72,6 +77,7 @@ def load_config() -> Config:
         vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.6-flash"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
         structured_thinking_level=os.getenv("STRUCTURED_THINKING_LEVEL") or None,
+        selection_thinking_level=os.getenv("SELECTION_THINKING_LEVEL") or None,
         market_data_cache_ttl_hours=int(os.getenv("MARKET_DATA_CACHE_TTL_HOURS", "24")),
         llm_cache_ttl_days=int(os.getenv("LLM_CACHE_TTL_DAYS", "7")),
         beta_lookback_weeks=int(os.getenv("BETA_LOOKBACK_WEEKS", "156")),

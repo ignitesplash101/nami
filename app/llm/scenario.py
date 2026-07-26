@@ -225,6 +225,7 @@ def compute_scenario_cache_key(
         ),
         position_quantities=position_quantities,
         structured_thinking_level=config.structured_thinking_level,
+        selection_thinking_level=config.selection_thinking_level,
     )
 
 
@@ -792,6 +793,7 @@ def run_scenario(
         position_quantities=position_quantities,
         pinned_event_ids=pinned_event_ids,
         structured_thinking_level=config.structured_thinking_level,
+        selection_thinking_level=config.selection_thinking_level,
     )
 
     if not skip_cache:

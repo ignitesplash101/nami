@@ -30,6 +30,7 @@ def scenario_cache_key(
     position_quantities: dict[str, float] | None = None,
     pinned_event_ids: list[str] | None = None,
     structured_thinking_level: str | None = None,
+    selection_thinking_level: str | None = None,
 ) -> str:
     """SHA256 hex digest of normalized inputs.
 
@@ -68,5 +69,7 @@ def scenario_cache_key(
         # `model_id`. Folded in only when set, so the default (unset) keyspace is
         # byte-identical and no existing entry is invalidated.
         payload_obj["structured_thinking_level"] = structured_thinking_level
+    if selection_thinking_level:
+        payload_obj["selection_thinking_level"] = selection_thinking_level
     payload = json.dumps(payload_obj, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

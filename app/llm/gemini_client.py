@@ -118,6 +118,14 @@ class GeminiClient:
             if config.structured_thinking_level
             else None
         )
+        # Analog selection can be capped independently of shock extraction: its
+        # output is just 2-5 event ids. Falls back to the broader knob when unset,
+        # so setting only STRUCTURED_THINKING_LEVEL still covers every schema call.
+        self._selection_thinking = (
+            _types.ThinkingConfig(thinking_level=config.selection_thinking_level)
+            if config.selection_thinking_level
+            else self._structured_thinking
+        )
 
     def _generate_content(self, *, contents: object, config: object) -> object:
         """Single chokepoint for every paid Gemini call.
@@ -186,7 +194,7 @@ class GeminiClient:
                 temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=AnalogSelectionOutput,
-                thinking_config=self._structured_thinking,
+                thinking_config=self._selection_thinking,
             ),
         )
         return AnalogSelectionOutput.model_validate_json(response.text)
