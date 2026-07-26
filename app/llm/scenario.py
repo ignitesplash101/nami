@@ -8,10 +8,12 @@ analogs / periphery but recomputed factor shocks and P&L.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import statistics
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 
@@ -124,6 +126,52 @@ def _cached_json_or_miss(cache: CacheProtocol, key: str, *, ttl_hours: int) -> d
     except Exception as exc:  # noqa: BLE001 — cache outage must not break a run
         logger.warning("Scenario cache read unavailable (%s) — recomputing", exc)
         return None
+
+
+_inflight_lock = threading.Lock()
+_inflight: dict[str, threading.Lock] = {}
+# Bound on distinct keys held at once. The map is pruned on release, so this is a
+# backstop against a pathological burst of unique keys, not a working limit.
+_MAX_INFLIGHT_KEYS = 64
+
+
+@contextlib.contextmanager
+def scenario_single_flight(key: str) -> Iterator[bool]:
+    """Serialize concurrent work on ONE scenario cache key; different keys never contend.
+
+    Nothing used to sit between the cache read and the 50s+ Gemini chain, so N
+    simultaneous requests for the same scenario each ran the full pipeline and
+    each paid for it — exactly what happens at the 16:00 ET rollover when several
+    people open the app and click the same sample chip.
+
+    Wrap the `run_scenario` CALL, not its internals: `run_scenario` already
+    re-reads the cache on entry, so a waiter that acquires after the first caller
+    finishes simply gets a cache hit and returns in milliseconds. That keeps this
+    a boundary concern and leaves the orchestrator untouched.
+
+    Yields True when this caller holds the key and False when the key map was full
+    (proceed anyway rather than block — degrading to today's behavior beats
+    failing). Per-instance only: with max-instances=2 a cross-instance duplicate
+    is still possible. That is an accepted partial fix, not an oversight.
+    """
+    with _inflight_lock:
+        lock = _inflight.get(key)
+        if lock is None:
+            if len(_inflight) >= _MAX_INFLIGHT_KEYS:
+                yield False
+                return
+            lock = threading.Lock()
+            _inflight[key] = lock
+    lock.acquire()
+    try:
+        yield True
+    finally:
+        lock.release()
+        with _inflight_lock:
+            # Only drop it if no one else is waiting on it, or we'd hand the next
+            # waiter a lock that is no longer the one registered for this key.
+            if not lock.locked() and _inflight.get(key) is lock:
+                del _inflight[key]
 
 
 def _put_json_best_effort(cache: CacheProtocol, key: str, payload: dict) -> None:

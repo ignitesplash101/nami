@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import functools
 import json
 import queue
 import threading
@@ -93,6 +94,7 @@ from app.llm.scenario import (
     compute_events_replay,
     compute_scenario_cache_key,
     run_scenario,
+    scenario_single_flight,
 )
 from app.observability.context import current_ip_hash, current_request_id
 from app.observability.logging import configure_logging
@@ -122,6 +124,13 @@ def _background_warm() -> None:
     the instance is already serving. Racing a real request double-fetches
     harmlessly (lock-guarded caches; GCS market cache dedupes).
     """
+    with contextlib.suppress(Exception):
+        # `shap` is a deliberate LOCAL import in attribution.py (keep it that way —
+        # it must not be paid at boot before the port binds), but it transitively
+        # pulls numba + llvmlite + scikit-learn, and that lands squarely in the
+        # critical path of the FIRST paid run on every new instance. Touching it
+        # here moves ~1-3s off that run without changing where the import lives.
+        import shap  # noqa: F401 — imported for its side effect of being cached
     with contextlib.suppress(Exception):
         warm_cache.warm()
     with contextlib.suppress(Exception):
@@ -730,16 +739,27 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
     try:
         gemini, _telemetry, _day = _metered_gemini()
-        result = run_scenario(
-            scenario_text,
-            portfolio,
-            gemini=gemini,
-            market_date=requested_as_of,
-            position_quantities=quantities,
-            portfolio_nav=nav,
-            reporting_currency=currency,
-            benchmark=body.benchmark,
-        )
+        # Single-flight the CALL: concurrent identical requests would otherwise each
+        # run the full ~50s chain and each pay for it. `run_scenario` re-reads the
+        # cache on entry, so a waiter gets the first caller's result in ms.
+        with scenario_single_flight(
+            compute_scenario_cache_key(
+                scenario_text,
+                portfolio,
+                market_date=requested_as_of,
+                position_quantities=quantities,
+            )
+        ):
+            result = run_scenario(
+                scenario_text,
+                portfolio,
+                gemini=gemini,
+                market_date=requested_as_of,
+                position_quantities=quantities,
+                portfolio_nav=nav,
+                reporting_currency=currency,
+                benchmark=body.benchmark,
+            )
     except BudgetExceededError as exc:
         raise _budget_http_error(exc) from exc
     except MarkingError as exc:
@@ -806,17 +826,28 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
 
     def worker() -> None:
         try:
-            result = run_scenario(
-                scenario_text,
-                portfolio,
-                gemini=gemini,
-                market_date=requested_as_of,
-                progress=progress,
-                position_quantities=quantities,
-                portfolio_nav=nav,
-                reporting_currency=currency,
-                benchmark=body.benchmark,
-            )
+            # See the blocking endpoint: single-flight the call so a burst of
+            # identical requests computes once. Held for the whole run, so a
+            # waiter's own progress stream stays quiet until it gets the cache hit.
+            with scenario_single_flight(
+                compute_scenario_cache_key(
+                    scenario_text,
+                    portfolio,
+                    market_date=requested_as_of,
+                    position_quantities=quantities,
+                )
+            ):
+                result = run_scenario(
+                    scenario_text,
+                    portfolio,
+                    gemini=gemini,
+                    market_date=requested_as_of,
+                    progress=progress,
+                    position_quantities=quantities,
+                    portfolio_nav=nav,
+                    reporting_currency=currency,
+                    benchmark=body.benchmark,
+                )
             cache_key = compute_scenario_cache_key(
                 scenario_text,
                 portfolio,
@@ -1295,11 +1326,22 @@ def usage_endpoint(request: Request) -> UsageSummary:
     )
 
 
+@functools.lru_cache(maxsize=1)
+def _methodology_text() -> str:
+    """The methodology markdown, read once per process.
+
+    ~58 KB that is immutable for the lifetime of a revision, previously re-read
+    from disk and re-gzipped on every request to an endpoint that is both
+    unauthenticated and un-rate-limited.
+    """
+    return METHODOLOGY_PATH.read_text(encoding="utf-8")
+
+
 @api.get("/api/docs/methodology")
 def methodology() -> PlainTextResponse:
     if not METHODOLOGY_PATH.exists():
         raise HTTPException(status_code=404, detail="Methodology document not found.")
-    return PlainTextResponse(METHODOLOGY_PATH.read_text(encoding="utf-8"))
+    return PlainTextResponse(_methodology_text())
 
 
 @api.get("/api/meta")

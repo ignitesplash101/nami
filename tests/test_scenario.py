@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -15,7 +17,12 @@ from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.regression import TickerRegressionStats
 from app.factors.universe import FACTORS
 from app.llm.gemini_client import GeminiClient
-from app.llm.scenario import ScenarioCacheUnavailable, adjust_scenario_shocks, run_scenario
+from app.llm.scenario import (
+    ScenarioCacheUnavailable,
+    adjust_scenario_shocks,
+    run_scenario,
+    scenario_single_flight,
+)
 from app.llm.schemas import (
     AnalogSelection,
     AnalogSelectionOutput,
@@ -1008,3 +1015,62 @@ def test_propose_shocks_raises_when_grounded_narrative_returns_no_citations(monk
             envelope=envelope,
             events_registry={},
         )
+
+
+def test_single_flight_collapses_concurrent_work_on_one_key():
+    """N simultaneous requests for the SAME key must compute once.
+
+    Nothing used to sit between the cache read and the ~50s Gemini chain, so a
+    rollover burst on one sample chip paid for the full pipeline N times.
+    """
+    computed = {"n": 0}
+    started = threading.Barrier(4)
+    results: list[str] = []
+
+    def worker() -> None:
+        started.wait()
+        with scenario_single_flight("same-key"):
+            # Stand-in for run_scenario's own on-entry cache re-read.
+            if computed["n"] == 0:
+                time.sleep(0.05)
+                computed["n"] += 1
+            results.append("done")
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert computed["n"] == 1
+    assert len(results) == 4
+
+
+def test_single_flight_does_not_serialize_different_keys():
+    """Two different scenarios must never wait on each other."""
+    overlapped = threading.Event()
+    entered = threading.Barrier(2, timeout=2)
+
+    def worker(key: str) -> None:
+        with scenario_single_flight(key):
+            entered.wait()  # only completes if BOTH are inside their locks
+            overlapped.set()
+
+    threads = [threading.Thread(target=worker, args=(k,)) for k in ("key-a", "key-b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert overlapped.is_set(), "distinct keys must hold their locks concurrently"
+
+
+def test_single_flight_releases_its_key_map():
+    """The key map must not grow without bound across distinct scenarios."""
+    from app.llm import scenario as scenario_module
+
+    before = len(scenario_module._inflight)
+    for i in range(50):
+        with scenario_single_flight(f"key-{i}"):
+            pass
+    assert len(scenario_module._inflight) == before

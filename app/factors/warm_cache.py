@@ -341,8 +341,14 @@ def get_factor_returns_with_history(
         return result
 
 
-def warm() -> None:
+def warm(lookback_weeks: int | None = None) -> None:
     """Optional startup hook — pre-populate the cache before the first scenario.
+
+    `lookback_weeks` MUST match what requests ask for or the warm populates a key
+    nothing reads. Requests pass `config.beta_lookback_weeks`
+    (`app/llm/scenario.py`), so `None` resolves from config rather than assuming
+    the 156 default — the two coincide only while `BETA_LOOKBACK_WEEKS` is unset,
+    and setting it would otherwise turn this into a silent ~2-minute no-op.
 
     FastAPI lifespan example:
 
@@ -353,7 +359,11 @@ def warm() -> None:
     """
     # Warming must never break startup.
     with contextlib.suppress(Exception):
-        get_factor_returns_with_history()
+        if lookback_weeks is None:
+            from app.config import load_config
+
+            lookback_weeks = load_config().beta_lookback_weeks
+        get_factor_returns_with_history(lookback_weeks=lookback_weeks)
 
 
 def clear() -> None:

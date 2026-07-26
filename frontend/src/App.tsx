@@ -14,8 +14,10 @@ import {
   toApiError
 } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
+// Eager on purpose: its saved-delete overlay lifecycle is covered by a test that
+// cannot resolve a lazy chunk under fake timers, and the panel is small.
+import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import { ErrorNotice } from "./ErrorNotice";
-import { OpsDrawer } from "./OpsDrawer";
 import { scrollBehavior } from "./motion";
 import { isCompletedUnlock, wrapWithDrawerClose } from "./railDrawerClose";
 import { useToasts } from "./toast";
@@ -44,11 +46,8 @@ import { BackdatedModeBanner } from "./AsOfDatePicker";
 import { CommandPalette } from "./CommandPalette";
 import type { CommandAction } from "./CommandPalette";
 import { CollapsibleCard } from "./CollapsibleCard";
-import { PortfolioHistoryPanel } from "./PortfolioHistoryPanel";
 import { RailDrawer } from "./RailDrawer";
 import { RunProgress, stageLabel } from "./RunProgress";
-import { SaveScenarioDialog } from "./SaveScenarioDialog";
-import { SavedScenariosPanel } from "./SavedScenariosPanel";
 import {
   closeExpandedCard,
   exitNativeFullscreenIfOwnerWillHide
@@ -70,6 +69,18 @@ import type {
 // chunk; the drawer opens on click, so a one-frame Suspense gap is invisible.
 const MethodologyDrawer = lazy(() =>
   import("./MethodologyDrawer").then((m) => ({ default: m.MethodologyDrawer }))
+);
+
+// Admin-only surfaces. A visitor — essentially all traffic — can never open any
+// of these, so they have no business in the first-load chunk. Each is already
+// rendered behind an `isAdmin`/`isOpen` guard, so a null Suspense fallback is
+// invisible: the chunk fetches on the click that reveals the surface.
+const OpsDrawer = lazy(() => import("./OpsDrawer").then((m) => ({ default: m.OpsDrawer })));
+const PortfolioHistoryPanel = lazy(() =>
+  import("./PortfolioHistoryPanel").then((m) => ({ default: m.PortfolioHistoryPanel }))
+);
+const SaveScenarioDialog = lazy(() =>
+  import("./SaveScenarioDialog").then((m) => ({ default: m.SaveScenarioDialog }))
 );
 
 /** Top-level workbench areas. Persistent chrome (topbar, disclaimer, banners,
@@ -264,13 +275,17 @@ export default function App() {
     let active = true;
 
     async function boot() {
-      const [accessResponse, portfolioResponse, scenarioResponse, factorResponse, methodologyText] =
+      // getMethodology is deliberately NOT here. The document is ~58 KB (~24 KiB
+      // gzipped) and is only ever rendered inside the lazy methodology drawer, but
+      // being inside this Promise.all meant NO boot state applied until it landed
+      // — access, portfolios, scenarios and the as-of seed all waited behind a
+      // document most visitors never open. It now loads with the drawer instead.
+      const [accessResponse, portfolioResponse, scenarioResponse, factorResponse] =
         await Promise.all([
           retryBootGet(getAccess),
           retryBootGet(getSamplePortfolios),
           retryBootGet(getSampleScenarios),
-          retryBootGet(getFactors).catch(() => []),
-          retryBootGet(getMethodology).catch(() => "")
+          retryBootGet(getFactors).catch(() => [])
         ]);
       if (!active) return;
       applyAccess(accessResponse);
@@ -291,7 +306,6 @@ export default function App() {
         setScenarioText(scenarioResponse[0]?.text ?? "");
         setScenarioDraftMode("sample");
       }
-      setMethodology(methodologyText);
       setBootFailed(false);
       if (lastFailedActionRef.current === "boot") {
         lastFailedActionRef.current = null;
@@ -330,6 +344,24 @@ export default function App() {
       active = false;
     };
   }, [bootSerial]);
+
+  // Fetch the methodology document only once the drawer has actually been opened.
+  // `methodologyMounted` is a one-way latch, so this runs at most once per app
+  // life and never on a boot the user spends entirely on the scenario screen.
+  useEffect(() => {
+    if (!methodologyMounted || methodology) return;
+    let active = true;
+    getMethodology()
+      .then((text) => {
+        if (active) setMethodology(text);
+      })
+      // Same posture as the old boot `.catch(() => "")`: the drawer renders its
+      // empty state rather than the whole app failing over a docs fetch.
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [methodologyMounted, methodology]);
 
   useEffect(() => {
     const selected = scenarios.find((scenario) => scenario.key === scenarioKey);
@@ -853,27 +885,29 @@ export default function App() {
         title="Saved portfolios & snapshots"
         summary="named books · dated snapshots"
       >
-        <PortfolioHistoryPanel
-          key={`portfolio-history-${adminDataEpoch}`}
-          onForbidden={() => void refreshAccess().catch(() => {})}
-          currentHoldings={portfolioMode === "custom" ? holdingsFromRows(customRows) : {}}
-          snapshotDisabledReason={
-            portfolioMode === "custom" && customUnits === "shares"
-              ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
-              : undefined
-          }
-          onLoadSnapshot={(snap) => {
-            setPortfolioMode("custom");
-            setCustomName(`Snapshot ${snap.as_of_date}`);
-            setCustomRows(
-              Object.entries(snap.holdings).map(([ticker, weight], i) => ({
-                id: `snap-${snap.id}-${i}`,
-                ticker,
-                weight: String(weight)
-              }))
-            );
-          }}
-        />
+        <Suspense fallback={null}>
+          <PortfolioHistoryPanel
+            key={`portfolio-history-${adminDataEpoch}`}
+            onForbidden={() => void refreshAccess().catch(() => {})}
+            currentHoldings={portfolioMode === "custom" ? holdingsFromRows(customRows) : {}}
+            snapshotDisabledReason={
+              portfolioMode === "custom" && customUnits === "shares"
+                ? "Snapshots store weights — switch the editor to Weights mode to snapshot this book."
+                : undefined
+            }
+            onLoadSnapshot={(snap) => {
+              setPortfolioMode("custom");
+              setCustomName(`Snapshot ${snap.as_of_date}`);
+              setCustomRows(
+                Object.entries(snap.holdings).map(([ticker, weight], i) => ({
+                  id: `snap-${snap.id}-${i}`,
+                  ticker,
+                  weight: String(weight)
+                }))
+              );
+            }}
+          />
+        </Suspense>
       </CollapsibleCard>
     </section>
   );
@@ -1011,19 +1045,21 @@ export default function App() {
       </section>
 
       {resultEnvelope?.reproducibility ? (
-        <SaveScenarioDialog
-          isOpen={saveDialog.isOpen}
-          onClose={saveDialog.close}
-          onSaved={() => {
-            saveDialog.close();
-            setSavedReloadKey((k) => k + 1);
-            pushToast({ variant: "success", message: "Scenario saved to library." });
-          }}
-          onForbidden={() => void refreshAccess().catch(() => {})}
-          result={resultEnvelope.result}
-          analogEvents={resultEnvelope.analog_events}
-          reproducibility={resultEnvelope.reproducibility}
-        />
+        <Suspense fallback={null}>
+          <SaveScenarioDialog
+            isOpen={saveDialog.isOpen}
+            onClose={saveDialog.close}
+            onSaved={() => {
+              saveDialog.close();
+              setSavedReloadKey((k) => k + 1);
+              pushToast({ variant: "success", message: "Scenario saved to library." });
+            }}
+            onForbidden={() => void refreshAccess().catch(() => {})}
+            result={resultEnvelope.result}
+            analogEvents={resultEnvelope.analog_events}
+            reproducibility={resultEnvelope.reproducibility}
+          />
+        </Suspense>
       ) : null}
 
       <RailDrawer isOpen={isMobileOrTablet && railDrawer.isOpen} onClose={railDrawer.close}>
@@ -1031,12 +1067,14 @@ export default function App() {
       </RailDrawer>
 
       {isAdmin ? (
-        <OpsDrawer
-          isOpen={opsDrawer.isOpen}
-          onClose={opsDrawer.close}
-          onRequestPurge={requestPurge}
-          onForbidden={() => void refreshAccess().catch(() => {})}
-        />
+        <Suspense fallback={null}>
+          <OpsDrawer
+            isOpen={opsDrawer.isOpen}
+            onClose={opsDrawer.close}
+            onRequestPurge={requestPurge}
+            onForbidden={() => void refreshAccess().catch(() => {})}
+          />
+        </Suspense>
       ) : null}
 
       <ConfirmDialog

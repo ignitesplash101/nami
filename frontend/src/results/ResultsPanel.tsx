@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { BarChart3, Check, Copy, Download, PencilLine, Save, SlidersHorizontal } from "lucide-react";
 import {
@@ -33,7 +33,6 @@ import { RiskDiagnostics } from "./AttributionControl";
 import { ExposureBreakdown } from "./ExposureBreakdown";
 import { MethodologyDiagnostics } from "./MethodologyDiagnostics";
 import { SortableTh } from "./primitives";
-import { buildResultsCsvBundle, resultsZipFilename } from "./exportBundle";
 import { ScenarioReadout } from "./ScenarioReadout";
 import { WaterfallChart } from "./WaterfallChart";
 import type { FactorMetadataMap, ScenarioResult, ScenarioRunResponse } from "../types";
@@ -151,6 +150,73 @@ export function ResultsPanel({
   // first run completed → "Rendered more hooks than during the previous render".
   const waterfallViewportHeight = useViewportHeight(waterfallFullscreen.isFullscreen);
 
+  // Result-derived values are memoized ABOVE the early return, like every other
+  // hook here. Placed below it they would add hooks only once a result existed —
+  // the exact "Rendered more hooks than during the previous render" crash this
+  // file has hit before. They take the NULLABLE result and yield null/empty until
+  // one lands; the non-null narrowing happens past the early return.
+  //
+  // Why memoize at all: `navInput` is App state, so a keystroke in the notional
+  // field re-rendered this whole tree — re-sorting every holding, rebuilding the
+  // 14-bar waterfall, and (because react-plotly.js compares props by reference)
+  // forcing a full Plotly re-plot per character. Note `mainAttribution`,
+  // `factorRows` and `readoutMethod` do not depend on nav at all.
+  const pending = envelope?.result ?? null;
+  const currency = pending?.reporting_currency ?? "USD";
+  // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
+  // NAV is a client-side notional knob — instant what-if, no re-run.
+  const isMarked = Boolean(pending?.position_quantities);
+  const nav = isMarked ? pending?.portfolio_nav ?? null : parseNav(navInput);
+  const showDollars = nav != null && displayMode === "usd";
+  const mainAttributionMemo = useMemo(
+    () => (pending ? selectMainAttribution(pending) : null),
+    [pending]
+  );
+  const attributionMethod = mainAttributionMemo?.method ?? null;
+  const waterfallMemo = useMemo(() => {
+    if (!pending || !attributionMethod) return null;
+    return showDollars && nav != null
+      ? buildWaterfallDataDollars(pending, attributionMethod, nav, currency, factorMeta, zoom)
+      : buildWaterfallData(pending, attributionMethod, factorMeta, zoom);
+  }, [pending, attributionMethod, showDollars, nav, currency, factorMeta, zoom]);
+  const factorRows = useMemo(
+    () =>
+      pending && attributionMethod
+        ? factorReasoningRows(pending, attributionMethod, factorMeta)
+        : [],
+    [pending, attributionMethod, factorMeta]
+  );
+  const readoutMethodMemo = useMemo(
+    () => (pending ? preferredAttributionMethod(pending) : null),
+    [pending]
+  );
+  const valuations = useMemo(
+    () => (pending && nav != null ? buildPositionValuations(pending, nav) : []),
+    [pending, nav]
+  );
+  const sortedValuations = useMemo(
+    () =>
+      [...valuations].sort((a, b) => {
+        const { key, dir } = valuationSort;
+        const sign = dir === "asc" ? 1 : -1;
+        if (key === "ticker") return sign * a.ticker.localeCompare(b.ticker);
+        const av = (a[key] as number | undefined) ?? 0;
+        const bv = (b[key] as number | undefined) ?? 0;
+        return sign * (av - bv);
+      }),
+    [valuations, valuationSort]
+  );
+  const peripheryTotal = useMemo(
+    () =>
+      pending
+        ? Object.values(pending.portfolio_pnl.by_ticker_periphery).reduce(
+            (acc, value) => acc + value,
+            0
+          )
+        : 0,
+    [pending]
+  );
+
   if (!envelope) {
     if (isRunning) {
       // First-run shimmer skeleton (reduced motion freezes it to a two-tone block).
@@ -189,23 +255,13 @@ export function ResultsPanel({
   }
   const committedEnvelope = envelope;
   const { result, analog_events } = committedEnvelope;
-  const currency = result.reporting_currency ?? "USD";
-  // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
-  // NAV is a client-side notional knob — instant what-if, no re-run.
-  const isMarked = Boolean(result.position_quantities);
-  const nav = isMarked ? result.portfolio_nav ?? null : parseNav(navInput);
   const hasNav = nav != null;
   const stressedNav = nav != null ? nav * (1 + result.portfolio_pnl.total_pnl) : null;
-  const showDollars = hasNav && displayMode === "usd";
-  const valuations = nav != null ? buildPositionValuations(result, nav) : [];
-  const sortedValuations = [...valuations].sort((a, b) => {
-    const { key, dir } = valuationSort;
-    const sign = dir === "asc" ? 1 : -1;
-    if (key === "ticker") return sign * a.ticker.localeCompare(b.ticker);
-    const av = (a[key] as number | undefined) ?? 0;
-    const bv = (b[key] as number | undefined) ?? 0;
-    return sign * (av - bv);
-  });
+  // Non-null past the early return by construction: each of these memos returns a
+  // value exactly when `envelope` does, and `envelope` is non-null here.
+  const mainAttribution = mainAttributionMemo!;
+  const waterfall = waterfallMemo!;
+  const readoutMethod = readoutMethodMemo!;
   const toggleSort = (key: ValuationSortKey) =>
     setValuationSort(
       valuationSort.key === key
@@ -221,17 +277,6 @@ export function ResultsPanel({
       numeric={numeric}
     />
   );
-  const mainAttribution = selectMainAttribution(result);
-  const waterfall =
-    showDollars && nav != null
-      ? buildWaterfallDataDollars(result, mainAttribution.method, nav, currency, factorMeta, zoom)
-      : buildWaterfallData(result, mainAttribution.method, factorMeta, zoom);
-  const factorRows = factorReasoningRows(result, mainAttribution.method, factorMeta);
-  const readoutMethod = preferredAttributionMethod(result);
-  const peripheryTotal = Object.values(result.portfolio_pnl.by_ticker_periphery).reduce(
-    (acc, value) => acc + value,
-    0
-  );
   const bandChartHeight = isPhone ? 320 : isShortViewport ? 360 : isTallViewport ? 480 : 420;
   const chartHeight = fullscreenChartHeight(
     waterfallFullscreen.isFullscreen,
@@ -243,6 +288,11 @@ export function ResultsPanel({
   async function exportAllResults() {
     setExportBusy(true);
     try {
+      // Imported on click, not at module load: ~11 KB of "build 9-11 CSV files"
+      // logic that only runs here. It merges into the chunk `csv.ts` already
+      // creates for its own dynamic `fflate` import, so this costs no extra
+      // request — and the button already shows a "Preparing export…" busy state.
+      const { buildResultsCsvBundle, resultsZipFilename } = await import("./exportBundle");
       await downloadCsvZip(
         resultsZipFilename(result),
         buildResultsCsvBundle({ envelope: committedEnvelope, factorMeta, nav })

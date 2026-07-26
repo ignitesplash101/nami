@@ -72,7 +72,17 @@ steps:
       - --platform=managed
       - --service-account=${_RUNTIME_SA}
       - --memory=2Gi
-      - --cpu=1
+      # 2 vCPU: the market-fetch pool, the ridge solves and the 31-iteration
+      # events replay are real concurrency that one core time-slices. Cloud Run
+      # bills CPU-seconds only while a request is in flight, so a faster request
+      # is close to cost-neutral. (The dominant Shapley fit is single-threaded
+      # regardless — see docs/agents/engine.md.)
+      - --cpu=2
+      # Pinned, not inherited: the live service already had startup CPU boost,
+      # but only because `gcloud run deploy` preserves unspecified settings. It
+      # was never declared here, so any future config change could silently drop
+      # it. Declare it so the deploy is reproducible from this file alone.
+      - --cpu-boost
       # 900s: the decompose stream (up to 15 pipeline reruns over 4 workers) can
       # legitimately exceed the 300s default, which severed it mid-stream as a
       # client-visible network error. Idle-stream leakage stays bounded by the

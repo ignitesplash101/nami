@@ -1,0 +1,45 @@
+name: Pre-warm scenario cache
+
+# The scenario cache key includes the effective NYSE date, which rolls at 16:00 ET,
+# so every sample scenario x sample portfolio goes cold each trading day and the
+# first visitor pays a full ~53s Gemini chain. This warms them just after the close.
+#
+# 21:30 UTC is after 16:00 ET in BOTH EST and EDT (GitHub cron has no DST), and
+# lands 06:30 JST — ahead of the working day in the deployment's own region.
+# On a US market holiday the effective date does not advance, so the run hits the
+# existing cache entries and costs nothing.
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Warm at most N combinations (0 = all)"
+        required: false
+        default: "0"
+
+# Never let two warms overlap — a slow run must not be joined by the next day's.
+concurrency:
+  group: prewarm
+  cancel-in-progress: false
+
+jobs:
+  prewarm:
+    name: warm sample combinations
+    runs-on: ubuntu-latest
+    # 16 combinations x ~53s sequential is ~15 min; this is headroom, not a target.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Stdlib only — no `uv sync`, no GCP credentials, no repo install. The script
+      # calls the same public endpoint a visitor does.
+      - name: Warm the scenario cache
+        run: |
+          python scripts/prewarm_samples.py \
+            --base-url "${{ vars.NAMI_BASE_URL }}" \
+            --limit "${{ github.event.inputs.limit || 0 }}"

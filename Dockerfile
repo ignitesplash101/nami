@@ -8,9 +8,14 @@ RUN npm run build
 
 FROM python:3.12-slim
 
+# UV_COMPILE_BYTECODE compiles the dependency tree's bytecode into the IMAGE
+# LAYER. Without it every cold start recompiles pandas/numpy/scipy/sklearn/
+# yfinance into a container-local __pycache__ that dies with the instance —
+# pure repeated work at min-instances=0. Costs image size, saves cold-start time.
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
     PYTHONPATH=/app
 
 WORKDIR /app

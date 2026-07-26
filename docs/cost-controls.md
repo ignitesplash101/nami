@@ -17,15 +17,20 @@ Every endpoint that calls Vertex AI / Gemini is gated as follows in [app/api/mai
 | `POST /api/saved-scenarios` and all Firestore endpoints | **403** ([main.py:408–410](../app/api/main.py)) | Firestore writes, no LLM | Firestore-only |
 | `GET /api/portfolios/samples`, `/api/scenarios/samples`, `/api/health`, `/api/access`, `/api/meta`, `/api/docs/methodology`, `/api/portfolio/validate` | open | open | $0 (no LLM) |
 
-**Visitor cost ceiling**: 4 sample scenarios × 4 sample portfolios = **16 unique combinations**. The scenario cache key includes `effective_as_of`, which advances once per NYSE trading day, so each combination produces ~5 unique cache entries per week. Worst-case per-week spend from anonymous traffic, assuming infinite visitors:
+**Visitor cost ceiling — the sample matrix is NOT the bound.** It is tempting to say: 4 sample scenarios × 4 sample portfolios = 16 combinations × ~$0.08 = a few dollars a week, done. That was this document's claim until 2026-07-26, and **it was wrong**. `_resolve_scenario_text` ([main.py](../app/api/main.py)) accepts *arbitrary* visitor scenario text before it ever checks the sample key — deliberately, per the Phase 17 design, and the endpoint's own 403 says so ("a sample scenario **or custom scenario text**"). A visitor can mint an unbounded number of distinct cache keys.
+
+**The real ceiling is the money breakers**, not the sample matrix:
 
 ```
-16 combinations × 5 NYSE days × $0.08 per first miss = ~$6.40 / week
+cost cap   $25 / day  ÷ ~$0.08 per cache-miss run  ≈ 310 paid runs / day
+run cap    500 paid runs / day
 ```
 
-The cache (GCS, 7-day TTL, [`app/data/cache.py`](../app/data/cache.py)) absorbs all subsequent identical requests at $0. So the cost is bounded *regardless of visitor traffic volume* — a 1000-visitor day costs the same as a 1-visitor day after the cache warms.
+so the **cost cap binds first**, at roughly $25/day (~$750/month worst case), plus a small overshoot equal to the number of simultaneously in-flight runs. Anything stronger than that has to come from the auth gates, not from arithmetic about samples.
 
-The daily **run cap** (`DAILY_LLM_RUN_CAP`, default 500) counts **paid runs only** — a cache hit makes zero model calls and is not charged against it. Until Phase 36 the counter incremented on every request, so cached traffic could exhaust the cap and 429 legitimate free visitors at no saving; availability, not just spend, is now bounded by the thing that actually costs money. Note the **cost** cap binds first in practice: $25/day ÷ ~$0.08 per cache-miss run ≈ 310 paid runs, below the 500 run cap.
+The cache (GCS, 7-day TTL, [`app/data/cache.py`](../app/data/cache.py)) still absorbs identical requests at $0, and the daily **run cap** counts **paid runs only** — a cache hit makes zero model calls and is not charged against it. (Until Phase 36 the counter incremented on every request, so cached traffic could exhaust the cap and 429 legitimate free visitors at no saving.) Concurrent identical requests are also collapsed by a per-key single-flight, so a burst on one scenario computes once rather than N times.
+
+**Standing cost: the daily pre-warm.** [`.github/workflows/prewarm.yml`](../.github/workflows/prewarm.yml) runs [`scripts/prewarm_samples.py`](../scripts/prewarm_samples.py) at 21:30 UTC on weekdays, warming every sample combination just after the 16:00 ET as-of rollover. Measured effect: a cold combination takes ~55s, a warm one ~0.4s. Cost is **~$1.30 per trading day (~$27/month)** and it is genuinely additional — on a day nobody visits a given combination, that combination's warm is wasted. Trim it with the workflow's `limit` input or by shrinking the sample sets.
 
 **Admin cost ceiling**: not bounded by code. The admin passcode is the gate. If the passcode leaks, abuse is bounded only by Vertex AI quotas (see below).
 

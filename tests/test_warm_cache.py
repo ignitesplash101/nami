@@ -66,6 +66,25 @@ def test_degraded_result_is_returned_but_not_memoized(monkeypatch):
     assert cached is healed
 
 
+def test_warm_uses_the_configured_lookback_not_the_default(monkeypatch):
+    """The startup warm must populate the key REQUESTS read.
+
+    Requests pass `config.beta_lookback_weeks`; `warm()` used to hardcode the 156
+    default, so setting BETA_LOOKBACK_WEEKS would have made the warm populate a
+    key nothing reads — a silent multi-minute no-op at boot.
+    """
+    calls: list[int] = []
+
+    def fake_fetch(lookback_weeks=156):
+        calls.append(lookback_weeks)
+        return _frames()
+
+    monkeypatch.setenv("BETA_LOOKBACK_WEEKS", "104")
+    monkeypatch.setattr(warm_cache, "fetch_factor_returns_with_history", fake_fetch)
+    warm_cache.warm()
+    assert calls == [104]
+
+
 def test_distinct_lookbacks_cache_independently(monkeypatch):
     calls: list[int] = []
 

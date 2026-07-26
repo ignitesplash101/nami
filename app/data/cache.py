@@ -37,20 +37,25 @@ class CloudStorageCache:
     def _path(self, key: str, ext: str = "parquet") -> str:
         return f"{self._prefix}/{key}.{ext}"
 
-    def _read_with_ttl(self, blob: storage.Blob, ttl_hours: int) -> bytes | None:
-        if not blob.exists(self._client):
+    def _read_with_ttl(self, path: str, ttl_hours: int) -> bytes | None:
+        """Blob bytes if the object exists and is inside its TTL, else None.
+
+        `get_blob` returns a METADATA-POPULATED blob (or None when absent) in a
+        single round trip, where the previous `exists()` + `reload()` pair took
+        two. Every cache read goes through here — scenario hits, each market
+        parquet, the event matrix — so this removes a third of the network calls
+        on the hot path for identical semantics: `blob.updated` is populated by
+        `get_blob`, so the TTL comparison is unchanged.
+        """
+        blob = self._bucket.get_blob(path)
+        if blob is None or blob.updated is None:
             return None
-        blob.reload()
-        if blob.updated is None:
-            return None
-        age = datetime.now(UTC) - blob.updated
-        if age > timedelta(hours=ttl_hours):
+        if datetime.now(UTC) - blob.updated > timedelta(hours=ttl_hours):
             return None
         return blob.download_as_bytes()
 
     def get(self, key: str, ttl_hours: int = 24) -> pd.DataFrame | None:
-        blob = self._bucket.blob(self._path(key, ext="parquet"))
-        data = self._read_with_ttl(blob, ttl_hours)
+        data = self._read_with_ttl(self._path(key, ext="parquet"), ttl_hours)
         if data is None:
             return None
         return pd.read_parquet(io.BytesIO(data))
@@ -63,8 +68,7 @@ class CloudStorageCache:
         blob.upload_from_file(buf, content_type="application/octet-stream")
 
     def get_json(self, key: str, ttl_hours: int = 24 * 7) -> dict[str, Any] | None:
-        blob = self._bucket.blob(self._path(key, ext="json"))
-        data = self._read_with_ttl(blob, ttl_hours)
+        data = self._read_with_ttl(self._path(key, ext="json"), ttl_hours)
         if data is None:
             return None
         return json.loads(data)
