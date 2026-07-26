@@ -29,6 +29,7 @@ def scenario_cache_key(
     regression_spec: str,
     position_quantities: dict[str, float] | None = None,
     pinned_event_ids: list[str] | None = None,
+    structured_thinking_level: str | None = None,
 ) -> str:
     """SHA256 hex digest of normalized inputs.
 
@@ -61,5 +62,11 @@ def scenario_cache_key(
         # narrative — semantically distinct from a normal run of the same text, so
         # they get their own keyspace (and don't collide with / pollute it).
         payload_obj["pinned_event_ids"] = sorted(pinned_event_ids)
+    if structured_thinking_level:
+        # Capping thinking measurably changes what the model proposes (measured
+        # 2026-07-26: ~half the factor shocks), so it belongs in the key alongside
+        # `model_id`. Folded in only when set, so the default (unset) keyspace is
+        # byte-identical and no existing entry is invalidated.
+        payload_obj["structured_thinking_level"] = structured_thinking_level
     payload = json.dumps(payload_obj, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

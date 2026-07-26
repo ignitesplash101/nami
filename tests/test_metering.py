@@ -6,7 +6,7 @@ import pytest
 
 from app.config import Config
 from app.data.firestore_store import InMemoryFirestoreStore
-from app.llm.gemini_client import GeminiClient
+from app.llm.gemini_client import GeminiClient, call_shape, usage_tokens
 from app.observability.metering import (
     BudgetExceededError,
     MeteredGeminiClient,
@@ -52,6 +52,32 @@ def _metered(store, monkeypatch, *, response=None, raises=None, cap=25.0):
 
     monkeypatch.setattr(GeminiClient, "_generate_content", _base)
     return client
+
+
+def test_usage_tokens_reports_thinking_as_a_component_of_output():
+    """Thinking is INSIDE tokens_out (Google bills both at the output rate) and is
+    surfaced separately only so it can be attributed — never added on top."""
+    response = _FakeResponse(1000, 200)
+    response.usage_metadata.thoughts_token_count = 300
+    assert usage_tokens(response) == (1000, 500, 300)
+
+
+def test_usage_tokens_tolerates_a_response_without_metadata():
+    assert usage_tokens(object()) == (0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("tools", "schema", "expected"),
+    [
+        ([object()], None, "grounded"),
+        ([object()], object(), "grounded"),  # tools win: grounding is the cost driver
+        (None, object(), "structured"),
+        (None, None, "plain"),
+    ],
+)
+def test_call_shape_classifies_by_request_config(tools, schema, expected):
+    config = type("Cfg", (), {"tools": tools, "response_schema": schema})()
+    assert call_shape(config) == expected
 
 
 def test_cost_usd_uses_config_prices():
@@ -129,12 +155,52 @@ def test_concurrent_reserves_cannot_exceed_cap():
 
 
 def test_enforce_run_cap_raises_past_cap():
+    """Check-then-charge: the gate reads the counter, the metered client books it.
+
+    Exactly `cap` paid runs must still be admitted, as under the old
+    increment-then-compare form.
+    """
     store = InMemoryFirestoreStore()
     cfg = _config(daily_llm_run_cap=2)
     enforce_run_cap(store, cfg, DAY)
+    store.increment_daily_run(DAY)
     enforce_run_cap(store, cfg, DAY)
+    store.increment_daily_run(DAY)
     with pytest.raises(BudgetExceededError):
         enforce_run_cap(store, cfg, DAY)
+
+
+def test_enforce_run_cap_does_not_book_a_run():
+    """A cache hit calls the gate and no model call — it must stay free.
+
+    Counting endpoint hits made the cap throttle free cached traffic while the
+    cost breaker, not this, is what actually bounds spend."""
+    store = InMemoryFirestoreStore()
+    cfg = _config(daily_llm_run_cap=2)
+    for _ in range(5):
+        enforce_run_cap(store, cfg, DAY)
+    assert store.usage_daily(DAY).get("runs", 0) == 0
+
+
+def test_paid_call_books_exactly_one_run_per_request(monkeypatch):
+    """Internal fan-out (retries, 2^N decomposition subsets) is still ONE run."""
+    store = InMemoryFirestoreStore()
+    client = _metered(store, monkeypatch, response=_FakeResponse(10, 5))
+    client._generate_content(contents="x", config=None)
+    client._generate_content(contents="x", config=None)
+    client._generate_content(contents="x", config=None)
+    assert store.usage_daily(DAY)["runs"] == 1
+    assert store.usage_daily(DAY)["calls"] == 3
+
+
+def test_budget_blocked_request_books_no_run(monkeypatch):
+    store = InMemoryFirestoreStore()
+    # Pre-spend right up to a tiny cap so the next reservation cannot fit.
+    store.settle_budget(DAY, reserved=0.0, actual=1.0, tokens_in=0, tokens_out=0)
+    client = _metered(store, monkeypatch, response=_FakeResponse(10, 5), cap=0.5)
+    with pytest.raises(BudgetExceededError):
+        client._generate_content(contents="x", config=None)
+    assert store.usage_daily(DAY).get("runs", 0) == 0
 
 
 def test_unlock_lockout_counter_windows_and_clears():

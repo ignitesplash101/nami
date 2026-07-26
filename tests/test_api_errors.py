@@ -18,6 +18,7 @@ from app.api.main import api
 from app.data.firestore_store import InMemoryFirestoreStore
 from app.data.marking import MarkingError
 from app.data.sample_portfolios import get_portfolio
+from app.llm.scenario import ScenarioCacheUnavailable
 from app.llm.schemas import (
     AnalogSelection,
     Citation,
@@ -118,6 +119,24 @@ def test_adjust_rerun_required_carries_code(admin_client, monkeypatch):
     assert response.status_code == 422
     assert response.headers[ERROR_CODE_HEADER] == "rerun_required"
     assert "rerun" not in response.json()["detail"].lower()
+
+
+def test_adjust_cache_outage_is_503_unavailable_not_410_or_rerun(admin_client, monkeypatch):
+    """A scenario-cache BACKEND failure is neither an expired key nor a
+    rerun_required rejection. It must sort ahead of the generic RuntimeError
+    clause, or the UI offers a rerun CTA that cannot help."""
+
+    def _raise_cache_outage(*args, **kwargs):
+        raise ScenarioCacheUnavailable("Scenario cache unavailable: 403 denied")
+
+    monkeypatch.setattr("app.api.main.adjust_scenario_shocks", _raise_cache_outage)
+    response = admin_client.post(
+        "/api/scenarios/adjust-shocks",
+        json={"cache_key": "abc", "overrides": {"SPY": 0.0}},
+    )
+    assert response.status_code == 503
+    assert response.headers[ERROR_CODE_HEADER] == "unavailable"
+    assert "403 denied" in response.json()["detail"]
 
 
 def test_unlock_lockout_429_carries_rate_limited_code(client, monkeypatch):

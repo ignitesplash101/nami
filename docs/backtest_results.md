@@ -48,47 +48,74 @@ error embedded; if it still fails after the retry, the pipeline raises.
 
 ---
 
-## Snapshot — 2026-05-28
+## Snapshot — 2026-07-26
 
 Generated via `uv run python scripts/snapshot_live_evals.py`. Source data:
-[`scripts/live_evals_snapshot.json`](../scripts/live_evals_snapshot.json).
+[`scripts/live_evals_snapshot.json`](../scripts/live_evals_snapshot.json), which now
+carries the provenance block below so a stale table can never read as current.
+
+| field | value |
+|---|---|
+| model | `gemini-3.6-flash` (location `global`) |
+| `PROMPT_VERSION` | v11 |
+| `factor_universe_version` | `3d07434f1346` |
+| `events_version` | `d0468e689f2d` |
+| nami engine | 0.2.0 |
+| temperature | 0.0 |
+| `STRUCTURED_THINKING_LEVEL` | unset (server default) |
+| effective market date | 2026-07-24 |
 
 | scenario | portfolio | modeled P&L | top factor (shock → naive contrib) | analogs picked | citations |
 |---|---|---|---|---|---|
-| pandemic resurgence | msci_world | **−10.28%** | VIX (+220% → −3.91% of P&L) | covid-crash-2020, lehman-gfc-2008 | 2 |
-| banking failures | msci_world | **−0.94%** | VIX (+50% → −0.89% of P&L) | svb-banking-2023, lehman-gfc-2008, covid-liquidity-2020 | 6 |
-| Taiwan invasion | us_tech_growth | **−21.37%** | VIX (+105% → −3.41% of P&L) | inflation-ukraine-2022, q4-trade-war-2018, china-deval-2015 | 5 |
+| pandemic resurgence | msci_world | **−23.89%** | VIX (+269% → +1.43% of P&L) | covid-crash-2020, nine-eleven-2001, japan-earthquake-2011 | 6 |
+| banking failures | msci_world | **−2.25%** | VIX (+25% → +0.13% of P&L) | svb-banking-2023, lehman-gfc-2008, bnp-paribas-credit-2007 | 2 |
+| Taiwan invasion | us_tech_growth | **−28.00%** | VIX (+75% → +0.23% of P&L) | japan-earthquake-2011, q4-trade-war-2018, nine-eleven-2001 | 4 |
 
-(Per-test pass/skip status from `tests/test_live_evals.py` on the same run: 2 passed,
-1 skipped. The `test_banking_stress_hits_xlf_harder_than_spy` test skipped because the
-LLM proposed VIX as the dominant shock rather than shocking both XLF and SPY — exactly
-the kind of run-to-run drift the test's `pytest.skip` guard exists for.)
+Citation source domains (the publisher, not the redirect — see the findings):
+
+| scenario | domains |
+|---|---|
+| pandemic resurgence | `imf.org`, `nih.gov`, `harvard.edu`, `sifma.org`, `theguardian.com`, `forbes.com` |
+| banking failures | `americanbar.org`, `wikipedia.org` |
+| Taiwan invasion | `csis.org`, `globaltaiwan.org`, `laweconcenter.org`, `bisinfotech.com` |
 
 ---
 
-## Findings — 2026-05-28
+## Findings — 2026-07-26
 
-- **Factor shocks were within envelope p10/p90** for all factors with `count ≥ 3` — enforced
-  by `validate_shock_proposal` ([`app/llm/validation.py`](../app/llm/validation.py)) with
-  one-retry recovery; no scenario hit the retry path on this snapshot.
+- **This is the first snapshot on `gemini-3.6-flash` and `PROMPT_VERSION` v11.** The
+  previous table (2026-05-28) was produced on `gemini-3.5-flash` under an older prompt
+  and carried no model stamp, so it silently read as current for two model/prompt
+  changes. The provenance block above exists to stop that recurring.
+- **v11's source hierarchy is directionally honored, but not enforced.** v11 asks for
+  government/central-bank sources first, then research, then major news, and names
+  Wikipedia as last resort. Two of three scenarios comply well: the pandemic run drew on
+  `imf.org`, `nih.gov`, `harvard.edu` and `sifma.org`, and the Taiwan run on three
+  research/institute domains. The banking run returned only two citations, one of which
+  is `wikipedia.org` — the exact source v11 deprioritizes. Treat the hierarchy as a
+  preference the model usually follows, not a guarantee. n=3 and stochastic over news
+  drift: this is an observation, not a measurement.
+- **Citation URLs are NOT publisher URLs.** Every `Citation.url` is a
+  `vertexaisearch.cloud.google.com/grounding-api-redirect/...` link; the real domain
+  lives in `Citation.title`. Any analysis (or UI copy) that reads the URL's host will
+  report the redirector for 100% of citations. `scripts/snapshot_live_evals.py` now
+  reads the title for exactly this reason.
 - **Analog selection was mechanistically sensible**: pandemic resurgence picked the COVID
-  crash; banking failures picked SVB + Lehman + COVID liquidity squeeze (Fed-backstop
-  pattern matches); Taiwan invasion picked Ukraine inflation + 2018 trade war + 2015
-  China devaluation.
-- **VIX was the dominant proposed factor across all three scenarios.** This reflects
-  Gemini's tendency to lean on broad risk-off as the primary mechanism rather than
-  isolating sector-specific factors — a known calibration tendency. The
-  `test_banking_stress_hits_xlf_harder_than_spy` test catches the cases where the LLM
-  *does* break out sector factors; on this run it didn't shock XLF + SPY separately.
-- **Citation counts**: 2, 6, 5 — averaging 4.3 per scenario. All scenarios produced
-  grounded narratives (`narrative_mode = "grounded"`), so Google Search fired correctly.
-- **Wall-clock**: 2.3s, 2.6s, 3.6s per scenario — these are mostly cache hits from the
-  `pytest tests/test_live_evals.py` run that ran ~3 minutes prior. A genuine cache miss
-  is closer to 10–20s (3 Gemini calls + 2 yfinance fetches in parallel + 3 Shapley fits).
-- **Magnitudes are illustrative, not benchmarked.** A −21% modeled P&L on the Taiwan
-  scenario reflects the analog envelope (2018 trade war + 2022 inflation + 2015 deval
-  windows) intersected with the US tech portfolio's high beta to those factors — it is
-  not a forecast.
+  crash plus two exogenous-shock analogs (9/11, Tōhoku); banking failures picked SVB +
+  Lehman + the 2007 BNP Paribas credit freeze; Taiwan picked Tōhoku (supply-chain
+  disruption) + the 2018 trade war + 9/11.
+- **VIX remains the dominant proposed factor across all three scenarios** — unchanged
+  from the 2026-05-28 snapshot and from 3.5 Flash. Gemini leans on broad risk-off as the
+  primary mechanism rather than isolating sector factors. Note the naive contribution of
+  the VIX shock is *positive* in all three (long-vol exposure offsets a small part of the
+  loss); the headline P&L is driven by the equity-beta factors, not by VIX.
+- **Wall-clock**: 46.1s, 42.9s, 42.4s on genuine cache misses (the re-run to correct the
+  citation-domain extraction was served from cache in 2–4s). This is the honest
+  cache-miss number for the current model: appreciably slower than the 10–20s recorded
+  in the 3.5-Flash era, consistent with thinking-enabled generation.
+- **Magnitudes are illustrative, not benchmarked.** The −28% modeled P&L on the Taiwan
+  scenario reflects the analog envelope intersected with the US tech book's high beta to
+  those factors — it is not a forecast.
 
 ---
 

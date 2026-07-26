@@ -10,6 +10,7 @@ Google Search tool is not invoked, producing valid JSON with no grounding metada
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 
 import pandas as pd
@@ -41,10 +42,44 @@ from app.llm.schemas import (
 )
 from app.llm.validation import validate_shock_proposal
 
+logger = logging.getLogger(__name__)
+
 # Per-call bound on Gemini requests, in MILLISECONDS (the HttpOptions unit).
 # Generous — grounded-narrative calls run 20-60s — but finite: an unbounded hung
 # call used to stall the SSE stream until the client or Cloud Run severed it.
 GEMINI_CALL_TIMEOUT_MS = 120_000
+
+
+def usage_tokens(response: object) -> tuple[int, int, int]:
+    """`(tokens_in, tokens_out, thinking)` from a response's `usage_metadata`.
+
+    `tokens_out` INCLUDES thinking: Google bills response and reasoning tokens at
+    the same output rate, so the budget breaker must count both or it under-books
+    real spend. `thinking` is returned separately for telemetry only — it is a
+    component of `tokens_out`, never an addition to it.
+    """
+    meta = getattr(response, "usage_metadata", None)
+    if meta is None:
+        return 0, 0, 0
+    tokens_in = int(getattr(meta, "prompt_token_count", 0) or 0)
+    thinking = int(getattr(meta, "thoughts_token_count", 0) or 0)
+    tokens_out = int(getattr(meta, "candidates_token_count", 0) or 0) + thinking
+    return tokens_in, tokens_out, thinking
+
+
+def call_shape(config: object) -> str:
+    """Coarse call classifier for telemetry, read off the request config.
+
+    Distinguishes the three kinds of call nami makes without threading a label
+    through the chokepoint: `grounded` (Google Search), `structured` (response
+    schema, no tools), `plain` (neither). Enough to attribute thinking-token spend
+    per call site, which is what any thinking-level tuning has to be based on.
+    """
+    if getattr(config, "tools", None):
+        return "grounded"
+    if getattr(config, "response_schema", None) is not None:
+        return "structured"
+    return "plain"
 
 
 def _is_timeout_error(exc: Exception) -> bool:
@@ -74,6 +109,15 @@ class GeminiClient:
         )
         self._model = config.vertex_model_id
         self._temperature = config.llm_temperature
+        # Applied to the SCHEMA-CONSTRAINED calls only (analog selection, shock
+        # extraction, shock edit, decomposition) — never to the grounded narrative,
+        # which is the one call whose job is actually synthesis. None means "leave
+        # the server default alone", so an unset knob changes nothing.
+        self._structured_thinking = (
+            _types.ThinkingConfig(thinking_level=config.structured_thinking_level)
+            if config.structured_thinking_level
+            else None
+        )
 
     def _generate_content(self, *, contents: object, config: object) -> object:
         """Single chokepoint for every paid Gemini call.
@@ -88,9 +132,22 @@ class GeminiClient:
         instead of leaking an SDK exception as a bare 500.
         """
         try:
-            return self._client.models.generate_content(
+            response = self._client.models.generate_content(
                 model=self._model, contents=contents, config=config
             )
+            tokens_in, tokens_out, thinking = usage_tokens(response)
+            # Thinking is the majority of output cost on a thinking-capable model
+            # and is otherwise invisible (it is folded into tokens_out for billing).
+            # Logging it per call shape is what makes a thinking-level decision
+            # evidence-based rather than a guess.
+            logger.info(
+                "gemini call shape=%s tokens_in=%d tokens_out=%d thinking=%d",
+                call_shape(config),
+                tokens_in,
+                tokens_out,
+                thinking,
+            )
+            return response
         except Exception as exc:
             if _is_timeout_error(exc):
                 raise RuntimeError(
@@ -113,6 +170,7 @@ class GeminiClient:
                 temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=DecompositionOutput,
+                thinking_config=self._structured_thinking,
             ),
         )
         return DecompositionOutput.model_validate_json(response.text)
@@ -128,6 +186,7 @@ class GeminiClient:
                 temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=AnalogSelectionOutput,
+                thinking_config=self._structured_thinking,
             ),
         )
         return AnalogSelectionOutput.model_validate_json(response.text)
@@ -281,6 +340,7 @@ class GeminiClient:
                 temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=ShockEditPatch,
+                thinking_config=self._structured_thinking,
             ),
         )
         return ShockEditPatch.model_validate_json(response.text)
@@ -311,6 +371,7 @@ class GeminiClient:
                 temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=ShockProposalOutput,
+                thinking_config=self._structured_thinking,
             ),
         )
         return ShockProposalOutput.model_validate_json(response.text)

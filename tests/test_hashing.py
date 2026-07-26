@@ -111,6 +111,20 @@ def test_scenario_cache_key_quantities_order_independent():
     assert k1 == k2
 
 
+def test_scenario_cache_key_structured_thinking_level_behavior():
+    """Capping thinking measurably changes what the model proposes (measured
+    2026-07-26: roughly half the factor shocks), so it must key like `model_id` —
+    but only when set, so the default keyspace is untouched."""
+    base = _base_kwargs()
+    assert scenario_cache_key(**base) != scenario_cache_key(**base, structured_thinking_level="LOW")
+    assert scenario_cache_key(**base, structured_thinking_level="LOW") != scenario_cache_key(
+        **base, structured_thinking_level="MINIMAL"
+    )
+    # Unset -> byte-identical, so adding the knob invalidated no existing entry.
+    assert scenario_cache_key(**base) == scenario_cache_key(**base, structured_thinking_level=None)
+    assert scenario_cache_key(**base) == scenario_cache_key(**base, structured_thinking_level="")
+
+
 def test_scenario_cache_key_pinned_event_ids_behavior():
     base = _base_kwargs()
     # Present -> distinct keyspace (fixed-context decomposition subset).

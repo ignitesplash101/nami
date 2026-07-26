@@ -1,64 +1,96 @@
-[
-  {
-    "name": "pandemic_resurgence",
-    "scenario_text": "Sudden global pandemic resurgence; 30-day lockdown across major economies; risk-off liquidation across all asset classes.",
-    "portfolio_key": "msci_world",
-    "portfolio_name": "MSCI World Approximation",
-    "market_date": "2026-05-28",
-    "narrative_mode": "grounded",
-    "total_pnl": -0.10282217485709733,
-    "top_factor_name": "VIX",
-    "top_factor_shock": 2.2,
-    "top_factor_contrib_naive": -0.039147080765072145,
-    "analogs_selected_ids": [
-      "covid-crash-2020",
-      "lehman-gfc-2008"
-    ],
-    "citations_count": 2,
-    "factor_shock_count": 8,
-    "periphery_shock_count": 4,
-    "wall_clock_seconds": 3.6
+{
+  "provenance": {
+    "generated_at": "2026-07-26",
+    "model_id": "gemini-3.6-flash",
+    "vertex_ai_location": "global",
+    "prompt_version": "v11",
+    "factor_universe_version": "3d07434f1346",
+    "events_version": "d0468e689f2d",
+    "nami_engine_version": "0.2.0",
+    "llm_temperature": 0.0,
+    "structured_thinking_level": null
   },
-  {
-    "name": "banking_stress",
-    "scenario_text": "Several mid-sized US banks fail; deposit flight; Fed liquidity backstop announced.",
-    "portfolio_key": "msci_world",
-    "portfolio_name": "MSCI World Approximation",
-    "market_date": "2026-05-28",
-    "narrative_mode": "grounded",
-    "total_pnl": -0.009435659242846058,
-    "top_factor_name": "VIX",
-    "top_factor_shock": 0.5,
-    "top_factor_contrib_naive": -0.00889706381024367,
-    "analogs_selected_ids": [
-      "svb-banking-2023",
-      "lehman-gfc-2008",
-      "covid-liquidity-2020"
-    ],
-    "citations_count": 6,
-    "factor_shock_count": 5,
-    "periphery_shock_count": 4,
-    "wall_clock_seconds": 2.6
-  },
-  {
-    "name": "taiwan_semis",
-    "scenario_text": "China invades Taiwan; semiconductor supply chain disrupted; export controls tighten.",
-    "portfolio_key": "us_tech_growth",
-    "portfolio_name": "US Tech Growth",
-    "market_date": "2026-05-28",
-    "narrative_mode": "grounded",
-    "total_pnl": -0.21373635134432203,
-    "top_factor_name": "VIX",
-    "top_factor_shock": 1.05,
-    "top_factor_contrib_naive": -0.03406226471628781,
-    "analogs_selected_ids": [
-      "inflation-ukraine-2022",
-      "q4-trade-war-2018",
-      "china-deval-2015"
-    ],
-    "citations_count": 5,
-    "factor_shock_count": 5,
-    "periphery_shock_count": 5,
-    "wall_clock_seconds": 2.3
-  }
-]
+  "evals": [
+    {
+      "name": "pandemic_resurgence",
+      "scenario_text": "Sudden global pandemic resurgence; 30-day lockdown across major economies; risk-off liquidation across all asset classes.",
+      "portfolio_key": "msci_world",
+      "portfolio_name": "MSCI World (developed-world large-cap proxy)",
+      "market_date": "2026-07-24",
+      "narrative_mode": "grounded",
+      "total_pnl": -0.238900283752721,
+      "top_factor_name": "VIX",
+      "top_factor_shock": 2.6943,
+      "top_factor_contrib_naive": 0.014296561357020546,
+      "analogs_selected_ids": [
+        "covid-crash-2020",
+        "nine-eleven-2001",
+        "japan-earthquake-2011"
+      ],
+      "citations_count": 6,
+      "citation_domains": [
+        "forbes.com",
+        "harvard.edu",
+        "imf.org",
+        "nih.gov",
+        "sifma.org",
+        "theguardian.com"
+      ],
+      "factor_shock_count": 26,
+      "periphery_shock_count": 3,
+      "wall_clock_seconds": 3.7
+    },
+    {
+      "name": "banking_stress",
+      "scenario_text": "Several mid-sized US banks fail; deposit flight; Fed liquidity backstop announced.",
+      "portfolio_key": "msci_world",
+      "portfolio_name": "MSCI World (developed-world large-cap proxy)",
+      "market_date": "2026-07-24",
+      "narrative_mode": "grounded",
+      "total_pnl": -0.022491689569617467,
+      "top_factor_name": "VIX",
+      "top_factor_shock": 0.25,
+      "top_factor_contrib_naive": 0.0013265561887151158,
+      "analogs_selected_ids": [
+        "svb-banking-2023",
+        "lehman-gfc-2008",
+        "bnp-paribas-credit-2007"
+      ],
+      "citations_count": 2,
+      "citation_domains": [
+        "americanbar.org",
+        "wikipedia.org"
+      ],
+      "factor_shock_count": 26,
+      "periphery_shock_count": 3,
+      "wall_clock_seconds": 2.0
+    },
+    {
+      "name": "taiwan_semis",
+      "scenario_text": "China invades Taiwan; semiconductor supply chain disrupted; export controls tighten.",
+      "portfolio_key": "us_tech_growth",
+      "portfolio_name": "US Tech Growth",
+      "market_date": "2026-07-24",
+      "narrative_mode": "grounded",
+      "total_pnl": -0.27995541596845364,
+      "top_factor_name": "VIX",
+      "top_factor_shock": 0.75,
+      "top_factor_contrib_naive": 0.0023237862064879014,
+      "analogs_selected_ids": [
+        "japan-earthquake-2011",
+        "q4-trade-war-2018",
+        "nine-eleven-2001"
+      ],
+      "citations_count": 4,
+      "citation_domains": [
+        "bisinfotech.com",
+        "csis.org",
+        "globaltaiwan.org",
+        "laweconcenter.org"
+      ],
+      "factor_shock_count": 21,
+      "periphery_shock_count": 5,
+      "wall_clock_seconds": 2.3
+    }
+  ]
+}

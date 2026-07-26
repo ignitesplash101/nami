@@ -61,6 +61,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: ESLint
+        # Rules-of-Hooks is the gate that matters here: a hook below an early
+        # return is a runtime crash that typecheck and unit tests cannot see.
+        run: npm run lint
+
       - name: TypeScript type check
         run: npm run typecheck
 

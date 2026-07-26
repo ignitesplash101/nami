@@ -36,12 +36,7 @@ import { SortableTh } from "./primitives";
 import { buildResultsCsvBundle, resultsZipFilename } from "./exportBundle";
 import { ScenarioReadout } from "./ScenarioReadout";
 import { WaterfallChart } from "./WaterfallChart";
-import type {
-  AttributionMethod,
-  FactorMetadataMap,
-  ScenarioResult,
-  ScenarioRunResponse
-} from "../types";
+import type { FactorMetadataMap, ScenarioResult, ScenarioRunResponse } from "../types";
 
 /** Results sub-tabs: the answer band (readout, evidence, toolbar, NAV metric)
  * always renders ABOVE these; the tabs split only the drill layer. */

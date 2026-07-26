@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import date
 
 import pandas as pd
 import pytest
 
 from app.factors import warm_cache
+from app.factors.analogs import HistoricalEvent
 from app.factors.universe import FACTORS
 
 
@@ -78,13 +80,42 @@ def test_distinct_lookbacks_cache_independently(monkeypatch):
     assert calls == [156, 104]
 
 
-def _events_matrix(*, all_nan_row: bool = False) -> pd.DataFrame:
+# Registry order below is deliberately NOT chronological order: `_transient_hole_events`
+# must sort by start_date, and an index-order implementation would pass by accident.
+_EVENT_DATES = {
+    "covid-crash-2020": (date(2020, 2, 19), date(2020, 3, 23)),
+    "q4-trade-war-2018": (date(2018, 10, 1), date(2018, 12, 24)),
+}
+
+
+def _events_registry() -> dict[str, HistoricalEvent]:
+    return {
+        event_id: HistoricalEvent(
+            id=event_id,
+            name=event_id,
+            start_date=start,
+            end_date=end,
+            tags=(),
+            description="",
+        )
+        for event_id, (start, end) in _EVENT_DATES.items()
+    }
+
+
+def _events_matrix(*, all_nan_row: bool = False, transient_hole: bool = False) -> pd.DataFrame:
     matrix = pd.DataFrame(
         -0.05,
-        index=["covid-crash-2020", "q4-trade-war-2018"],
+        index=list(_EVENT_DATES),
         columns=list(FACTORS),
     )
-    matrix.loc["covid-crash-2020", "GLD"] = float("nan")
+    # Legitimate pre-launch gap: the factor is missing from the CHRONOLOGICALLY
+    # FIRST window only, i.e. it is never observed before it goes absent.
+    matrix.loc["q4-trade-war-2018", "GLD"] = float("nan")
+    if transient_hole:
+        # Provider failure: GLD traded in the 2018 window but is absent from the
+        # LATER 2020 one — monotonically impossible for a real ETF.
+        matrix.loc["q4-trade-war-2018", "GLD"] = -0.05
+        matrix.loc["covid-crash-2020", "GLD"] = float("nan")
     if all_nan_row:
         matrix.loc["q4-trade-war-2018"] = float("nan")
     return matrix
@@ -110,11 +141,7 @@ def _patch_event_versions(monkeypatch, *, events: str = "events-v1") -> None:
     monkeypatch.setattr(warm_cache, "events_version", lambda: events)
     monkeypatch.setattr(warm_cache, "factor_universe_version", lambda: "factors-v1")
     monkeypatch.setattr(warm_cache, "MARKET_CACHE_VERSION", "market-v1")
-    monkeypatch.setattr(
-        warm_cache,
-        "load_events",
-        lambda: dict.fromkeys(_events_matrix().index),
-    )
+    monkeypatch.setattr(warm_cache, "load_events", _events_registry)
 
 
 def test_event_matrix_memoized_per_events_version(monkeypatch):
@@ -125,11 +152,7 @@ def test_event_matrix_memoized_per_events_version(monkeypatch):
         return _events_matrix()
 
     monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", fake_fetch)
-    monkeypatch.setattr(
-        warm_cache,
-        "load_events",
-        lambda: dict.fromkeys(_events_matrix().index),
-    )
+    monkeypatch.setattr(warm_cache, "load_events", _events_registry)
     monkeypatch.setattr(warm_cache, "events_version", lambda: "v-one")
 
     first = warm_cache.get_event_returns_matrix()
@@ -150,11 +173,7 @@ def test_event_matrix_with_all_nan_row_is_not_memoized(monkeypatch):
         return _events_matrix(all_nan_row=calls["n"] == 1)
 
     monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", fake_fetch)
-    monkeypatch.setattr(
-        warm_cache,
-        "load_events",
-        lambda: dict.fromkeys(_events_matrix().index),
-    )
+    monkeypatch.setattr(warm_cache, "load_events", _events_registry)
     monkeypatch.setattr(warm_cache, "events_version", lambda: "v-one")
 
     with pytest.raises(RuntimeError, match="event-return matrix"):
@@ -207,11 +226,7 @@ def test_event_matrix_fetch_is_single_flight_under_concurrency(monkeypatch):
         return _events_matrix()
 
     monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", slow_fetch)
-    monkeypatch.setattr(
-        warm_cache,
-        "load_events",
-        lambda: dict.fromkeys(_events_matrix().index),
-    )
+    monkeypatch.setattr(warm_cache, "load_events", _events_registry)
     monkeypatch.setattr(warm_cache, "events_version", lambda: "v-one")
 
     results: list = []
@@ -408,3 +423,107 @@ def test_selected_event_cache_hit_preserves_duplicate_validation(monkeypatch):
             duplicate,
             registry={"covid-crash-2020": None},
         )
+
+
+def test_transient_hole_matrix_is_served_but_never_cached(monkeypatch):
+    """A factor missing from a window LATER than one it already traded in is a
+    provider failure, not a pre-launch gap. Caching it would bake a rate limit
+    into the 30-day parquet and thin every analog envelope built from it."""
+    persistent = _PersistentMatrixCache()
+    _patch_event_versions(monkeypatch)
+    monkeypatch.setattr(warm_cache, "get_event_matrix_cache", lambda: persistent)
+    calls = {"n": 0}
+
+    def fake_fetch(event_ids, registry=None):
+        calls["n"] += 1
+        return _events_matrix(transient_hole=calls["n"] == 1)
+
+    monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", fake_fetch)
+
+    degraded = warm_cache.get_event_returns_matrix()
+    assert bool(degraded.isna().loc["covid-crash-2020", "GLD"])
+    assert persistent.put_calls == []
+
+    healed = warm_cache.get_event_returns_matrix()
+    assert calls["n"] == 2  # the poisoned result was not memoized, so this re-fetched
+    assert not bool(healed.isna().loc["covid-crash-2020", "GLD"])
+    assert persistent.put_calls  # only the clean matrix persists
+
+    cached = warm_cache.get_event_returns_matrix()
+    assert calls["n"] == 2
+    assert cached is healed
+
+
+def test_pre_launch_gap_matrix_still_caches(monkeypatch):
+    """The complement of the test above: a NaN that no later observation
+    contradicts is a genuine pre-launch gap and must NOT block caching."""
+    persistent = _PersistentMatrixCache()
+    _patch_event_versions(monkeypatch)
+    monkeypatch.setattr(warm_cache, "get_event_matrix_cache", lambda: persistent)
+    monkeypatch.setattr(
+        warm_cache,
+        "fetch_event_returns_matrix",
+        lambda event_ids, registry=None: _events_matrix(),
+    )
+
+    matrix = warm_cache.get_event_returns_matrix()
+    assert bool(matrix.isna().loc["q4-trade-war-2018", "GLD"])
+    assert persistent.put_calls == [warm_cache.event_matrix_cache_key()]
+
+
+def test_poisoned_persistent_matrix_is_rejected_on_read_and_replaced(monkeypatch):
+    """Self-healing: a blob poisoned before this gate existed would otherwise keep
+    serving for the remainder of its 30-day TTL."""
+    persistent = _PersistentMatrixCache()
+    _patch_event_versions(monkeypatch)
+    monkeypatch.setattr(warm_cache, "get_event_matrix_cache", lambda: persistent)
+    key = warm_cache.event_matrix_cache_key()
+    persistent.store[key] = _events_matrix(transient_hole=True)
+    healthy = _events_matrix()
+    calls = {"n": 0}
+
+    def fake_fetch(event_ids, registry=None):
+        calls["n"] += 1
+        return healthy
+
+    monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", fake_fetch)
+    result = warm_cache.get_event_returns_matrix()
+
+    assert calls["n"] == 1
+    pd.testing.assert_frame_equal(result, healthy)
+    pd.testing.assert_frame_equal(persistent.store[key], healthy)
+
+
+def test_selected_event_cache_hit_enforces_registry_membership(monkeypatch):
+    """Backdated runs pass an as-of-filtered registry. Serving out of the warm
+    full-registry matrix must not bypass the look-ahead guard."""
+    persistent = _PersistentMatrixCache()
+    _patch_event_versions(monkeypatch)
+    monkeypatch.setattr(warm_cache, "get_event_matrix_cache", lambda: persistent)
+    persistent.store[warm_cache.event_matrix_cache_key()] = _events_matrix()
+
+    def unexpected_fetch(event_ids, registry=None):
+        raise AssertionError("must reject before fetching")
+
+    monkeypatch.setattr(warm_cache, "fetch_event_returns_matrix", unexpected_fetch)
+
+    with pytest.raises(KeyError, match="unknown event_ids"):
+        warm_cache.get_selected_event_returns_matrix(
+            ["covid-crash-2020"],
+            registry={"q4-trade-war-2018": None},
+        )
+
+
+def test_selected_events_preserve_requested_order_on_cache_hit(monkeypatch):
+    persistent = _PersistentMatrixCache()
+    _patch_event_versions(monkeypatch)
+    monkeypatch.setattr(warm_cache, "get_event_matrix_cache", lambda: persistent)
+    persistent.store[warm_cache.event_matrix_cache_key()] = _events_matrix()
+    # Reverse of the full matrix's index order, so a plain filter would not match.
+    selected = ["q4-trade-war-2018", "covid-crash-2020"]
+
+    result = warm_cache.get_selected_event_returns_matrix(
+        selected,
+        registry=dict.fromkeys(selected),
+    )
+    assert list(result.index) == selected

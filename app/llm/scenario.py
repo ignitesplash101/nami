@@ -97,6 +97,47 @@ def _noop(_stage: str, _status: str) -> None:
     pass
 
 
+class ScenarioCacheUnavailable(RuntimeError):
+    """The GCS scenario cache could not be reached where it is REQUIRED (→ 503).
+
+    Only the adjustment path raises this: it re-fetches the trusted canonical by
+    `cache_key`, so a backend outage there is a real dependency failure and must
+    NOT be reported as an expired key (410) or as `rerun_required` (422). A
+    `RuntimeError` subclass for consistency with `MarkingError` /
+    `InsufficientHistoryError`; endpoints MUST catch it BEFORE their generic
+    `except RuntimeError`, which means something else entirely.
+    """
+
+
+def _cached_json_or_miss(cache: CacheProtocol, key: str, *, ttl_hours: int) -> dict | None:
+    """Read the canonical, degrading to a cache MISS when the backend is down.
+
+    The scenario cache is a de-duplication layer, not required data — GCS being
+    unreachable (absent ADC, revoked permission, outage) should cost a recompute,
+    not the request. `app/data/market.py` takes the same posture on its own cache,
+    and `docs/cost-controls.md` already documents this degradation ("if the GCS
+    bucket becomes unwritable, every request becomes a cache miss"). Without this
+    the google-cloud exception escapes every endpoint handler as a bare 500.
+    """
+    try:
+        return cache.get_json(key, ttl_hours=ttl_hours)
+    except Exception as exc:  # noqa: BLE001 — cache outage must not break a run
+        logger.warning("Scenario cache read unavailable (%s) — recomputing", exc)
+        return None
+
+
+def _put_json_best_effort(cache: CacheProtocol, key: str, payload: dict) -> None:
+    """Persist the canonical; never let a cache write discard a finished run.
+
+    By this point the full Gemini chain has already been paid for, so raising here
+    would burn the spend AND return nothing — the worst failure ordering available.
+    """
+    try:
+        cache.put_json(key, payload)
+    except Exception as exc:  # noqa: BLE001 — the result is already computed
+        logger.warning("Scenario cache write failed (%s) — result served uncached", exc)
+
+
 def compute_scenario_cache_key(
     scenario_text: str,
     portfolio: str | Portfolio,
@@ -135,6 +176,7 @@ def compute_scenario_cache_key(
             lookback_weeks=config.beta_lookback_weeks, alpha=config.ridge_alpha
         ),
         position_quantities=position_quantities,
+        structured_thinking_level=config.structured_thinking_level,
     )
 
 
@@ -701,10 +743,11 @@ def run_scenario(
         ),
         position_quantities=position_quantities,
         pinned_event_ids=pinned_event_ids,
+        structured_thinking_level=config.structured_thinking_level,
     )
 
     if not skip_cache:
-        cached = cache.get_json(key, ttl_hours=24 * config.llm_cache_ttl_days)
+        cached = _cached_json_or_miss(cache, key, ttl_hours=24 * config.llm_cache_ttl_days)
         if cached is not None:
             progress("cache_hit", "done")
             # Cache holds the return-space canonical (+ quantity inputs); the NAV /
@@ -986,7 +1029,7 @@ def run_scenario(
     )
 
     # Persist the return-space canonical only (no NAV / dollars / marks / benchmark).
-    cache.put_json(key, result.model_dump(mode="json"))
+    _put_json_best_effort(cache, key, result.model_dump(mode="json"))
 
     marked = _apply_mtm(
         result,
@@ -1047,7 +1090,12 @@ def adjust_scenario_shocks(
     if cache is None:
         cache = CloudStorageCache(config.gcs_bucket, prefix="scenario_cache")
 
-    cached = cache.get_json(cache_key, ttl_hours=24 * config.llm_cache_ttl_days)
+    # NOT degraded to a miss like the run path: this path REQUIRES the canonical,
+    # so a backend outage must not be reported as an expired key (410).
+    try:
+        cached = cache.get_json(cache_key, ttl_hours=24 * config.llm_cache_ttl_days)
+    except Exception as exc:  # noqa: BLE001 — re-raised as a coded 503
+        raise ScenarioCacheUnavailable(f"Scenario cache unavailable: {exc}") from exc
     if cached is None:
         raise LookupError(f"Scenario result not found for cache_key={cache_key!r}.")
     canonical = ScenarioResult.model_validate(cached)

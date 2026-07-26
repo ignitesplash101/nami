@@ -26,6 +26,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import hashlib
+import logging
 import threading
 from typing import Protocol
 
@@ -41,6 +42,8 @@ from app.factors.analogs import (
 )
 from app.factors.regression import fetch_factor_returns_with_history
 from app.factors.universe import FACTORS, factor_universe_version
+
+logger = logging.getLogger(__name__)
 
 _MAX_ENTRIES = 4  # covers a handful of distinct lookback_weeks values
 
@@ -102,7 +105,13 @@ def event_matrix_cache_key() -> str:
 
 
 def _healthy_event_matrix(matrix: pd.DataFrame, event_ids: list[str]) -> bool:
-    """Accept partial pre-launch gaps; reject structural drift or missing events."""
+    """Structural gate: reject shape drift, missing events, or an all-NaN row.
+
+    Deliberately tolerant of NaN holes — a factor ETF that did not exist during an
+    event window legitimately has no return. Distinguishing those from provider
+    failures needs the whole registry, so that check lives in
+    `_transient_hole_events` and gates CACHING only (see `_cacheable_event_matrix`).
+    """
     return (
         isinstance(matrix, pd.DataFrame)
         and list(matrix.index) == event_ids
@@ -110,6 +119,50 @@ def _healthy_event_matrix(matrix: pd.DataFrame, event_ids: list[str]) -> bool:
         and not matrix.index.has_duplicates
         and not matrix.columns.has_duplicates
         and not matrix.isna().all(axis=1).any()
+    )
+
+
+def _transient_hole_events(
+    matrix: pd.DataFrame,
+    registry: dict[str, HistoricalEvent],
+) -> list[str]:
+    """Event ids whose NaNs cannot be explained by a factor pre-dating its ETF.
+
+    An ETF that traded during one window still trades in every LATER one, so a NaN
+    appearing after a factor's first observation is provably a provider failure
+    (rate limit, outage) rather than a pre-launch gap — `app/data/market.py` drops
+    tickers it fails to fetch, making the two indistinguishable cell-by-cell but
+    trivially separable across a chronologically ordered registry.
+
+    This matters because the full matrix is persisted for 30 days AND (since the
+    selected-event path started reusing it) grounds the LLM's shock proposal: one
+    flaked window would otherwise thin `count` and shift `p10`/`p90` for a month.
+
+    Known residual: a flake on the EARLIEST window covering a factor is
+    indistinguishable from pre-launch and is accepted. Closing that needs true
+    per-ETF inception dates; monotonicity needs no external data and cannot be wrong.
+    """
+    if any(event_id not in registry for event_id in matrix.index):
+        return list(matrix.index)
+    chronological = sorted(matrix.index, key=lambda event_id: registry[event_id].start_date)
+    observed = matrix.loc[chronological].notna()
+    # True from each factor's first observation onward (inclusive).
+    live = observed.cumsum(axis=0) > 0
+    holes = live & ~observed
+    return [event_id for event_id in chronological if bool(holes.loc[event_id].any())]
+
+
+def _cacheable_event_matrix(
+    matrix: pd.DataFrame,
+    registry: dict[str, HistoricalEvent],
+) -> bool:
+    """Full-registry gate: structurally healthy AND free of transient NaN holes.
+
+    Structure is checked FIRST — `_transient_hole_events` indexes by event id and
+    assumes a well-formed frame.
+    """
+    return _healthy_event_matrix(matrix, list(registry)) and not _transient_hole_events(
+        matrix, registry
     )
 
 
@@ -129,7 +182,7 @@ def _remember_event_matrix(key: str, matrix: pd.DataFrame) -> None:
 
 def _read_persistent_event_matrix(
     key: str,
-    event_ids: list[str],
+    registry: dict[str, HistoricalEvent],
 ) -> pd.DataFrame | None:
     cache = get_event_matrix_cache()
     if cache is None:
@@ -138,7 +191,10 @@ def _read_persistent_event_matrix(
         matrix = cache.get(key, ttl_hours=EVENT_MATRIX_CACHE_TTL_HOURS)
     except Exception:  # noqa: BLE001 — persistence is a best-effort speed layer
         return None
-    if matrix is None or not _healthy_event_matrix(matrix, event_ids):
+    # Re-gate on read, not just on write: a blob poisoned by an earlier release (or
+    # by a fetch that flaked before this check existed) would otherwise keep serving
+    # for the rest of its 30-day TTL. Rejecting it here re-fetches and self-heals.
+    if matrix is None or not _cacheable_event_matrix(matrix, registry):
         return None
     _remember_event_matrix(key, matrix)
     return matrix
@@ -156,7 +212,7 @@ def get_cached_event_returns_matrix() -> pd.DataFrame | None:
         hit = _events_matrix_cache.get(key)
     if hit is not None:
         return hit
-    return _read_persistent_event_matrix(key, list(load_events()))
+    return _read_persistent_event_matrix(key, load_events())
 
 
 def get_selected_event_returns_matrix(
@@ -164,12 +220,35 @@ def get_selected_event_returns_matrix(
     *,
     registry: dict[str, HistoricalEvent] | None = None,
 ) -> pd.DataFrame:
-    """Reuse the complete cache when present; otherwise fetch selected events only."""
+    """Reuse the complete cache when present; otherwise fetch selected events only.
+
+    `registry` narrows the admissible events — backdated runs pass an as-of-filtered
+    registry, and an id outside it is a look-ahead leak. The check is applied on BOTH
+    paths: the miss path gets it from `fetch_event_returns_matrix`, the hit path
+    needs it here, because serving out of the full-registry cache would otherwise
+    bypass the only enforcement point whenever the warm matrix happens to be present.
+
+    Deliberately NOT single-flight, unlike every other getter here: the sibling
+    fetch lock is held across the ~31-event full-registry fan-out, so sharing it
+    would make a cold scenario run wait on background warming — exactly what
+    `get_cached_event_returns_matrix` exists to avoid. Concurrent duplicate
+    selections are deduplicated a layer down by the 24h GCS market cache instead.
+
+    Raises:
+        ValueError: empty or duplicate `event_ids`.
+        KeyError: an id outside `registry`.
+        RuntimeError: the fetched matrix is structurally unusable (transient
+            provider failure) — surfaces as a coded 503.
+    """
     if not event_ids:
         raise ValueError("event_ids must be non-empty")
     duplicates = {event_id for event_id in event_ids if event_ids.count(event_id) > 1}
     if duplicates:
         raise ValueError(f"duplicate event_ids: {sorted(duplicates)}")
+    if registry is not None:
+        unknown = [event_id for event_id in event_ids if event_id not in registry]
+        if unknown:
+            raise KeyError(f"unknown event_ids: {unknown}")
     full = get_cached_event_returns_matrix()
     if full is not None and all(event_id in full.index for event_id in event_ids):
         return full.loc[event_ids].copy()
@@ -187,10 +266,13 @@ def get_event_returns_matrix() -> pd.DataFrame:
     -vintage windows contain pre-launch ETFs, making those batches uncacheable
     in the GCS market cache (complete batches only), so an uncached full-registry
     fetch re-fires ~20+ live provider downloads every time. Same degraded-result
-    rule as the factor cache: a row that is ENTIRELY NaN means the provider
-    returned nothing for that event (transient failure, e.g. a rate limit) —
-    such a matrix is rejected and never memoized. Legitimate pre-launch NaN
-    holes are partial rows and cache fine. Fetches are single-flight (see
+    rule as the factor cache, at two strengths: a row that is ENTIRELY NaN means
+    the provider returned nothing for that event (transient failure, e.g. a rate
+    limit) and the matrix is REJECTED outright; a matrix carrying transient NaN
+    holes (a factor absent from a window later than one it already traded in — see
+    `_transient_hole_events`) is returned to the caller but never memoized, so the
+    next call retries instead of baking a provider outage into the 30-day parquet.
+    Only genuine pre-launch gaps cache. Fetches are single-flight (see
     `_fetch_lock` note); a degraded fetch releases the lock and the next caller
     retries serially.
     """
@@ -207,12 +289,19 @@ def get_event_returns_matrix() -> pd.DataFrame:
             hit = _events_matrix_cache.get(key)
         if hit is not None:
             return hit
-        persistent = _read_persistent_event_matrix(key, event_ids)
+        persistent = _read_persistent_event_matrix(key, registry)
         if persistent is not None:
             return persistent
 
         matrix = fetch_event_returns_matrix(event_ids, registry=registry)
         _require_healthy_event_matrix(matrix, event_ids)
+        holes = _transient_hole_events(matrix, registry)
+        if holes:
+            logger.warning(
+                "Event-return matrix has transient provider gaps for %s — serving uncached",
+                ", ".join(holes),
+            )
+            return matrix
         _remember_event_matrix(key, matrix)
         cache = get_event_matrix_cache()
         if cache is not None:

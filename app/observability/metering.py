@@ -21,13 +21,16 @@ from datetime import UTC, datetime
 
 from app.config import Config
 from app.data.firestore_store import SavedScenarioStore
-from app.llm.gemini_client import GeminiClient
+from app.llm.gemini_client import GeminiClient, usage_tokens
 
 # Nominal per-call reservation (tokens) used to estimate cost BEFORE the call,
-# reconciled to actuals after. Deliberately generous so reservations don't
-# under-shoot a large grounded call.
+# reconciled to actuals immediately after — so an over-reservation costs nothing and
+# an under-reservation lets concurrent in-flight calls overshoot the cap.
+# Sized from measured 2026-07-26 cache-miss runs (~6,300 in / ~1,500-3,900 out per
+# call): the OUT leg must cover thinking tokens, which are the majority of output on
+# a thinking-capable model, so 2,000 was under-shooting the calls that matter.
 _RESERVE_TOKENS_IN = 8000
-_RESERVE_TOKENS_OUT = 2000
+_RESERVE_TOKENS_OUT = 4000
 
 
 class BudgetExceededError(Exception):
@@ -73,28 +76,36 @@ def cost_usd(tokens_in: int, tokens_out: int, config: Config) -> float:
 
 
 def _usage_tokens(response: object) -> tuple[int, int]:
-    meta = getattr(response, "usage_metadata", None)
-    if meta is None:
-        return 0, 0
-    tokens_in = int(getattr(meta, "prompt_token_count", 0) or 0)
-    # Thinking tokens are billed at the output rate ("response and reasoning"),
-    # so they must count toward tokens_out or the breaker under-books real spend.
-    tokens_out = int(getattr(meta, "candidates_token_count", 0) or 0) + int(
-        getattr(meta, "thoughts_token_count", 0) or 0
-    )
+    """Billable `(tokens_in, tokens_out)`; `tokens_out` includes thinking tokens.
+
+    Delegates to `gemini_client.usage_tokens` so response-shape knowledge lives in
+    exactly one place — the two used to be separate and could drift apart on a
+    schema change, which is how thinking tokens went unbooked in the first place.
+    """
+    tokens_in, tokens_out, _thinking = usage_tokens(response)
     return tokens_in, tokens_out
 
 
 def enforce_run_cap(store: SavedScenarioStore, config: Config, day: str) -> None:
-    """Increment today's run counter and reject once over the daily run cap.
+    """Reject once today's PAID runs have reached the daily cap.
+
+    Read-only by design — the counter is booked by `MeteredGeminiClient` on its
+    first actual model call. A cache hit makes zero paid calls and costs nothing,
+    so it no longer consumes run budget: counting hits meant the cap throttled
+    FREE traffic (the steady state for visitors on the cached sample scenarios),
+    while spend is bounded by the cost breaker rather than by this.
 
     Best-effort: a store/infra error fails open (the cost breaker is the harder
-    backstop). A real cap hit raises `BudgetExceededError`.
+    backstop). A real cap hit raises `RunCapExceededError`.
+
+    Like the cost reservation, this is check-then-charge: concurrent requests can
+    each pass before any of them books, so the cap can be exceeded by at most the
+    number of simultaneously in-flight runs.
     """
-    runs = 0
+    runs = 0.0
     with contextlib.suppress(Exception):
-        runs = store.increment_daily_run(day)
-    if runs and runs > config.daily_llm_run_cap:
+        runs = float(store.usage_daily(day).get("runs", 0) or 0)
+    if runs >= config.daily_llm_run_cap:
         raise RunCapExceededError("Daily scenario run cap reached; try again tomorrow.")
 
 
@@ -116,6 +127,9 @@ class MeteredGeminiClient(GeminiClient):
         self._day = day or today_key()
         self._cap = config.daily_llm_cost_cap_usd
         self._estimate = cost_usd(_RESERVE_TOKENS_IN, _RESERVE_TOKENS_OUT, config)
+        # One client is built per request, so instance state is request state: this
+        # books exactly one run for a request no matter how many calls it fans out to.
+        self._run_counted = False
 
     def _generate_content(self, *, contents: object, config: object) -> object:
         did_reserve = False
@@ -128,6 +142,14 @@ class MeteredGeminiClient(GeminiClient):
         except Exception:
             # Store/infra error — fail open, proceed without a reservation.
             did_reserve = False
+
+        if not self._run_counted:
+            # Booked here, past the budget gate and immediately before the first
+            # real model call: a cache hit never reaches this line, and a request
+            # rejected by the cost breaker never performed a run.
+            self._run_counted = True
+            with contextlib.suppress(Exception):
+                self._store.increment_daily_run(self._day)
 
         reserved_amt = self._estimate if did_reserve else 0.0
         try:

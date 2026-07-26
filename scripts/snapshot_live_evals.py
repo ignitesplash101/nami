@@ -17,7 +17,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from urllib.parse import urlparse
 
+from app.api.main import NAMI_ENGINE_VERSION
+from app.config import load_config
+from app.factors.analogs import events_version
+from app.factors.universe import factor_universe_version
+from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import run_scenario
 
 
@@ -55,6 +62,40 @@ SCENARIOS: list[EvalScenario] = [
 ]
 
 
+def _source_domain(citation) -> str:  # noqa: ANN001 — Citation, avoided for import cycle
+    """The PUBLISHER, which is not in the URL.
+
+    Vertex grounding returns every `uri` as a `vertexaisearch.cloud.google.com`
+    redirect, so hashing the URL's netloc reports the redirector for 100% of
+    citations and tells you nothing. The SDK puts the real domain in `web.title`
+    (e.g. "wikipedia.org"), which is what the v11 source hierarchy is about.
+    """
+    title = (citation.title or "").strip().removeprefix("www.")
+    if title:
+        return title
+    return urlparse(citation.url or "").netloc.removeprefix("www.")
+
+
+def _provenance() -> dict:
+    """Stamp the engine identity onto the snapshot.
+
+    Without this the table is undateable against the code: a reader cannot tell
+    which model or prompt produced it, and a stale snapshot reads as current.
+    """
+    config = load_config()
+    return {
+        "generated_at": datetime.now(UTC).date().isoformat(),
+        "model_id": config.vertex_model_id,
+        "vertex_ai_location": config.vertex_ai_location,
+        "prompt_version": PROMPT_VERSION,
+        "factor_universe_version": factor_universe_version(),
+        "events_version": events_version(),
+        "nami_engine_version": NAMI_ENGINE_VERSION,
+        "llm_temperature": config.llm_temperature,
+        "structured_thinking_level": config.structured_thinking_level,
+    }
+
+
 def run_eval(scenario: EvalScenario) -> dict:
     print(f"\n=== {scenario.name} ===")
     print(f"  portfolio: {scenario.portfolio_key}")
@@ -85,6 +126,10 @@ def run_eval(scenario: EvalScenario) -> dict:
         "top_factor_contrib_naive": top_factor_contrib,
         "analogs_selected_ids": [a.event_id for a in result.analogs_selected],
         "citations_count": len(result.citations),
+        # Domains, not just a count: PROMPT_VERSION v11 added a source-quality
+        # hierarchy (official > research > major news > fallback), and WHICH domains
+        # come back is the only evidence that it does anything.
+        "citation_domains": sorted({_source_domain(c) for c in result.citations}),
         "factor_shock_count": len(result.factor_shocks),
         "periphery_shock_count": len(result.periphery_shocks),
         "wall_clock_seconds": round(wall_clock_s, 1),
@@ -100,10 +145,12 @@ def main() -> None:
             print(f"  FAILED: {exc}")
             results.append({"name": scenario.name, "error": str(exc)})
 
+    provenance = _provenance()
     output_path = "scripts/live_evals_snapshot.json"
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, default=str)
+        json.dump({"provenance": provenance, "evals": results}, f, indent=2, default=str)
     print(f"\nWrote {len(results)} eval(s) to {output_path}")
+    print(f"provenance: {json.dumps(provenance)}")
 
 
 if __name__ == "__main__":

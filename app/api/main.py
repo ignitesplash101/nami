@@ -87,6 +87,7 @@ from app.factors.universe import factor_metadata, factor_universe_version
 from app.llm.narrative_shapley import compute_narrative_shapley
 from app.llm.prompts import PROMPT_VERSION
 from app.llm.scenario import (
+    ScenarioCacheUnavailable,
     adjust_scenario_shocks,
     compute_book_profile,
     compute_events_replay,
@@ -870,6 +871,11 @@ def adjust_shocks_endpoint(body: ScenarioAdjustRequest, request: Request) -> Sce
         raise _budget_http_error(exc) from exc
     except LookupError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except ScenarioCacheUnavailable as exc:
+        # MUST precede RuntimeError (it subclasses it): the cache BACKEND is down,
+        # which is neither an expired key (410) nor a rerun_required rejection —
+        # both would tell the user to do something that cannot work.
+        raise http_error(503, "unavailable", str(exc)) from exc
     except MarkingError as exc:
         # Re-marking the adjusted result failed (missing/stale price or FX) —
         # fail closed. MUST precede RuntimeError (MarkingError subclasses it).

@@ -35,7 +35,7 @@ This is an **educational and research tool**. It is **not investment advice**, *
 
 Given a portfolio (sample or custom) and a natural-language hypothetical stress ("60% tariffs on China imports, prolonged trade war"), nami:
 
-1. **Picks historical analogs.** Gemini selects 2–5 events from a curated registry of ~17 market-stress events whose mechanism matches the scenario.
+1. **Picks historical analogs.** Gemini selects 2–5 events from a curated registry of 31 market-stress events whose mechanism matches the scenario.
 2. **Computes an empirical envelope.** For each analog, nami pulls the realized factor returns over the event window from yfinance. Across the analogs it returns per-factor mean / p10 / p90 / count — the band the LLM's proposed shocks must stay inside.
 3. **Grounds a narrative.** A second Gemini call runs with Google Search active and produces a 3-5 sentence hypothetical stress narrative, citing real recent news. Without citations, the pipeline refuses to return.
 4. **Extracts structured shocks.** A schema-bound third call translates the narrative into a `FactorShock` list (for the 26-factor universe — market/sector/style plus rates, dollar, vol, oil, high-yield credit, gold, and short Treasuries) and a `PeripheryShock` list (idiosyncratic, ticker-level, hard-banded to ±75%). Shocks are defined as cumulative total moves over the stress episode — the prompt states the units/horizon contract explicitly and shows per-analog returns with window lengths, not just the envelope band.
@@ -86,7 +86,7 @@ Every saved result carries full reproducibility metadata (model id, prompt versi
 - **slowapi** for per-IP rate limiting; optional **Sentry** for error tracking (no-op unless `SENTRY_DSN` is set)
 - **Cloud Run** for the deployed app, with **Secret Manager** for the admin passcode and **Cloud Build** (`nami-main-push` trigger) for CI/CD
 
-Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.6 Flash) in `global` (this model isn't available regionally).
+Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.6 Flash) in `global` (this model is multi-region only — `global`, `us` or `eu`, never a single region like `asia-northeast1`).
 
 ## Visitor vs admin
 

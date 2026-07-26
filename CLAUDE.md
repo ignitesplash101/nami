@@ -110,6 +110,7 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–35 shipped (most recently Phase 35: simpler results, stronger sources,
-and faster replay/scenario runs). The full append-only log — one dated entry per phase with scope
-and rationale — lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).
+Phases 0–36 shipped (most recently Phase 36: model-upgrade bookkeeping, event-matrix
+cache integrity, error-contract completion, and a frontend lint gate). The full
+append-only log — one dated entry per phase with scope and rationale — lives in
+[docs/agents/phase-log.md](docs/agents/phase-log.md).

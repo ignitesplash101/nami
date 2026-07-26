@@ -16,6 +16,13 @@ class Config:
     google_application_credentials: str | None = None
     vertex_model_id: str = "gemini-3.6-flash"
     llm_temperature: float = 0.0
+    # Thinking level for the SCHEMA-CONSTRAINED Gemini calls only (analog selection,
+    # shock extraction, shock edit, decomposition). None = leave the server default
+    # alone. The grounded narrative is deliberately never capped — it is the one call
+    # whose job is synthesis. Measured 2026-07-26: thinking is ~54% of a cache-miss
+    # run's cost, so this is the largest available cost lever; see the dated decision
+    # record in docs/methodology.md before changing the default.
+    structured_thinking_level: str | None = None
     market_data_cache_ttl_hours: int = 24
     llm_cache_ttl_days: int = 7
     beta_lookback_weeks: int = 156
@@ -64,6 +71,7 @@ def load_config() -> Config:
         google_application_credentials=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
         vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.6-flash"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
+        structured_thinking_level=os.getenv("STRUCTURED_THINKING_LEVEL") or None,
         market_data_cache_ttl_hours=int(os.getenv("MARKET_DATA_CACHE_TTL_HOURS", "24")),
         llm_cache_ttl_days=int(os.getenv("LLM_CACHE_TTL_DAYS", "7")),
         beta_lookback_weeks=int(os.getenv("BETA_LOOKBACK_WEEKS", "156")),

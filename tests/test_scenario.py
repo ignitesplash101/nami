@@ -15,7 +15,7 @@ from app.data.sample_portfolios import Portfolio, get_portfolio
 from app.factors.regression import TickerRegressionStats
 from app.factors.universe import FACTORS
 from app.llm.gemini_client import GeminiClient
-from app.llm.scenario import run_scenario
+from app.llm.scenario import ScenarioCacheUnavailable, adjust_scenario_shocks, run_scenario
 from app.llm.schemas import (
     AnalogSelection,
     AnalogSelectionOutput,
@@ -181,6 +181,66 @@ def _patch_market_layer(monkeypatch):
         _fake_factor_returns_with_history,
     )
     return captured
+
+
+class _BrokenCache:
+    """Cache backend that is down, on every operation.
+
+    The exception type is deliberately NOT a RuntimeError/ValueError: real
+    google-cloud failures (DefaultCredentialsError, Forbidden, ServiceUnavailable)
+    subclass none of the types the endpoints catch, which is precisely why an
+    unguarded cache call surfaced as a bare HTTP 500.
+    """
+
+    def __init__(self) -> None:
+        self.get_calls = 0
+        self.put_calls = 0
+
+    def get_json(self, key: str, ttl_hours: int = 24 * 7) -> dict | None:
+        self.get_calls += 1
+        raise OSError("GCS unavailable: could not load default credentials")
+
+    def put_json(self, key: str, data: dict) -> None:
+        self.put_calls += 1
+        raise OSError("GCS unavailable: 403 storage.objects.create denied")
+
+
+def test_run_scenario_survives_a_broken_cache_backend(monkeypatch):
+    """A GCS outage must cost a recompute, not the request.
+
+    The WRITE path is the one that matters: by then the full Gemini chain has
+    already been paid for, so raising would burn the spend and return nothing.
+    """
+    _patch_market_layer(monkeypatch)
+    cache = _BrokenCache()
+
+    result = run_scenario(
+        scenario_text="A pandemic-like risk-off",
+        portfolio_key="us_tech_growth",
+        config=_config(),
+        gemini=_MockGeminiClient(),
+        cache=cache,
+        market_date=date(2026, 5, 25),
+    )
+
+    assert result.scenario_text == "A pandemic-like risk-off"
+    assert result.portfolio_pnl.total_pnl != 0
+    assert cache.get_calls == 1  # read attempted, degraded to a miss
+    assert cache.put_calls == 1  # write attempted, failure swallowed
+
+
+def test_adjust_scenario_shocks_reports_cache_outage_distinctly(monkeypatch):
+    """The adjustment path REQUIRES the canonical, so a backend outage must not be
+    reported as an expired key (410) or as rerun_required (422) — both would tell
+    the user to do something that cannot work."""
+    with pytest.raises(ScenarioCacheUnavailable, match="Scenario cache unavailable"):
+        adjust_scenario_shocks(
+            "some-cache-key",
+            config=_config(),
+            gemini=_MockGeminiClient(),
+            cache=_BrokenCache(),
+            overrides={"SPY": 0.0},
+        )
 
 
 def test_run_scenario_calls_gemini_and_assembles_result(monkeypatch):

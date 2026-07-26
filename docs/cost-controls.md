@@ -25,6 +25,8 @@ Every endpoint that calls Vertex AI / Gemini is gated as follows in [app/api/mai
 
 The cache (GCS, 7-day TTL, [`app/data/cache.py`](../app/data/cache.py)) absorbs all subsequent identical requests at $0. So the cost is bounded *regardless of visitor traffic volume* — a 1000-visitor day costs the same as a 1-visitor day after the cache warms.
 
+The daily **run cap** (`DAILY_LLM_RUN_CAP`, default 500) counts **paid runs only** — a cache hit makes zero model calls and is not charged against it. Until Phase 36 the counter incremented on every request, so cached traffic could exhaust the cap and 429 legitimate free visitors at no saving; availability, not just spend, is now bounded by the thing that actually costs money. Note the **cost** cap binds first in practice: $25/day ÷ ~$0.08 per cache-miss run ≈ 310 paid runs, below the 500 run cap.
+
 **Admin cost ceiling**: not bounded by code. The admin passcode is the gate. If the passcode leaks, abuse is bounded only by Vertex AI quotas (see below).
 
 ---

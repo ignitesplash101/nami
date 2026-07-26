@@ -229,6 +229,23 @@ X̃ = X − mean(X, axis=0)             # T × F factor returns, centered
   zero-targeted. Analog-window-only estimation was not separately implemented: it
   is the k→∞ limit of the WLS family, whose gradient is monotonically harmful.
   Revisit only with new harness evidence.
+- **Why model thinking stays uncapped (dated decision record, 2026-07-26).** Thinking
+  tokens bill at the output rate and were measured at roughly half of a cache-miss
+  run's cost (three live runs on one scenario: 4,917–6,922 thinking tokens of
+  6,661–8,864 total output, 47–54% of run cost). Capping them to `LOW` on the
+  schema-constrained calls (analog selection, shock extraction, shock edit,
+  decomposition — never the grounded narrative) cut run cost ~29%, from ~$0.087 to
+  $0.062. It also **halved the factor coverage**: the same scenario produced 11 and
+  13 factor shocks in two default runs but 6 with thinking capped, and modelled P&L
+  moved from −18.6% / −19.9% to −23.0%. Six is well outside the default run-to-run
+  spread, so the effect is the knob, not sampling noise. Cheaper output that names
+  half as many drivers is a worse risk answer, which fails the standing adoption bar
+  (improvement without degradation), so the default stays uncapped — the fourth
+  rejection in this series. The lever survives as the `STRUCTURED_THINKING_LEVEL`
+  env knob (default unset = no change) for use under genuine budget pressure, and
+  it is folded into the scenario cache key when set so capped and uncapped results
+  can never be served for one another. Revisit with a larger sample if list prices
+  move materially.
 - **Currency:** non-USD listings (e.g. the Japan book's `.T` tickers) have their weekly
   returns converted to USD (`(1 + r_local)(1 + r_FX) − 1`, vintage-correct FX series)
   *before* the regression, so betas absorb FX exposure and active return vs a USD-quoted
@@ -703,7 +720,11 @@ When a portfolio value is set, each contribution is also shown in dollars
 
 **UX + cost.** Served over SSE (`/api/scenarios/decompose-stream`) so the UI shows
 "X / Y subset runs". Cost: `2^N − 1` runs (empty subset is the hardcoded zero) — N=4 is
-15 runs (~30–90s, ≈ $0.015). N is capped at 4 (N=5 = 31 runs, too long for a synchronous UX).
+15 runs plus the decomposition call. At measured 2026-07-26 rates (~$0.06–$0.10 per
+cache-miss run on `gemini-3.6-flash`) that is roughly **$0.4**, in the $0.15–$0.80 band
+[`docs/cost-controls.md`](cost-controls.md) quotes — the previously printed $0.015 was a
+2.5-Flash-era figure that survived the repricing. N is capped at 4 (N=5 = 31 runs, too
+long for a synchronous UX).
 
 Both Shapley sums (factor-level and theme-level) satisfy the **efficiency axiom**
 exactly (modulo float noise); pinning analogs + skipping re-grounding removes the

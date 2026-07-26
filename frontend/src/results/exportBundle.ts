@@ -198,7 +198,9 @@ function baseFiles({
         event?.name ?? selection.event_id,
         event?.start_date ?? null,
         event?.end_date ?? null,
-        event?.tags.join("|") ?? "",
+        // `?.` alone would only guard `event`; `tags` is absent on analog snapshots
+        // saved before it was recorded, and `.join` on undefined throws mid-export.
+        event?.tags?.join("|") ?? "",
         event?.description ?? "",
         selection.why_relevant,
         returns?.window_calendar_days ?? null,
