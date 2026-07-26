@@ -35,9 +35,15 @@ import urllib.request
 # A cache miss is a full Gemini chain; the server's own request timeout is 900s.
 REQUEST_TIMEOUT_SECONDS = 300
 
+# Marks every request this job makes so the admin metrics dashboard can exclude
+# it. Without it the ~16 weekday warms are indistinguishable from real visitors
+# and would dominate the traffic and feature-usage numbers. Reporting label only.
+SYNTHETIC_HEADER = "X-Nami-Synthetic"
+
 
 def _get(url: str) -> object:
-    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 — https literal
+    request = urllib.request.Request(url, headers={SYNTHETIC_HEADER: "1"})
+    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 — https literal
         return json.loads(response.read())
 
 
@@ -45,7 +51,7 @@ def _post(url: str, payload: dict) -> tuple[int, dict]:
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", SYNTHETIC_HEADER: "1"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310

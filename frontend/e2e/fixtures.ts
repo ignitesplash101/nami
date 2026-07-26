@@ -291,6 +291,27 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
       }));
     }
     if (key === "GET /api/audit") return void (await json(route, []));
+    if (key === "GET /api/metrics")
+      return void (await json(route, {
+        days: 7,
+        entries_scanned: 0,
+        truncated: false,
+        synthetic_excluded: 0,
+        include_synthetic: false,
+        log_retention_days: 30,
+        logs_available: true,
+        logs_error: null,
+        daily: [],
+        top_paths: [],
+        scenario_runs: [],
+        portfolio_runs: [],
+        status_counts: {},
+        top_errors: [],
+        totals: {},
+        cost_daily: [],
+        cost_cap_usd: 25,
+        run_cap: 500
+      }));
 
     unexpected.push(key);
     await route.abort("blockedbyclient");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Download, RefreshCw } from "lucide-react";
-import { downloadExport, getAuditLog, getStatus, getUsage, toApiError } from "./api";
+import { downloadExport, getAuditLog, getMetrics, getStatus, getUsage, toApiError } from "./api";
 import type { ApiError } from "./api";
 import { ErrorNotice } from "./ErrorNotice";
 import { formatCurrency } from "./charts";
@@ -8,7 +8,7 @@ import { relativeTime } from "./format";
 import { OverlayShell } from "./OverlayShell";
 import { TableScroll } from "./TableScroll";
 import { useToasts } from "./toast";
-import type { AuditEntry, StatusResponse, UsageSummary } from "./types";
+import type { AuditEntry, MetricsResponse, StatusResponse, UsageSummary } from "./types";
 
 interface OpsDrawerProps {
   isOpen: boolean;
@@ -36,6 +36,10 @@ export function OpsDrawer({ isOpen, onClose, onRequestPurge, onForbidden }: OpsD
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  // The scheduled pre-warm makes ~16 machine runs every weekday; excluded by
+  // default so it can't dominate the numbers, but the toggle keeps that visible.
+  const [includeSynthetic, setIncludeSynthetic] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -44,11 +48,19 @@ export function OpsDrawer({ isOpen, onClose, onRequestPurge, onForbidden }: OpsD
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([getUsage(), getStatus(), getAuditLog(100)])
-      .then(([usageResponse, statusResponse, auditResponse]) => {
+    Promise.all([
+      getUsage(),
+      getStatus(),
+      getAuditLog(100),
+      // Its OWN catch: Promise.all is all-or-nothing, and a Logging API hiccup
+      // must dim one panel rather than blank the whole console.
+      getMetrics(7, includeSynthetic).catch(() => null)
+    ])
+      .then(([usageResponse, statusResponse, auditResponse, metricsResponse]) => {
         setUsage(usageResponse);
         setStatus(statusResponse);
         setAudit(auditResponse);
+        setMetrics(metricsResponse);
       })
       .catch((exc) => {
         const err = toApiError(exc);
@@ -57,7 +69,7 @@ export function OpsDrawer({ isOpen, onClose, onRequestPurge, onForbidden }: OpsD
       })
       .finally(() => setLoading(false));
     // onForbidden is a stable App-level callback.
-  }, []);
+  }, [includeSynthetic]);
 
   // Fetch only while open — visitors never mount this and a closed drawer
   // costs nothing.
@@ -108,6 +120,102 @@ export function OpsDrawer({ isOpen, onClose, onRequestPurge, onForbidden }: OpsD
       <div className="drawer-body">
         {error ? <ErrorNotice variant="inline" error={error} onRetry={load} /> : null}
         {loading && !usage ? <p className="muted">Loading…</p> : null}
+
+        {metrics ? (
+          <section className="ops-section" aria-label="Usage metrics">
+            <div className="card-heading">
+              <p className="eyebrow">Last {metrics.days} days</p>
+              <label className="ops-toggle">
+                <input
+                  type="checkbox"
+                  checked={includeSynthetic}
+                  onChange={(event) => setIncludeSynthetic(event.target.checked)}
+                />
+                Include pre-warm
+              </label>
+            </div>
+
+            {!metrics.logs_available ? (
+              <p className="muted">
+                Traffic unavailable — the runtime service account needs{" "}
+                <code>roles/logging.viewer</code>. Cost and quota below still apply.
+              </p>
+            ) : (
+              <>
+                <div className="ops-metric">
+                  <span>Unique visitors</span>
+                  <strong>{Number(metrics.totals.unique_visitors ?? 0).toLocaleString("en-US")}</strong>
+                </div>
+                <div className="ops-metric">
+                  <span>Requests</span>
+                  <strong>{Number(metrics.totals.requests ?? 0).toLocaleString("en-US")}</strong>
+                </div>
+                <div className="ops-metric">
+                  <span>Scenario runs (visitor / admin)</span>
+                  <strong>
+                    {Number(metrics.totals.visitor_runs ?? 0)} / {Number(metrics.totals.admin_runs ?? 0)}
+                  </strong>
+                </div>
+                {metrics.totals.cache_hit_rate != null ? (
+                  <div className="ops-metric">
+                    <span>Cache hit rate</span>
+                    <strong>{(Number(metrics.totals.cache_hit_rate) * 100).toFixed(0)}%</strong>
+                  </div>
+                ) : null}
+                <div className="ops-metric">
+                  <span>Errors</span>
+                  <strong>{Number(metrics.totals.errors ?? 0).toLocaleString("en-US")}</strong>
+                </div>
+                {metrics.totals.latency_p95_ms != null ? (
+                  <div className="ops-metric">
+                    <span>Latency p50 / p95</span>
+                    <strong>
+                      {Number(metrics.totals.latency_p50_ms)}ms / {Number(metrics.totals.latency_p95_ms)}ms
+                    </strong>
+                  </div>
+                ) : null}
+
+                {metrics.scenario_runs.length ? (
+                  <>
+                    <p className="eyebrow ops-subhead">Runs by scenario</p>
+                    <div className="exposure-bars">
+                      {metrics.scenario_runs.map((row) => (
+                        <div className="exposure-bar-row" key={row.key}>
+                          <span className="exposure-bar-label">{row.key}</span>
+                          <span className="exposure-bar-track">
+                            <span
+                              className="exposure-bar-fill pos"
+                              style={{
+                                width: `${
+                                  (row.runs / Math.max(...metrics.scenario_runs.map((r) => r.runs))) *
+                                  100
+                                }%`
+                              }}
+                            />
+                          </span>
+                          <span className="exposure-bar-value">{row.runs}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="muted">
+                    No scenario runs recorded yet in this window. Dimensions are attached to new
+                    requests only.
+                  </p>
+                )}
+
+                <p className="ops-status-line">
+                  {metrics.synthetic_excluded > 0
+                    ? `${metrics.synthetic_excluded} pre-warm request(s) excluded · `
+                    : ""}
+                  {metrics.truncated ? `first ${metrics.entries_scanned} entries only · ` : ""}
+                  history limited to {metrics.log_retention_days}d log retention
+                </p>
+              </>
+            )}
+          </section>
+        ) : null}
 
         {usage ? (
           <section className="ops-section" aria-label="Usage today">

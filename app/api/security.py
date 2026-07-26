@@ -8,6 +8,8 @@ from typing import Literal
 from dotenv import load_dotenv
 from fastapi import Request, Response
 
+from app.observability.context import tag_request
+
 load_dotenv()
 
 AccessMode = Literal["visitor", "admin"]
@@ -56,7 +58,14 @@ def verify_admin_token(token: str | None, secret: str | None = None) -> bool:
 
 
 def access_mode_for_request(request: Request) -> AccessMode:
-    return "admin" if verify_admin_token(request.cookies.get(COOKIE_NAME)) else "visitor"
+    mode: AccessMode = (
+        "admin" if verify_admin_token(request.cookies.get(COOKIE_NAME)) else "visitor"
+    )
+    # Tagged here rather than at the seven call sites: this is the single place the
+    # mode is decided, and the access-log middleware runs BEFORE route handling so
+    # it cannot read the cookie itself. No-op outside a request context.
+    tag_request(access_mode=mode)
+    return mode
 
 
 def set_admin_cookie(response: Response, request: Request) -> bool:

@@ -110,7 +110,7 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–37 shipped (most recently Phase 37: daily scenario pre-warm, cache-miss
-single-flight, cold-start and bundle cuts — speed work that changes no answer).
+Phases 0–38 shipped (most recently Phase 38: an admin usage-metrics dashboard that
+reads the access log back rather than collecting anything new).
 The full append-only log — one dated entry per phase with scope and rationale —
 lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

@@ -70,6 +70,35 @@ class UsageSummary(BaseModel):
     run_cap: int
 
 
+class MetricsResponse(BaseModel):
+    """Admin usage metrics over a rolling window, derived from the access log.
+
+    Everything here is aggregated server-side: no `ip_hash` value is ever included,
+    only distinct COUNTS. `truncated` and `synthetic_excluded` exist so a capped or
+    filtered window can never be mistaken for a complete one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    days: int
+    entries_scanned: int
+    truncated: bool
+    synthetic_excluded: int
+    include_synthetic: bool
+    log_retention_days: int
+    logs_available: bool
+    logs_error: str | None = None
+    daily: list[dict]
+    top_paths: list[dict]
+    scenario_runs: list[dict]
+    portfolio_runs: list[dict]
+    status_counts: dict[str, int]
+    top_errors: list[dict]
+    totals: dict
+    cost_daily: list[dict]
+    cost_cap_usd: float
+    run_cap: int
+
+
 class AuditEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: str

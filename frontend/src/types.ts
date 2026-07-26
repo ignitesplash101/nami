@@ -428,6 +428,36 @@ export interface UsageSummary {
   run_cap: number;
 }
 
+export interface MetricsResponse {
+  days: number;
+  entries_scanned: number;
+  truncated: boolean;
+  synthetic_excluded: number;
+  include_synthetic: boolean;
+  log_retention_days: number;
+  // The log read degrades on its own: a missing roles/logging.viewer dims this
+  // panel while the Firestore-backed cost trend keeps rendering.
+  logs_available: boolean;
+  logs_error: string | null;
+  daily: { day: string; requests: number; unique_visitors: number; runs: number; errors: number }[];
+  top_paths: { path: string; requests: number }[];
+  scenario_runs: { key: string; runs: number }[];
+  portfolio_runs: { key: string; runs: number }[];
+  status_counts: Record<string, number>;
+  top_errors: { path: string; status: number; count: number }[];
+  totals: Record<string, number | string[] | null>;
+  cost_daily: {
+    day: string;
+    runs: number;
+    calls: number;
+    spent_usd: number;
+    tokens_in: number;
+    tokens_out: number;
+  }[];
+  cost_cap_usd: number;
+  run_cap: number;
+}
+
 export interface AuditEntry {
   action: string;
   target_type: string;

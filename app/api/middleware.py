@@ -14,15 +14,23 @@ from collections.abc import Awaitable, Callable
 from fastapi import Request, Response
 
 from app.observability.context import (
+    current_usage_tags,
     hash_ip,
     ip_hash_var,
     new_request_id,
     request_id_var,
+    start_usage_tags,
+    tag_request,
 )
 
 _access_logger = logging.getLogger("nami.access")
 
 REQUEST_ID_HEADER = "X-Request-ID"
+
+# Set by the scheduled pre-warm job so its ~16 weekday runs can be told apart from
+# real visitors. Without it the warm is indistinguishable from traffic and would
+# dominate every usage metric. Purely a reporting label — it grants nothing.
+SYNTHETIC_HEADER = "X-Nami-Synthetic"
 
 
 def _is_routable(ip: str) -> bool:
@@ -60,6 +68,9 @@ async def request_context_middleware(
     ip_hash = hash_ip(client_ip(request))
     request_id_var.set(request_id)
     ip_hash_var.set(ip_hash)
+    start_usage_tags()
+    if request.headers.get(SYNTHETIC_HEADER):
+        tag_request(synthetic=True)
 
     start = time.perf_counter()
     response: Response | None = None
@@ -77,5 +88,8 @@ async def request_context_middleware(
                 "status": response.status_code if response is not None else 500,
                 "latency_ms": latency_ms,
                 "ip_hash": ip_hash,
+                # Handler-supplied dimensions (access mode, sample keys, cache hit).
+                # This is the ONLY place they are recorded — nothing is persisted.
+                **current_usage_tags(),
             },
         )

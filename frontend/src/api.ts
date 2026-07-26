@@ -4,6 +4,7 @@ import type {
   BookProfile,
   EventsReplay,
   FactorMetadata,
+  MetricsResponse,
   PortfolioSnapshotRecord,
   PortfolioValidationResponse,
   PurgeCounts,
@@ -642,6 +643,12 @@ export function getStatus(): Promise<StatusResponse> {
 
 export function getUsage(): Promise<UsageSummary> {
   return requestJson<UsageSummary>("/api/usage");
+}
+
+export function getMetrics(days = 7, includeSynthetic = false): Promise<MetricsResponse> {
+  return requestJson<MetricsResponse>(
+    `/api/metrics?days=${days}&include_synthetic=${includeSynthetic}`
+  );
 }
 
 export function getAuditLog(limit = 100): Promise<AuditEntry[]> {

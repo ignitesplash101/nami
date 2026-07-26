@@ -68,6 +68,7 @@ from app.llm.schemas import (
     TickerRegressionQuality,
 )
 from app.llm.validation import MIN_ENVELOPE_COUNT_FOR_BAND_CHECK
+from app.observability.context import tag_request
 from app.utils.calendar import latest_market_date, resolve_effective_market_date
 from app.utils.hashing import scenario_cache_key
 
@@ -800,6 +801,10 @@ def run_scenario(
         cached = _cached_json_or_miss(cache, key, ttl_hours=24 * config.llm_cache_ttl_days)
         if cached is not None:
             progress("cache_hit", "done")
+            # Also record it on the access-log line. The progress callback only
+            # reaches the browser, so without this the hit rate has a numerator
+            # (usage_daily.runs counts paid misses) but no denominator.
+            tag_request(cache_hit=True)
             # Cache holds the return-space canonical (+ quantity inputs); the NAV /
             # marks are recomputed here so a cache hit never serves stale dollars.
             cached_result = ScenarioResult.model_validate(cached)
@@ -813,6 +818,7 @@ def run_scenario(
             # vintage-correct factor + benchmark returns) so a cache hit never
             # silently drops the benchmark.
             return _benchmark_overlay(marked, benchmark_ticker, config=config)
+    tag_request(cache_hit=False)
     progress("cache_check", "done")
 
     # Quantity (MTM) mode: mark the book BEFORE the Gemini chain so the LLM prompt

@@ -9,6 +9,7 @@ import threading
 from collections.abc import AsyncIterator, Callable, Generator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from app.api.schemas import (
     EventsReplayRequest,
     EventsReplayResponse,
     FactorMetadataResponse,
+    MetricsResponse,
     NarrativeDecompositionRequest,
     Permissions,
     PortfolioSnapshotRecord,
@@ -96,7 +98,7 @@ from app.llm.scenario import (
     run_scenario,
     scenario_single_flight,
 )
-from app.observability.context import current_ip_hash, current_request_id
+from app.observability.context import current_ip_hash, current_request_id, tag_request
 from app.observability.logging import configure_logging
 from app.observability.metering import (
     BudgetExceededError,
@@ -106,6 +108,7 @@ from app.observability.metering import (
     enforce_run_cap,
     today_key,
 )
+from app.observability.metrics import aggregate, fetch_access_entries
 from app.utils.calendar import latest_market_date
 from app.utils.disclaimers import DISCLAIMER_SHORT
 
@@ -415,6 +418,23 @@ def _reject_visitor_admin_fields(body: ScenarioRunRequest, mode: AccessMode) -> 
             status_code=403,
             detail=f"Visitor mode does not support: {', '.join(forbidden)}.",
         )
+
+
+def _tag_run_dimensions(body: ScenarioRunRequest, portfolio: Portfolio | str) -> None:
+    """Record WHICH sample scenario and book this run used, on the access-log line.
+
+    These keys are resolved into scenario text and then discarded, and POST bodies
+    never reach Cloud Run's request logs — so without this there is no way at all to
+    tell which sample scenario is popular. Non-personal, and nothing is persisted.
+    Custom text / custom books report as "custom" rather than leaking their content.
+    """
+    scenario_key = (
+        body.sample_scenario_key if body.sample_scenario_key in SAMPLE_SCENARIOS else None
+    )
+    tag_request(
+        scenario_key=scenario_key or ("custom" if body.scenario_text else None),
+        portfolio_key=portfolio if isinstance(portfolio, str) else "custom",
+    )
 
 
 def _resolve_scenario_text(body: ScenarioRunRequest, mode: AccessMode) -> str:
@@ -737,6 +757,7 @@ def run_scenario_endpoint(body: ScenarioRunRequest, request: Request) -> Scenari
     scenario_text = _resolve_scenario_text(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
+    _tag_run_dimensions(body, portfolio)
     try:
         gemini, _telemetry, _day = _metered_gemini()
         # Single-flight the CALL: concurrent identical requests would otherwise each
@@ -813,6 +834,7 @@ def run_scenario_stream_endpoint(body: ScenarioRunRequest, request: Request) -> 
     scenario_text = _resolve_scenario_text(body, mode)
     requested_as_of = _resolve_as_of(body, mode)
     quantities, nav, currency, portfolio = _resolve_mtm(body, mode)
+    _tag_run_dimensions(body, portfolio)
     try:
         gemini, _telemetry, _day = _metered_gemini()
     except BudgetExceededError as exc:
@@ -1335,6 +1357,81 @@ def _methodology_text() -> str:
     unauthenticated and un-rate-limited.
     """
     return METHODOLOGY_PATH.read_text(encoding="utf-8")
+
+
+# Cloud Logging's default bucket retention. Surfaced so the UI can say why the
+# window cannot go further back instead of silently showing a short series.
+LOG_RETENTION_DAYS = 30
+
+
+@api.get("/api/metrics", response_model=MetricsResponse)
+def metrics_endpoint(
+    request: Request, days: int = 7, include_synthetic: bool = False
+) -> MetricsResponse:
+    """Admin usage metrics: who used the site, and what they used it for.
+
+    Reads back the access log the app already writes — nothing is persisted for
+    this, no tracking cookie exists, and no identifier is created that did not
+    already exist. Cost/quota comes from the `usage_daily` counters by document id
+    (index-free gets), so it survives beyond log retention.
+
+    The log read degrades independently: if `roles/logging.viewer` is missing or the
+    Logging API is unavailable, the cost panel still renders and `logs_available`
+    says why. That beats failing the whole console over one dependency.
+    """
+    _require_admin(request, "Reading metrics")
+    config = load_config()
+    days = max(1, min(days, LOG_RETENTION_DAYS))
+
+    window = aggregate([], days=days, include_synthetic=include_synthetic)
+    logs_available = True
+    logs_error: str | None = None
+    try:
+        entries = fetch_access_entries(config.google_cloud_project, days)
+        window = aggregate(entries, days=days, include_synthetic=include_synthetic)
+    except Exception as exc:  # noqa: BLE001 — one degraded panel beats a dead console
+        logs_available = False
+        logs_error = str(exc)[:300]
+
+    # Cost/quota trend: one doc-ID get per day, no index, no new collection.
+    store = get_firestore_store()
+    cost_daily: list[dict] = []
+    for offset in range(days - 1, -1, -1):
+        day = (datetime.now(UTC).date() - timedelta(days=offset)).isoformat()
+        usage: dict = {}
+        with contextlib.suppress(Exception):
+            usage = store.usage_daily(day)
+        cost_daily.append(
+            {
+                "day": day,
+                "runs": int(usage.get("runs", 0)),
+                "calls": int(usage.get("calls", 0)),
+                "spent_usd": round(float(usage.get("spent", 0.0)), 4),
+                "tokens_in": int(usage.get("tokens_in", 0)),
+                "tokens_out": int(usage.get("tokens_out", 0)),
+            }
+        )
+
+    return MetricsResponse(
+        days=days,
+        entries_scanned=window.entries_scanned,
+        truncated=window.truncated,
+        synthetic_excluded=window.synthetic_excluded,
+        include_synthetic=include_synthetic,
+        log_retention_days=LOG_RETENTION_DAYS,
+        logs_available=logs_available,
+        logs_error=logs_error,
+        daily=window.daily,
+        top_paths=window.top_paths,
+        scenario_runs=window.scenario_runs,
+        portfolio_runs=window.portfolio_runs,
+        status_counts=window.status_counts,
+        top_errors=window.top_errors,
+        totals=window.totals,
+        cost_daily=cost_daily,
+        cost_cap_usd=config.daily_llm_cost_cap_usd,
+        run_cap=config.daily_llm_run_cap,
+    )
 
 
 @api.get("/api/docs/methodology")
