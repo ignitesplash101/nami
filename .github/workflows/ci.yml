@@ -82,7 +82,7 @@ jobs:
         run: npm run bundle:check
 
       - name: Install browser runtime
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Deterministic browser suite
         run: npm run e2e

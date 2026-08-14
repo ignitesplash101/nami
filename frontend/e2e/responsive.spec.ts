@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import {
   compactControlViolations,
   expectCleanNetworkPolicy,
@@ -7,6 +8,21 @@ import {
   setPersistedTheme,
   viewports
 } from "./fixtures";
+
+async function expectNoSeriousAccessibilityViolations(page: import("@playwright/test").Page) {
+  const results = await new AxeBuilder({ page }).analyze();
+  const violations = results.violations.filter(
+    (violation) => violation.impact === "serious" || violation.impact === "critical"
+  );
+  expect(
+    violations.map(({ id, impact, help, nodes }) => ({
+      id,
+      impact,
+      help,
+      targets: nodes.map((node) => node.target)
+    }))
+  ).toEqual([]);
+}
 
 for (const theme of ["dark", "light"] as const) {
   test(`${theme} theme stays responsive across the release width matrix`, async ({ page }) => {
@@ -31,6 +47,26 @@ for (const theme of ["dark", "light"] as const) {
       }
     }
 
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+    await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toBeVisible();
+
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toHaveAttribute(
+        "data-orientation",
+        viewport.width <= 640 ? "horizontal" : "vertical"
+      );
+      const overflow = await expectNoDocumentOverflow(page);
+      expect(
+        overflow.scrollWidth,
+        `${theme} results at ${viewport.width}px: ${JSON.stringify(overflow.offenders)}`
+      ).toBeLessThanOrEqual(overflow.clientWidth + 1);
+    }
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expectNoSeriousAccessibilityViolations(page);
+
     expectCleanNetworkPolicy(api);
   });
 }
@@ -39,12 +75,125 @@ test("200% text scaling proxy keeps the page within the phone viewport", async (
   await page.setViewportSize({ width: 390, height: 844 });
   const api = await installApiMocks(page);
   await page.goto("/");
+  await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+  await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toBeVisible();
   await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
 
   const overflow = await expectNoDocumentOverflow(page);
   expect(overflow.scrollWidth, JSON.stringify(overflow.offenders)).toBeLessThanOrEqual(
     overflow.clientWidth + 1
   );
+  expectCleanNetworkPolicy(api);
+});
+
+test("phone exposure rows wrap labels above a dedicated bar row", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  const api = await installApiMocks(page);
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Your book" }).click();
+  await page.getByRole("button", { name: "Profile this book" }).click();
+
+  const row = page.getByRole("list", { name: "Portfolio factor exposures" }).getByRole("listitem").first();
+  const label = row.locator(".exposure-bar-label");
+  const track = row.locator(".exposure-bar-track");
+  await expect(label).toHaveCSS("white-space", "normal");
+  const [labelBox, trackBox] = await Promise.all([label.boundingBox(), track.boundingBox()]);
+  expect(labelBox).not.toBeNull();
+  expect(trackBox).not.toBeNull();
+  expect(trackBox!.y).toBeGreaterThanOrEqual(labelBox!.y + labelBox!.height - 1);
+
+  const overflow = await expectNoDocumentOverflow(page);
+  expect(overflow.scrollWidth, JSON.stringify(overflow.offenders)).toBeLessThanOrEqual(
+    overflow.clientWidth + 1
+  );
+  expectCleanNetworkPolicy(api);
+});
+
+test("phone chart keeps its maximum-width tooltip inside the plot", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  const api = await installApiMocks(page);
+  await page.goto("/");
+  await page.addStyleTag({ content: ".waterfall-tooltip { width: 240px !important; }" });
+  await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+
+  const chart = page.getByTestId("waterfall-chart");
+  const firstBar = page.locator("[data-waterfall-bar]").first();
+  await firstBar.dispatchEvent("pointermove", { clientX: 319, clientY: 120 });
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toBeVisible();
+
+  const [chartBox, tooltipBox] = await Promise.all([chart.boundingBox(), tooltip.boundingBox()]);
+  expect(chartBox).not.toBeNull();
+  expect(tooltipBox).not.toBeNull();
+  expect(tooltipBox!.x).toBeGreaterThanOrEqual(chartBox!.x + 7);
+  expect(tooltipBox!.x + tooltipBox!.width).toBeLessThanOrEqual(
+    chartBox!.x + chartBox!.width - 7
+  );
+  const overflow = await expectNoDocumentOverflow(page);
+  expect(overflow.scrollWidth, JSON.stringify(overflow.offenders)).toBeLessThanOrEqual(
+    overflow.clientWidth + 1
+  );
+  expectCleanNetworkPolicy(api);
+});
+
+test("the selected result tab persists across viewport and theme changes", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setPersistedTheme(page, "dark");
+  const api = await installApiMocks(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+  await page.getByRole("tab", { name: "Positions" }).click();
+  await expect(page.getByRole("tab", { name: "Positions" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Switch to light theme" }).click();
+  await expect(page.getByRole("tab", { name: "Positions" })).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expectCleanNetworkPolicy(api);
+});
+
+test("@smoke run, chart, theme, fullscreen, and keyboard exit", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false });
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await setPersistedTheme(page, "dark");
+  const api = await installApiMocks(page);
+  await page.goto("/");
+
+  await expect(page.getByText("Demo mode")).toBeVisible();
+  const runButton = page.getByRole("button", { name: "Run hypothetical stress" });
+  await expect(runButton).toBeEnabled();
+  await runButton.focus();
+  await expect(runButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  const chart = page.getByRole("group", { name: "Contribution waterfall chart" });
+  await expect(chart).toBeVisible();
+
+  const firstBar = page.locator("[data-waterfall-bar]").first();
+  await firstBar.focus();
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("[data-waterfall-bar]:focus")).toHaveCount(1);
+
+  const themeButton = page.getByRole("button", { name: "Switch to light theme" });
+  await themeButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+  const fullscreen = page.getByRole("button", { name: "Expand contribution waterfall" });
+  await fullscreen.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "contribution waterfall" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "contribution waterfall" })).toHaveCount(0);
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
   expectCleanNetworkPolicy(api);
 });
 

@@ -58,8 +58,34 @@ const factors = [
     short_label: "US market",
     display_name: "US market (SPY)",
     description: "Broad US equity market"
-  }
+  },
+  { key: "XLK", ticker: "XLK", group: "sector", short_label: "Technology", display_name: "US technology equities (XLK)", description: "Technology sector" },
+  { key: "VIX", ticker: "VIX", group: "macro", short_label: "Volatility", display_name: "Equity volatility (VIX)", description: "Equity volatility" },
+  { key: "HYG", ticker: "HYG", group: "macro", short_label: "High yield", display_name: "High-yield credit (HYG)", description: "High-yield credit" },
+  { key: "TLT", ticker: "TLT", group: "macro", short_label: "Long Treasuries", display_name: "Long-duration US Treasuries (TLT)", description: "Long Treasuries" },
+  { key: "GLD", ticker: "GLD", group: "macro", short_label: "Gold", display_name: "Gold (GLD)", description: "Gold" },
+  { key: "USDJPY", ticker: "USDJPY", group: "macro", short_label: "USD/JPY", display_name: "US dollar versus yen (USD/JPY)", description: "Dollar-yen" },
+  { key: "WTI", ticker: "WTI", group: "macro", short_label: "Oil", display_name: "Crude oil (WTI)", description: "Crude oil" },
+  { key: "SMH", ticker: "SMH", group: "sector", short_label: "Semiconductors", display_name: "Semiconductors (SMH)", description: "Semiconductors" },
+  { key: "IWM", ticker: "IWM", group: "style", short_label: "Small caps", display_name: "US small-cap equities (IWM)", description: "Small caps" },
+  { key: "EEM", ticker: "EEM", group: "market", short_label: "Emerging markets", display_name: "Emerging-market equities (EEM)", description: "Emerging markets" },
+  { key: "TNX", ticker: "TNX", group: "macro", short_label: "10-year yield", display_name: "US 10-year Treasury yield (TNX)", description: "Ten-year yield" }
 ];
+
+const factorContributions = {
+  SPY: -0.04,
+  XLK: -0.018,
+  VIX: 0.006,
+  HYG: -0.009,
+  TLT: 0.004,
+  GLD: 0.003,
+  USDJPY: -0.002,
+  WTI: -0.005,
+  SMH: -0.01,
+  IWM: -0.007,
+  EEM: -0.004,
+  TNX: -0.003
+};
 
 export const scenarioEnvelope = {
   result: {
@@ -69,20 +95,24 @@ export const scenarioEnvelope = {
     portfolio_name: "US tech growth",
     portfolio_holdings: { AAPL: 0.6, MSFT: 0.4 },
     analogs_selected: [],
-    factor_shocks: [{ factor: "SPY", shock: -0.1, reasoning: "Broad risk repricing" }],
+    factor_shocks: Object.keys(factorContributions).map((factor) => ({
+      factor,
+      shock: factor === "SPY" ? -0.1 : -0.03,
+      reasoning: "Mocked multi-factor repricing"
+    })),
     periphery_shocks: [],
     narrative: "Risk assets sell off as the policy shock reaches earnings expectations.",
     citations: [],
     factor_envelope: { SPY: { p10: -0.18, p90: -0.04, median: -0.09, count: 5 } },
     portfolio_pnl: {
       total_pnl: -0.08,
-      by_factor_naive: { SPY: -0.08 },
-      by_factor_conditional_shapley: { SPY: -0.08 },
-      by_factor_conditional_shapley_explicit: { SPY: -0.08 },
-      by_factor_conditional_shapley_grouped: { SPY: -0.08 },
-      by_ticker_factor: { AAPL: -0.05, MSFT: -0.03 },
-      by_ticker_periphery: { AAPL: 0, MSFT: 0 },
-      by_ticker_total: { AAPL: -0.05, MSFT: -0.03 }
+      by_factor_naive: factorContributions,
+      by_factor_conditional_shapley: factorContributions,
+      by_factor_conditional_shapley_explicit: factorContributions,
+      by_factor_conditional_shapley_grouped: factorContributions,
+      by_ticker_factor: { AAPL: -0.05, MSFT: -0.035 },
+      by_ticker_periphery: { AAPL: 0.003, MSFT: 0.002 },
+      by_ticker_total: { AAPL: -0.047, MSFT: -0.033 }
     },
     narrative_shapley: null,
     adjustment_history: [],
@@ -211,11 +241,32 @@ export async function installApiMocks(page: Page, options: MockOptions = {}) {
         body
       }));
     }
+    if (key === "POST /api/portfolios/profile") {
+      return void (await json(route, {
+        portfolio_name: "US tech growth",
+        as_of: "2026-07-13",
+        factor_exposures: {
+          XLK: 1.24,
+          SPY: 0.91,
+          SMH: 0.72,
+          HYG: -0.31
+        },
+        per_name: [
+          { ticker: "AAPL", weight: 0.6, r2: 0.78, r2_adj: 0.76, n_obs: 156, idio_vol_weekly: 0.031 },
+          { ticker: "MSFT", weight: 0.4, r2: 0.82, r2_adj: 0.8, n_obs: 156, idio_vol_weekly: 0.026 }
+        ],
+        idio_band_weekly: 0.021,
+        n_factors: 4
+      }));
+    }
     if (key === "GET /api/portfolios/ticker-metadata") {
       return void (await json(route, {
         ticker_meta: {
-          AAPL: { sector: "Technology", country: "US" },
-          MSFT: { sector: "Technology", country: "US" }
+          AAPL: {
+            sector: "Information Technology and Semiconductor Infrastructure",
+            country: "United States of America"
+          },
+          MSFT: { sector: "Software and Cloud Platforms", country: "United States of America" }
         }
       }));
     }
