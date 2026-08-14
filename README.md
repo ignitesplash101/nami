@@ -71,7 +71,7 @@ validation surfaces, analyst workflows, and production controls behind the demo.
 ## Tech stack
 
 - **Python 3.12** + **FastAPI** backend
-- **React + TypeScript + Vite + Plotly.js** frontend (`frontend/`)
+- **React + TypeScript + Vite + React-owned SVG/D3 scales** frontend (`frontend/`)
 - **Vertex AI / Gemini 3.7 Flash** for the LLM calls (3 sub-calls per scenario)
 - **yfinance** for historical price data, cached in **Google Cloud Storage** (parquet) with 24-hour TTL
 - **GCS** also holds the scenario response cache (JSON, 7-day TTL — the de-dup layer)

@@ -863,7 +863,7 @@ severity of the LLM-proposed, envelope-banded shocks.
 - Caching: `app/data/cache.py` (GCS parquet + JSON), `app/utils/hashing.py`
 - Sample portfolios: `app/data/sample_portfolios.py`
 - API: `app/api/main.py`
-- UI: `frontend/src/` (React + TypeScript + Plotly.js)
+- UI: `frontend/src/` (React + TypeScript + React-owned SVG/D3 scales)
 
 For implementation conventions, see [`CLAUDE.md`](../CLAUDE.md).
 
