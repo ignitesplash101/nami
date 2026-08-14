@@ -14,7 +14,7 @@ class Config:
     vertex_ai_location: str
     gcs_bucket: str
     google_application_credentials: str | None = None
-    vertex_model_id: str = "gemini-3.6-flash"
+    vertex_model_id: str = "gemini-3.7-flash"
     llm_temperature: float = 0.0
     # Thinking level for the SCHEMA-CONSTRAINED Gemini calls only (analog selection,
     # shock extraction, shock edit, decomposition). None = leave the server default
@@ -47,9 +47,10 @@ class Config:
     daily_llm_run_cap: int = 500
     daily_llm_cost_cap_usd: float = 25.0
     # Vertex list prices (USD per 1M tokens) for the daily-budget breaker — cost
-    # ESTIMATION/budgeting only, not billing. gemini-3.6-flash standard tier as of
-    # 2026-07-22; output covers response AND thinking tokens. Update these (or the
-    # PRICE_*_PER_MTOK env overrides) whenever Google reprices or the model changes.
+    # ESTIMATION/budgeting only, not billing. Gemini 3.7 Flash has $0.75/$3.75
+    # introductory pricing through 2026-12-31; these intentionally keep its
+    # $1.50/$7.50 post-promotion rates so the breaker fails closed after expiry.
+    # Output covers response AND thinking tokens.
     price_input_per_mtok: float = 1.50
     price_output_per_mtok: float = 7.50
 
@@ -74,7 +75,7 @@ def load_config() -> Config:
         vertex_ai_location=os.environ["VERTEX_AI_LOCATION"],
         gcs_bucket=os.environ["GCS_BUCKET"],
         google_application_credentials=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-        vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.6-flash"),
+        vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.7-flash"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
         structured_thinking_level=os.getenv("STRUCTURED_THINKING_LEVEL") or None,
         selection_thinking_level=os.getenv("SELECTION_THINKING_LEVEL") or None,

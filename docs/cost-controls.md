@@ -17,6 +17,12 @@ Every endpoint that calls Vertex AI / Gemini is gated as follows in [app/api/mai
 | `POST /api/saved-scenarios` and all Firestore endpoints | **403** ([main.py:408–410](../app/api/main.py)) | Firestore writes, no LLM | Firestore-only |
 | `GET /api/portfolios/samples`, `/api/scenarios/samples`, `/api/health`, `/api/access`, `/api/meta`, `/api/docs/methodology`, `/api/portfolio/validate` | open | open | $0 (no LLM) |
 
+The LLM figures above are conservative budget-breaker estimates using the
+$1.50/$7.50 post-promotion rates and measured historical token usage. Gemini 3.7
+Flash is billed at $0.75/$3.75 through 2026-12-31, so equal token usage costs about
+half as much during the introductory period. The breaker deliberately keeps the
+higher rates so it does not begin under-counting when the promotion expires.
+
 **Visitor cost ceiling — the sample matrix is NOT the bound.** It is tempting to say: 4 sample scenarios × 4 sample portfolios = 16 combinations × ~$0.08 = a few dollars a week, done. That was this document's claim until 2026-07-26, and **it was wrong**. `_resolve_scenario_text` ([main.py](../app/api/main.py)) accepts *arbitrary* visitor scenario text before it ever checks the sample key — deliberately, per the Phase 17 design, and the endpoint's own 403 says so ("a sample scenario **or custom scenario text**"). A visitor can mint an unbounded number of distinct cache keys.
 
 **The real ceiling is the money breakers**, not the sample matrix:
@@ -53,7 +59,11 @@ This sends an email when monthly project spend crosses thresholds. It does **not
 7. Email alerts: check "Email alerts to billing admins and users"
 8. **FINISH**
 
-Expected normal spend at this project's scale: a few dollars/month. A breach to $10 would mean ~400 LLM calls beyond cache hits — strong signal of admin-mode abuse, a logic bug, or a broken cache write path. Note the theoretical visitor ceiling above (~$28/month worst case) can alone cross the 50% threshold; if alerts fire without matching admin activity, check cache health first.
+Expected model spend with the full weekday pre-warm is roughly $14/month during the
+Gemini 3.7 Flash introductory period, or roughly $27/month at post-promotion rates,
+before additional admin use. A sharp increase beyond that baseline is a signal of
+abuse, a logic bug, or a broken cache write path; if alerts fire without matching
+admin activity, check cache health first.
 
 (The `gcloud billing budgets create` CLI requires JSON body parameters that the simple flag form doesn't accept; the Console form is faster and more reliable.)
 
@@ -63,7 +73,7 @@ Caps the number of Gemini requests per minute / per day at the project level. If
 
 1. Open https://console.cloud.google.com/iam-admin/quotas?project=nami-497405
 2. Filter: `Service: Vertex AI API`
-3. Find the relevant quota for `gemini-3.6-flash` (typical name: `Generate content requests per minute per project per base model`). Quotas are **per base model** — an override set for `gemini-3.5-flash` does NOT cover `gemini-3.6-flash`; re-create it after a model upgrade.
+3. Find the relevant quota for `gemini-3.7-flash` (typical name: `Generate content requests per minute per project per base model`). Quotas are **per base model** — an override set for `gemini-3.6-flash` does NOT cover `gemini-3.7-flash`; re-create it after a model upgrade.
 4. Select → **EDIT QUOTAS** → request override → set a low limit (e.g. `60 per minute`, `5000 per day`)
 5. Submit
 
@@ -89,7 +99,7 @@ Cloud Run will roll the revision and existing admin cookies will be invalidated 
 
 ## What is NOT mitigated
 
-- **Gemini unit-price changes**: Google can change Gemini 3.6 Flash pricing unilaterally. The quota cap above bounds *units*, not *dollars per unit*. The in-app estimator's prices live in `app/config.py` (`PRICE_INPUT_PER_MTOK` / `PRICE_OUTPUT_PER_MTOK` overridable via env) and must be updated on repricing — on 2026-07-22 they were found stale at 2.5-Flash-era rates, under-counting real spend ~5×; they now match 3.6 Flash list prices and thinking tokens are booked at the output rate.
+- **Gemini unit-price changes**: Google can change Gemini 3.7 Flash pricing unilaterally. The quota cap above bounds *units*, not *dollars per unit*. The in-app estimator's prices live in `app/config.py` (`PRICE_INPUT_PER_MTOK` / `PRICE_OUTPUT_PER_MTOK` overridable via env). They intentionally use the $1.50/$7.50 rates that begin after the introductory period ends on 2026-12-31; thinking tokens are booked at the output rate. Re-check both defaults whenever Google reprices the model.
 - **Cache infrastructure failure**: if the GCS bucket becomes unwritable, every request becomes a cache miss. The billing alert catches this within 24 hrs.
 - **Side-channel cost**: yfinance is free but rate-limited; Firestore reads/writes are sub-cent at this scale; Cloud Run egress on free-tier-adjacent volumes. Negligible.
 
@@ -99,7 +109,7 @@ Cloud Run will roll the revision and existing admin cookies will be invalidated 
 
 | risk | mitigation | mitigated by |
 |---|---|---|
-| Anonymous visitor spam Gemini → $1000 bill | Visitor mode locked to 16 cached sample combinations | Code (auth gates + GCS cache) |
+| Anonymous visitor spam Gemini → $1000 bill | Paid-run and estimated-cost breakers cap daily exposure | Code (budget gates + GCS cache) |
 | Admin passcode leak | Rotate passcode in Secret Manager | Operator action |
 | Logic bug bypasses gate | Monthly budget alert at $20 | GCP billing budget (Console) |
 | Pricing change / cache outage | Vertex AI per-minute and per-day quota cap | GCP quotas (Console) |

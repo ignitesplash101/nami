@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/ignitesplash101/nami/actions/workflows/ci.yml/badge.svg)](https://github.com/ignitesplash101/nami/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
-[![Vertex AI](https://img.shields.io/badge/Vertex_AI-Gemini_3.6_Flash-4285F4.svg)](docs/llm-system-design.md)
+[![Vertex AI](https://img.shields.io/badge/Vertex_AI-Gemini_3.7_Flash-4285F4.svg)](docs/llm-system-design.md)
 
 **波** — an evidence-aware scenario explorer for equity portfolios.
 
@@ -72,14 +72,14 @@ validation surfaces, analyst workflows, and production controls behind the demo.
 
 - **Python 3.12** + **FastAPI** backend
 - **React + TypeScript + Vite + Plotly.js** frontend (`frontend/`)
-- **Vertex AI / Gemini 3.6 Flash** for the LLM calls (3 sub-calls per scenario)
+- **Vertex AI / Gemini 3.7 Flash** for the LLM calls (3 sub-calls per scenario)
 - **yfinance** for historical price data, cached in **Google Cloud Storage** (parquet) with 24-hour TTL
 - **GCS** also holds the scenario response cache (JSON, 7-day TTL — the de-dup layer)
 - **Firestore** (added Phase 11) for saved scenarios, named portfolios, dated snapshots, plus daily usage/budget counters, the auth-throttle, and the audit log
 - **slowapi** for per-IP rate limiting; optional **Sentry** for error tracking (no-op unless `SENTRY_DSN` is set)
 - **Cloud Run** for the deployed app, with **Secret Manager** for the admin passcode and **Cloud Build** (`nami-main-push` trigger) for CI/CD
 
-Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.6 Flash) in `global` (this model is multi-region only — `global`, `us` or `eu`, never a single region like `asia-northeast1`).
+Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.7 Flash) in `global` (verified for this project on 2026-08-14; do not move it to a regional endpoint without a live preflight).
 
 ## Visitor vs admin
 

@@ -510,7 +510,7 @@ evidence and is preserved byte-for-byte).
 
 **Why the split?** Gemini Flash on Vertex AI honors `response_schema` faithfully but
 frequently skips invoking `google_search` when both are passed in one config (observed on
-3.5 Flash; nami keeps the split on 3.6 Flash). The result is valid JSON with no grounding
+3.5 Flash; nami keeps the split on 3.7 Flash). The result is valid JSON with no grounding
 metadata — i.e., the narrative *looks* current but isn't actually sourced. We refuse to
 return that. Splitting into two sub-calls guarantees the
 narrative is grounded (2a) and the structured output is well-formed (2b).
@@ -734,11 +734,13 @@ When a portfolio value is set, each contribution is also shown in dollars
 
 **UX + cost.** Served over SSE (`/api/scenarios/decompose-stream`) so the UI shows
 "X / Y subset runs". Cost: `2^N − 1` runs (empty subset is the hardcoded zero) — N=4 is
-15 runs plus the decomposition call. At measured 2026-07-26 rates (~$0.06–$0.10 per
-cache-miss run on `gemini-3.6-flash`) that is roughly **$0.4**, in the $0.15–$0.80 band
+15 runs plus the decomposition call. Applying Gemini 3.7 Flash's post-promotion
+$1.50/$7.50 rates to the measured 2026-07-26 token usage (~$0.06–$0.10 per cache-miss
+run) gives roughly **$0.4**, in the $0.15–$0.80 band
 [`docs/cost-controls.md`](cost-controls.md) quotes — the previously printed $0.015 was a
 2.5-Flash-era figure that survived the repricing. N is capped at 4 (N=5 = 31 runs, too
-long for a synchronous UX).
+long for a synchronous UX). Actual Gemini 3.7 Flash token prices are half those rates
+through 2026-12-31.
 
 Both Shapley sums (factor-level and theme-level) satisfy the **efficiency axiom**
 exactly (modulo float noise); pinning analogs + skipping re-grounding removes the
@@ -755,7 +757,7 @@ news-drift variance the theme-sensitivity sum previously carried.
   + sorted(portfolio_holdings)
   + portfolio_key                  # "us_tech_growth" / "custom" / ...
   + market_date.isoformat()
-  + vertex_model_id                # gemini-3.6-flash
+  + vertex_model_id                # gemini-3.7-flash
   + PROMPT_VERSION                 # bumped for any prompt OR schema change
   + factor_universe_version()      # 12-char hash of FACTORS dict
   + events_version()               # 12-char hash of historical_events.yaml

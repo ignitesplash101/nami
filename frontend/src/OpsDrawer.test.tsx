@@ -39,7 +39,7 @@ function statusFixture(): StatusResponse {
     service: "nami",
     nami_engine_version: "0.1.0",
     prompt_version: "v8",
-    model_id: "gemini-3.6-flash",
+    model_id: "gemini-3.7-flash",
     environment: "test",
     ready: true,
     disclaimer: "d",
@@ -135,7 +135,7 @@ describe("OpsDrawer", () => {
     await waitFor(() => expect(screen.getByText("12 / 200")).toBeInTheDocument());
     expect(screen.getByText(/\$0\.42/)).toBeInTheDocument();
     expect(screen.getByText("scenario.save")).toBeInTheDocument();
-    expect(screen.getByText(/gemini-3\.6-flash/)).toBeInTheDocument();
+    expect(screen.getByText(/gemini-3\.7-flash/)).toBeInTheDocument();
   });
 
   it("renders metrics and discloses the excluded pre-warm traffic", async () => {
