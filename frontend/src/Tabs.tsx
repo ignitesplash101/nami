@@ -18,7 +18,7 @@ export interface TabItem<K extends string> {
  * switches, and the one-shot nami-rise stagger never replays because nothing
  * remounts). Automatic activation: Arrow keys move AND select, matching the
  * app's radiogroup controls. A switch dispatches a window resize on the next
- * frame so Plotly (responsive: true) corrects any drift that accumulated
+ * frame so responsive surfaces correct any drift that accumulated
  * while its panel was hidden. */
 export function Tabs<K extends string>({
   items,

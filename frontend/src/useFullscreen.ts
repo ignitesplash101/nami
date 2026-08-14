@@ -58,7 +58,7 @@ export interface FullscreenOptions {
  * modal fallback where it is absent (iPhone Safari: `document.fullscreenEnabled`
  * falsy) or rejects at runtime. Callers must not care which mode is active —
  * `isFullscreen` is true in both. A transition dispatches a window resize next
- * frame so Plotly (responsive: true) / useScrollFade re-fit both ways. */
+ * frame so responsive charts / useScrollFade re-fit both ways. */
 export function useFullscreen(
   ref: RefObject<HTMLElement>,
   options?: FullscreenOptions

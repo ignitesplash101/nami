@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ResultsPanel } from "./results/ResultsPanel";
 import type { ScenarioResult, ScenarioRunResponse } from "./types";
 
-vi.mock("./PlotLazy", () => ({
-  PlotLazy: () => <div data-testid="plot" />
+vi.mock("./results/WaterfallChart", () => ({
+  WaterfallChart: () => <div data-testid="waterfall-chart" />
 }));
 
 vi.mock("./api", async () => {

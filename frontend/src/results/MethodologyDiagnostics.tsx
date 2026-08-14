@@ -96,7 +96,6 @@ export function MethodologyDiagnostics({
       )}
       <WaterfallChart
         waterfall={waterfall}
-        showDollars={false}
         chartHeight={fullscreenChartHeight(fullscreen.isFullscreen, 360, viewportHeight)}
         isPhone={false}
       />

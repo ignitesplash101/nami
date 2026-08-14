@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { MethodologyDiagnostics } from "./MethodologyDiagnostics";
 import type { ScenarioResult } from "../types";
 
-vi.mock("../PlotLazy", () => ({
-  PlotLazy: () => <div data-testid="plot" />
+vi.mock("./WaterfallChart", () => ({
+  WaterfallChart: () => <div data-testid="waterfall-chart" />
 }));
 
 function resultFixture(): ScenarioResult {

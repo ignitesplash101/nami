@@ -3,71 +3,99 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
-export const MAIN_BUDGET_BYTES = 100 * 1024;
-export const CHART_BUDGET_BYTES = 425 * 1024;
+export const INITIAL_BUDGET_BYTES = 100 * 1024;
+export const CHART_BUDGET_BYTES = 45 * 1024;
+export const CSS_BUDGET_BYTES = 25 * 1024;
 
-const assetContracts = [
-  {
-    key: "main",
-    label: "initial/main JavaScript",
-    patterns: [/^index-[\w-]+\.js$/],
-    limitBytes: MAIN_BUDGET_BYTES
-  },
-  {
-    key: "chart",
-    label: "lazy chart JavaScript",
-    patterns: [/^plotly-finance\.min-[\w-]+\.js$/, /^factory-[\w-]+\.js$/],
-    limitBytes: CHART_BUDGET_BYTES
-  }
-];
+const CHART_ENTRY = "src/results/WaterfallSvg.tsx";
 
 function kib(bytes) {
   return `${(bytes / 1024).toFixed(2)} KiB`;
 }
 
-async function measureAsset(assetsDir, files, contract) {
-  const matchesByPattern = contract.patterns.map((pattern) =>
-    files.filter((file) => pattern.test(file))
-  );
-  const invalidMatch = matchesByPattern.findIndex((matches) => matches.length !== 1);
-  if (invalidMatch !== -1) {
-    const matches = matchesByPattern[invalidMatch];
-    const qualifier = contract.patterns.length > 1 ? ` for ${contract.patterns[invalidMatch]}` : "";
-    throw new Error(
-      `Expected exactly one ${contract.label} asset${qualifier}, found ${matches.length}.`
-    );
+function exactlyOne(entries, label) {
+  if (entries.length !== 1) {
+    throw new Error(`Expected exactly one ${label}, found ${entries.length}.`);
   }
-  const matchedFiles = matchesByPattern.map(([file]) => file);
+  return entries[0];
+}
+
+function collectStaticJavaScript(manifest, rootKey) {
+  const visited = new Set();
+  const files = new Set();
+
+  function visit(key) {
+    if (visited.has(key)) return;
+    visited.add(key);
+    const entry = manifest[key];
+    if (!entry) throw new Error(`Manifest import ${key} has no matching entry.`);
+    if (typeof entry.file === "string" && entry.file.endsWith(".js")) files.add(entry.file);
+    for (const importedKey of entry.imports ?? []) visit(importedKey);
+  }
+
+  visit(rootKey);
+  return files;
+}
+
+async function measureFiles(distDir, files, label, limitBytes) {
+  if (files.length === 0) throw new Error(`Expected at least one ${label} asset, found 0.`);
   const gzipBytes = (
     await Promise.all(
-      matchedFiles.map(async (file) => {
-        const source = await readFile(resolve(assetsDir, file));
+      files.map(async (file) => {
+        const source = await readFile(resolve(distDir, file));
         return gzipSync(source, { level: 9 }).byteLength;
       })
     )
   ).reduce((total, bytes) => total + bytes, 0);
-  return {
-    files: matchedFiles,
-    gzipBytes,
-    limitBytes: contract.limitBytes,
-    label: contract.label
-  };
+  return { files, gzipBytes, limitBytes, label };
 }
 
 function measurementLabel({ label, files }) {
-  return files.length > 1 ? `${label} (${files.join(" + ")})` : label;
+  return `${label} (${files.join(" + ")})`;
 }
 
 export async function checkBundleBudget(distDir = "dist") {
-  const assetsDir = resolve(distDir, "assets");
-  const files = await readdir(assetsDir);
-  const measured = await Promise.all(
-    assetContracts.map((contract) => measureAsset(assetsDir, files, contract))
+  const manifestPath = resolve(distDir, ".vite", "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const entries = Object.entries(manifest);
+  const initialKey = exactlyOne(
+    entries.filter(([, entry]) => entry.isEntry).map(([key]) => key),
+    "initial manifest entry"
   );
-  const measurements = Object.fromEntries(
-    measured.map((measurement, index) => [assetContracts[index].key, measurement])
+  const chartKey = exactlyOne(
+    entries
+      .filter(([key]) => key.replaceAll("\\", "/") === CHART_ENTRY)
+      .map(([key]) => key),
+    "lazy chart manifest entry"
   );
-  const breaches = measured.filter(({ gzipBytes, limitBytes }) => gzipBytes > limitBytes);
+
+  const initialGraph = collectStaticJavaScript(manifest, initialKey);
+  const chartGraph = collectStaticJavaScript(manifest, chartKey);
+  const chartOnlyGraph = new Set([...chartGraph].filter((file) => !initialGraph.has(file)));
+  const assetNames = await readdir(resolve(distDir, "assets"));
+  const cssFiles = assetNames
+    .filter((file) => file.endsWith(".css"))
+    .map((file) => `assets/${file}`);
+
+  const [initial, chart, css] = await Promise.all([
+    measureFiles(
+      distDir,
+      [...initialGraph].sort(),
+      "initial JavaScript",
+      INITIAL_BUDGET_BYTES
+    ),
+    measureFiles(
+      distDir,
+      [...chartOnlyGraph].sort(),
+      "complete lazy chart path",
+      CHART_BUDGET_BYTES
+    ),
+    measureFiles(distDir, cssFiles.sort(), "CSS", CSS_BUDGET_BYTES)
+  ]);
+  const measurements = { initial, chart, css };
+  const breaches = Object.values(measurements).filter(
+    ({ gzipBytes, limitBytes }) => gzipBytes > limitBytes
+  );
   if (breaches.length) {
     throw new Error(
       breaches
@@ -89,9 +117,7 @@ async function main() {
     console.log(
       `[bundle-budget] ${measurementLabel(measurement)}: ${kib(
         measurement.gzipBytes
-      )} gzip / ${kib(
-        measurement.limitBytes
-      )} limit`
+      )} gzip / ${kib(measurement.limitBytes)} limit`
     );
   }
 }

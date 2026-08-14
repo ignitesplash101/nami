@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   buildAnalogReplayRows,
   buildBookProfileRows,
@@ -10,12 +10,10 @@ import {
   buildWaterfallData,
   buildWaterfallDataDollars,
   selectMainAttribution,
-  chartTheme,
   factorReasoningRows,
   formatCurrency,
   formatSignedCurrency,
   parseNav,
-  resetChartThemeForTests,
   topContributor
 } from "./charts";
 import type { ScenarioResult } from "./types";
@@ -57,11 +55,17 @@ describe("chart data helpers", () => {
     result.portfolio_pnl.by_ticker_periphery = { AAPL: -0.0001, MSFT: 0 };
     const data = buildWaterfallData(result, "naive");
 
-    expect(data.x).toContain("US large-cap (SPY)");
-    expect(data.x).toContain("Periphery");
-    expect(data.x[data.x.length - 1]).toBe("Total");
-    expect(data.measure[data.measure.length - 1]).toBe("total");
-    expect(data.y[data.y.length - 1]).toBe(-0.08);
+    expect(data.bars.map((bar) => bar.shortLabel)).toContain("US large-cap (SPY)");
+    expect(data.bars.map((bar) => bar.shortLabel)).toContain("Periphery");
+    expect(data.bars.at(-1)).toMatchObject({
+      id: "total",
+      shortLabel: "Total",
+      kind: "total",
+      value: -0.08,
+      start: 0,
+      end: -0.08
+    });
+    expect(data.unit).toEqual({ kind: "percent" });
   });
 
   it("omits the periphery waterfall bar when idiosyncratic contribution is zero", () => {
@@ -69,8 +73,8 @@ describe("chart data helpers", () => {
     result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
     const data = buildWaterfallData(result, "naive");
 
-    expect(data.x).not.toContain("Periphery");
-    expect(data.x[data.x.length - 1]).toBe("Total");
+    expect(data.bars.map((bar) => bar.shortLabel)).not.toContain("Periphery");
+    expect(data.bars.at(-1)?.shortLabel).toBe("Total");
   });
 
   it("omits visually zero non-material periphery from the waterfall", () => {
@@ -78,8 +82,8 @@ describe("chart data helpers", () => {
     result.portfolio_pnl.by_ticker_periphery = { AAPL: 0.000004, MSFT: 0 };
     const data = buildWaterfallData(result, "naive");
 
-    expect(data.x).not.toContain("Periphery");
-    expect(data.x[data.x.length - 1]).toBe("Total");
+    expect(data.bars.map((bar) => bar.shortLabel)).not.toContain("Periphery");
+    expect(data.bars.at(-1)?.shortLabel).toBe("Total");
   });
 
   it("switches top contributor under conditional attribution", () => {
@@ -130,21 +134,23 @@ describe("chart data helpers", () => {
 
     const data = buildWaterfallData(result, "conditional_grouped");
 
-    expect(data.x).toContain("Market");
-    expect(data.x).toContain("Sector");
-    expect(data.x).toContain("Macro");
-    expect(data.x).not.toContain("US large-cap (SPY)");
-    expect(data.y[data.x.indexOf("Market")]).toBeCloseTo(-0.04);
-    expect(data.y[data.x.indexOf("Sector")]).toBeCloseTo(-0.02);
-    expect(data.y[data.x.indexOf("Macro")]).toBeCloseTo(0.01);
+    const bars = new Map(data.bars.map((bar) => [bar.shortLabel, bar]));
+    expect([...bars.keys()]).toContain("Market");
+    expect([...bars.keys()]).toContain("Sector");
+    expect([...bars.keys()]).toContain("Macro");
+    expect([...bars.keys()]).not.toContain("US large-cap (SPY)");
+    expect(bars.get("Market")?.value).toBeCloseTo(-0.04);
+    expect(bars.get("Sector")?.value).toBeCloseTo(-0.02);
+    expect(bars.get("Macro")?.value).toBeCloseTo(0.01);
   });
 
   it("explodes material periphery into signed ticker bars", () => {
     const data = buildWaterfallData(fixtureResult(), "naive");
 
-    expect(data.x).toContain("AAPL periphery");
-    expect(data.x).not.toContain("Periphery");
-    expect(data.y[data.x.indexOf("AAPL periphery")]).toBeCloseTo(-0.02);
+    const bars = new Map(data.bars.map((bar) => [bar.shortLabel, bar]));
+    expect([...bars.keys()]).toContain("AAPL periphery");
+    expect([...bars.keys()]).not.toContain("Periphery");
+    expect(bars.get("AAPL periphery")?.value).toBeCloseTo(-0.02);
   });
 
   it("does not hide offsetting material periphery behind a zero net bar", () => {
@@ -154,11 +160,12 @@ describe("chart data helpers", () => {
 
     const data = buildWaterfallData(result, "naive");
 
-    expect(data.x).toContain("AAPL periphery");
-    expect(data.x).toContain("MSFT periphery");
-    expect(data.x).not.toContain("Periphery");
-    expect(data.y[data.x.indexOf("AAPL periphery")]).toBeCloseTo(0.01);
-    expect(data.y[data.x.indexOf("MSFT periphery")]).toBeCloseTo(-0.01);
+    const bars = new Map(data.bars.map((bar) => [bar.shortLabel, bar]));
+    expect([...bars.keys()]).toContain("AAPL periphery");
+    expect([...bars.keys()]).toContain("MSFT periphery");
+    expect([...bars.keys()]).not.toContain("Periphery");
+    expect(bars.get("AAPL periphery")?.value).toBeCloseTo(0.01);
+    expect(bars.get("MSFT periphery")?.value).toBeCloseTo(-0.01);
   });
 
   it("keeps the top three periphery names and rolls the rest into other periphery", () => {
@@ -181,13 +188,110 @@ describe("chart data helpers", () => {
 
     const data = buildWaterfallData(result, "naive");
 
-    expect(data.x).toContain("AAPL periphery");
-    expect(data.x).toContain("MSFT periphery");
-    expect(data.x).toContain("NVDA periphery");
-    expect(data.x).toContain("Other periphery");
-    expect(data.x).not.toContain("AMZN periphery");
-    expect(data.x).not.toContain("GOOGL periphery");
-    expect(data.y[data.x.indexOf("Other periphery")]).toBeCloseTo(0.001);
+    const bars = new Map(data.bars.map((bar) => [bar.shortLabel, bar]));
+    expect([...bars.keys()]).toContain("AAPL periphery");
+    expect([...bars.keys()]).toContain("MSFT periphery");
+    expect([...bars.keys()]).toContain("NVDA periphery");
+    expect([...bars.keys()]).toContain("Other periphery");
+    expect([...bars.keys()]).not.toContain("AMZN periphery");
+    expect([...bars.keys()]).not.toContain("GOOGL periphery");
+    expect(bars.get("Other periphery")?.value).toBeCloseTo(0.001);
+  });
+
+  it("builds mixed-sign cumulative geometry from the ordered contribution steps", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_factor_naive = { SPY: -0.06, XLK: 0.04, TNX: 0.01 };
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
+    result.portfolio_pnl.total_pnl = -0.01;
+
+    const contributions = buildWaterfallData(result, "naive").bars.filter(
+      (bar) => bar.kind !== "total"
+    );
+
+    expect(contributions[0]).toMatchObject({ value: -0.06, start: 0, end: -0.06 });
+    expect(contributions[1]).toMatchObject({ value: 0.04, start: -0.06 });
+    expect(contributions[1].end).toBeCloseTo(-0.02);
+    expect(contributions[2].start).toBeCloseTo(-0.02);
+    expect(contributions[2].end).toBeCloseTo(-0.01);
+  });
+
+  it("caps contribution steps by aggregating excess factors without hiding material periphery", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_factor_naive = {
+      F1: -0.09,
+      F2: 0.08,
+      F3: -0.07,
+      F4: 0.06,
+      F5: -0.05,
+      F6: 0.04,
+      F7: -0.03,
+      F8: 0.02
+    };
+    result.portfolio_pnl.by_ticker_periphery = {
+      AAPL: -0.005,
+      MSFT: 0.004,
+      NVDA: -0.003,
+      AMZN: 0.002
+    };
+    result.portfolio_pnl.total_pnl = -0.042;
+
+    const data = buildWaterfallData(result, "naive", undefined, "factor", 6);
+    const contributionBars = data.bars.filter(
+      (bar) => bar.kind !== "total" && bar.kind !== "residual"
+    );
+
+    expect(contributionBars).toHaveLength(6);
+    expect(contributionBars.filter((bar) => bar.kind === "factor")).toHaveLength(1);
+    expect(contributionBars.find((bar) => bar.shortLabel === "Other factors")?.value).toBeCloseTo(
+      0.05
+    );
+    expect(contributionBars.map((bar) => bar.shortLabel)).toEqual(
+      expect.arrayContaining([
+        "AAPL periphery",
+        "MSFT periphery",
+        "NVDA periphery",
+        "Other periphery"
+      ])
+    );
+  });
+
+  it("adds an explicit residual step when legacy contributions do not reconcile", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_factor_naive = { SPY: -0.06 };
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
+    result.portfolio_pnl.total_pnl = -0.08;
+
+    const residual = buildWaterfallData(result, "naive").bars.find(
+      (bar) => bar.kind === "residual"
+    );
+
+    expect(residual).toMatchObject({
+      id: "residual",
+      shortLabel: "Residual",
+      start: -0.06,
+      end: -0.08,
+      formattedValue: "-2.00%"
+    });
+    expect(residual?.value).toBeCloseTo(-0.02);
+  });
+
+  it("fails closed when chart inputs contain a non-finite number", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_factor_naive = { SPY: Number.NaN };
+
+    expect(buildWaterfallData(result, "naive")).toEqual({
+      bars: [],
+      unit: { kind: "percent" }
+    });
+  });
+
+  it("preserves long and short factor labels in the semantic bars", () => {
+    const data = buildWaterfallData(fixtureResult(), "naive");
+    expect(data.bars[0]).toMatchObject({
+      id: "factor:SPY",
+      shortLabel: "US large-cap (SPY)",
+      fullLabel: "US large-cap equities (SPY)"
+    });
   });
 
   it("builds an answer-first readout with direction, headline, and evidence", () => {
@@ -300,9 +404,26 @@ describe("currency formatting + dollar waterfall (MTM)", () => {
     const nav = 1_000_000;
     const pct = buildWaterfallData(fixtureResult(), "naive");
     const usd = buildWaterfallDataDollars(fixtureResult(), "naive", nav, "USD");
-    expect(usd.x).toEqual(pct.x);
-    expect(usd.y[usd.y.length - 1]).toBeCloseTo(-0.08 * nav); // total bar = total_pnl × NAV
-    expect(usd.text[usd.text.length - 1]).toContain("$");
+    expect(usd.bars.map((bar) => bar.id)).toEqual(pct.bars.map((bar) => bar.id));
+    expect(usd.bars.at(-1)?.value).toBeCloseTo(-0.08 * nav);
+    expect(usd.bars.at(-1)?.formattedValue).toBe("-$80,000");
+    expect(usd.unit).toEqual({ kind: "currency", currency: "USD" });
+  });
+
+  it("uses exact signed labels in both percent and currency modes", () => {
+    const result = fixtureResult();
+    result.portfolio_pnl.by_factor_naive = { SPY: 0.01234 };
+    result.portfolio_pnl.by_ticker_periphery = { AAPL: 0, MSFT: 0 };
+    result.portfolio_pnl.total_pnl = 0.01234;
+
+    expect(buildWaterfallData(result, "naive").bars[0].formattedValue).toBe("+1.23%");
+    expect(
+      buildWaterfallDataDollars(result, "naive", 1_000_000, "USD").bars[0].formattedValue
+    ).toBe("+$12,340");
+  });
+
+  it("fails closed for an invalid dollar scale", () => {
+    expect(buildWaterfallDataDollars(fixtureResult(), "naive", Number.NaN).bars).toEqual([]);
   });
 });
 
@@ -334,35 +455,6 @@ describe("buildPositionValuations", () => {
     expect(aapl?.delta).toBeCloseTo(1_000_000 * -0.06); // NAV × by_ticker_total
     expect(aapl?.stressed).toBeCloseTo((aapl?.value ?? 0) + (aapl?.delta ?? 0));
     expect(aapl?.deltaPct).toBeCloseTo((aapl?.delta ?? 0) / (aapl?.value ?? 1));
-  });
-});
-
-describe("chartTheme", () => {
-  afterEach(() => {
-    resetChartThemeForTests();
-    document.documentElement.style.removeProperty("--up");
-  });
-
-  it("falls back to the Hokusai literals when tokens are unset (jsdom)", () => {
-    resetChartThemeForTests();
-    const theme = chartTheme();
-    expect(theme.up).toBe("#4cc38a");
-    expect(theme.down).toBe("#e8615a");
-    expect(theme.grid).toBe("rgba(238, 242, 236, 0.08)");
-  });
-
-  it("reads root custom properties and memoizes the first read", () => {
-    resetChartThemeForTests();
-    document.documentElement.style.setProperty("--up", "#123456");
-    const first = chartTheme();
-    expect(first.up).toBe("#123456");
-
-    // Changing the property after the first read must NOT change the theme —
-    // there is no runtime theme switching, so the read is one-shot.
-    document.documentElement.style.setProperty("--up", "#654321");
-    const second = chartTheme();
-    expect(second).toBe(first);
-    expect(second.up).toBe("#123456");
   });
 });
 
@@ -425,15 +517,23 @@ describe("one methodology, two zooms (Phase 31i)", () => {
       XLK: -0.03, // sector
       TNX: 0.01 // macro
     };
-    const sumRelative = (d: { y: number[] }) => d.y.slice(0, -1).reduce((a, b) => a + b, 0);
+    result.portfolio_pnl.total_pnl = -0.07;
+    const sumFactorBars = (data: ReturnType<typeof buildWaterfallData>) =>
+      data.bars
+        .filter((bar) => bar.kind === "factor" || bar.kind === "aggregate")
+        .reduce((sum, bar) => sum + bar.value, 0);
 
     const byFactor = buildWaterfallData(result, "conditional_explicit", undefined, "factor");
     const byGroup = buildWaterfallData(result, "conditional_explicit", undefined, "group");
 
-    expect(sumRelative(byGroup)).toBeCloseTo(sumRelative(byFactor), 12);
-    expect(sumRelative(byGroup)).toBeCloseTo(-0.07, 12);
+    expect(sumFactorBars(byGroup)).toBeCloseTo(sumFactorBars(byFactor), 12);
+    expect(sumFactorBars(byGroup)).toBeCloseTo(-0.07, 12);
     // groups render in the canonical order, built from the same numbers
-    expect(byGroup.x.slice(0, -1)).toEqual(["Market", "Sector", "Macro"]);
+    expect(byGroup.bars.slice(0, -1).map((bar) => bar.shortLabel)).toEqual([
+      "Market",
+      "Sector",
+      "Macro"
+    ]);
   });
 
   it("selectMainAttribution prefers explicit and flags the naive fallback as degraded", () => {

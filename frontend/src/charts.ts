@@ -7,12 +7,31 @@ import type {
   TickerMetadata
 } from "./types";
 
+export type WaterfallDatumKind =
+  | "factor"
+  | "periphery"
+  | "aggregate"
+  | "residual"
+  | "total";
+
+export interface WaterfallDatum {
+  id: string;
+  shortLabel: string;
+  fullLabel: string;
+  value: number;
+  start: number;
+  end: number;
+  formattedValue: string;
+  kind: WaterfallDatumKind;
+}
+
+export type WaterfallUnit =
+  | { kind: "percent" }
+  | { kind: "currency"; currency: string };
+
 export interface WaterfallData {
-  x: string[];
-  y: number[];
-  measure: ("relative" | "total")[];
-  text: string[];
-  hoverText: string[];
+  bars: WaterfallDatum[];
+  unit: WaterfallUnit;
 }
 
 export interface FactorReasoningRow {
@@ -26,6 +45,7 @@ export interface FactorReasoningRow {
 
 const NO_EXPLICIT_SHOCK = "Correlation credit; no explicit shock";
 const EPSILON = 1e-6;
+const WATERFALL_RECONCILIATION_TOLERANCE = 1e-6;
 const PERIPHERY_GROSS_THRESHOLD = 0.0025;
 const PERIPHERY_SINGLE_NAME_THRESHOLD = 0.0015;
 const PERIPHERY_TOTAL_SHARE_THRESHOLD = 0.2;
@@ -39,67 +59,12 @@ const GROUP_LABELS: Record<string, string> = {
   macro: "Macro"
 };
 
-interface WaterfallBar {
-  label: string;
+interface WaterfallStep {
+  id: string;
+  shortLabel: string;
+  fullLabel: string;
   value: number;
-  hoverLabel: string;
-}
-
-// --- Plotly theme from CSS tokens --------------------------------------------
-
-export interface ChartTheme {
-  text: string; // --text
-  fontMono: string; // --font-mono
-  up: string; // --up
-  down: string; // --down
-  total: string; // --accent-2
-  grid: string; // --chart-grid
-  connector: string; // --chart-connector
-}
-
-// Fallbacks mirror the current Hokusai Deep literals for jsdom/SSR where the
-// stylesheet isn't applied.
-const CHART_THEME_FALLBACK: ChartTheme = {
-  text: "#eef2ec",
-  fontMono: '"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace',
-  up: "#4cc38a",
-  down: "#e8615a",
-  total: "#7fb5d6",
-  grid: "rgba(238, 242, 236, 0.08)",
-  connector: "rgba(233, 216, 166, 0.3)"
-};
-
-let cachedChartTheme: ChartTheme | null = null;
-let cachedChartThemeKey: string | null = null;
-
-/** Reads the design tokens from :root, memoized PER THEME — the cache key is
- * `<html data-theme>`, so a theme toggle self-invalidates on the next read
- * (useTheme() re-renders the chart consumers, which call this again). Unset
- * properties fall back per-key to the dark literals so charts render
- * identically without a stylesheet. */
-export function chartTheme(): ChartTheme {
-  if (typeof document === "undefined") return CHART_THEME_FALLBACK;
-  const themeKey = document.documentElement.dataset.theme ?? "dark";
-  if (cachedChartTheme && cachedChartThemeKey === themeKey) return cachedChartTheme;
-  const styles = getComputedStyle(document.documentElement);
-  const read = (name: string, fallback: string): string =>
-    styles.getPropertyValue(name).trim() || fallback;
-  cachedChartTheme = {
-    text: read("--text", CHART_THEME_FALLBACK.text),
-    fontMono: read("--font-mono", CHART_THEME_FALLBACK.fontMono),
-    up: read("--up", CHART_THEME_FALLBACK.up),
-    down: read("--down", CHART_THEME_FALLBACK.down),
-    total: read("--accent-2", CHART_THEME_FALLBACK.total),
-    grid: read("--chart-grid", CHART_THEME_FALLBACK.grid),
-    connector: read("--chart-connector", CHART_THEME_FALLBACK.connector)
-  };
-  cachedChartThemeKey = themeKey;
-  return cachedChartTheme;
-}
-
-export function resetChartThemeForTests(): void {
-  cachedChartTheme = null;
-  cachedChartThemeKey = null;
+  kind: Exclude<WaterfallDatumKind, "residual" | "total">;
 }
 
 export function preferredAttributionMethod(result: ScenarioResult): AttributionMethod {
@@ -160,52 +125,55 @@ export function buildWaterfallData(
   result: ScenarioResult,
   method: AttributionMethod,
   factors?: FactorMetadataMap,
-  zoom: AttributionZoom = "factor"
+  zoom: AttributionZoom = "factor",
+  maxSteps = 14
 ): WaterfallData {
-  const bars = [
-    ...factorWaterfallBars(result, method, factors, zoom),
-    ...peripheryWaterfallBars(result)
-  ];
+  const unit = { kind: "percent" } as const;
+  const byFactor = selectedFactorAttribution(result, method);
+  const peripheryValues = result.portfolio_pnl.by_ticker_periphery;
+  const total = result.portfolio_pnl.total_pnl;
+  if (
+    !Number.isFinite(total) ||
+    !Object.values(byFactor).every(Number.isFinite) ||
+    !Object.values(peripheryValues).every(Number.isFinite)
+  ) {
+    return { bars: [], unit };
+  }
 
-  const x = [...bars.map((bar) => bar.label), "Total"];
-  const y = [...bars.map((bar) => bar.value), result.portfolio_pnl.total_pnl];
-  return {
-    x,
-    y,
-    measure: [...bars.map(() => "relative" as const), "total"],
-    text: y.map((value) => formatPercent(value)),
-    hoverText: [
-      ...bars.map((bar) => `${bar.hoverLabel}<br>${formatPercent(bar.value)}`),
-      `Total<br>${formatPercent(result.portfolio_pnl.total_pnl)}`
-    ]
-  };
+  const peripherySteps = peripheryWaterfallSteps(result);
+  const stepLimit = normalizeWaterfallStepLimit(maxSteps);
+  const factorLimit = Math.max(1, stepLimit - peripherySteps.length);
+  const factorSteps = factorWaterfallSteps(byFactor, factors, zoom, method, factorLimit);
+  return finalizeWaterfall([...factorSteps, ...peripherySteps], total, unit, formatSignedPercent);
 }
 
-function factorWaterfallBars(
-  result: ScenarioResult,
-  method: AttributionMethod,
+function factorWaterfallSteps(
+  byFactor: Record<string, number>,
   factors?: FactorMetadataMap,
-  zoom: AttributionZoom = "factor"
-): WaterfallBar[] {
-  const byFactor = selectedFactorAttribution(result, method);
+  zoom: AttributionZoom = "factor",
+  method: AttributionMethod = "naive",
+  maxSteps = 14
+): WaterfallStep[] {
   if (method === "conditional_grouped" || zoom === "group") {
-    return groupedFactorBars(byFactor, factors);
+    return limitFactorSteps(groupedFactorSteps(byFactor, factors), maxSteps);
   }
-  return Object.entries(byFactor)
+  const steps = Object.entries(byFactor)
     .filter(([, value]) => Math.abs(value) > EPSILON)
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-    .slice(0, 14)
     .map(([factor, value]) => ({
-      label: factorDisplayName(factors, factor, "short"),
+      id: `factor:${factor}`,
+      shortLabel: factorDisplayName(factors, factor, "short"),
+      fullLabel: factorDisplayName(factors, factor),
       value,
-      hoverLabel: factorDisplayName(factors, factor)
+      kind: "factor" as const
     }));
+  return limitFactorSteps(steps, maxSteps);
 }
 
-function groupedFactorBars(
+function groupedFactorSteps(
   byFactor: Record<string, number>,
   factors?: FactorMetadataMap
-): WaterfallBar[] {
+): WaterfallStep[] {
   const totals = new Map<string, number>();
   for (const [factor, value] of Object.entries(byFactor)) {
     const group = factorGroup(factors, factor);
@@ -218,11 +186,35 @@ function groupedFactorBars(
     .map(([group, value]) => {
       const label = factorGroupLabel(group);
       return {
-        label,
+        id: `group:${group}`,
+        shortLabel: label,
+        fullLabel: `${label} factor group`,
         value,
-        hoverLabel: `${label} factor group`
+        kind: "factor" as const
       };
     });
+}
+
+function limitFactorSteps(steps: WaterfallStep[], maxSteps: number): WaterfallStep[] {
+  const limit = normalizeWaterfallStepLimit(maxSteps);
+  if (steps.length <= limit) return steps;
+  const visible = steps.slice(0, Math.max(0, limit - 1));
+  const hidden = steps.slice(visible.length);
+  return [
+    ...visible,
+    {
+      id: "factor:other",
+      shortLabel: "Other factors",
+      fullLabel: `${hidden.length} other factors`,
+      value: hidden.reduce((sum, step) => sum + step.value, 0),
+      kind: "aggregate"
+    }
+  ];
+}
+
+function normalizeWaterfallStepLimit(maxSteps: number): number {
+  if (!Number.isFinite(maxSteps)) return 14;
+  return Math.max(1, Math.floor(maxSteps));
 }
 
 function factorGroup(factors: FactorMetadataMap | undefined, factor: string): string {
@@ -243,7 +235,7 @@ function factorGroupLabel(group: string): string {
     .join(" ");
 }
 
-function peripheryWaterfallBars(result: ScenarioResult): WaterfallBar[] {
+function peripheryWaterfallSteps(result: ScenarioResult): WaterfallStep[] {
   const entries = Object.entries(result.portfolio_pnl.by_ticker_periphery)
     .filter(([, value]) => Math.abs(value) > EPSILON)
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
@@ -263,29 +255,82 @@ function peripheryWaterfallBars(result: ScenarioResult): WaterfallBar[] {
     }
     return [
       {
-        label: "Periphery",
+        id: "periphery",
+        shortLabel: "Periphery",
+        fullLabel: "Periphery idiosyncratic shocks",
         value: peripheryTotal,
-        hoverLabel: "Periphery idiosyncratic shocks"
+        kind: "periphery"
       }
     ];
   }
 
   const visible = entries.slice(0, PERIPHERY_MAX_VISIBLE_NAMES);
-  const bars = visible.map(([ticker, value]) => ({
-    label: `${ticker} periphery`,
+  const bars: WaterfallStep[] = visible.map(([ticker, value]) => ({
+    id: `periphery:${ticker}`,
+    shortLabel: `${ticker} periphery`,
+    fullLabel: `${ticker} idiosyncratic shock`,
     value,
-    hoverLabel: `${ticker} idiosyncratic shock`
+    kind: "periphery" as const
   }));
   const visibleTotal = visible.reduce((acc, [, value]) => acc + value, 0);
   const other = peripheryTotal - visibleTotal;
   if (Math.abs(other) > EPSILON) {
     bars.push({
-      label: "Other periphery",
+      id: "periphery:other",
+      shortLabel: "Other periphery",
+      fullLabel: "Other idiosyncratic shocks",
       value: other,
-      hoverLabel: "Other idiosyncratic shocks"
+      kind: "aggregate"
     });
   }
   return bars;
+}
+
+function finalizeWaterfall(
+  steps: WaterfallStep[],
+  total: number,
+  unit: WaterfallUnit,
+  formatValue: (value: number) => string
+): WaterfallData {
+  let cumulative = 0;
+  const bars: WaterfallDatum[] = steps.map((step) => {
+    const start = cumulative;
+    cumulative += step.value;
+    return {
+      ...step,
+      start,
+      end: cumulative,
+      formattedValue: formatValue(step.value)
+    };
+  });
+
+  const residual = total - cumulative;
+  if (Math.abs(residual) > WATERFALL_RECONCILIATION_TOLERANCE) {
+    const start = cumulative;
+    cumulative = total;
+    bars.push({
+      id: "residual",
+      shortLabel: "Residual",
+      fullLabel: "Unreconciled contribution residual",
+      value: residual,
+      start,
+      end: cumulative,
+      formattedValue: formatValue(residual),
+      kind: "residual"
+    });
+  }
+
+  bars.push({
+    id: "total",
+    shortLabel: "Total",
+    fullLabel: "Total portfolio P&L",
+    value: total,
+    start: 0,
+    end: total,
+    formattedValue: formatValue(total),
+    kind: "total"
+  });
+  return { bars, unit };
 }
 
 function shouldExpandPeriphery(entries: [string, number][], totalPnl: number): boolean {
@@ -349,6 +394,10 @@ export function topContributor(
 
 export function formatPercent(value: number, digits = 2): string {
   return `${(value * 100).toFixed(digits)}%`;
+}
+
+function formatSignedPercent(value: number, digits = 2): string {
+  return `${value > 0 ? "+" : ""}${formatPercent(value, digits)}`;
 }
 
 export interface AnalogReplayRow {
@@ -548,18 +597,21 @@ export function buildWaterfallDataDollars(
   nav: number,
   currency = "USD",
   factors?: FactorMetadataMap,
-  zoom: AttributionZoom = "factor"
+  zoom: AttributionZoom = "factor",
+  maxSteps = 14
 ): WaterfallData {
-  const base = buildWaterfallData(result, method, factors, zoom);
+  const unit = { kind: "currency", currency } as const;
+  if (!Number.isFinite(nav) || nav <= 0) return { bars: [], unit };
+  const base = buildWaterfallData(result, method, factors, zoom, maxSteps);
   return {
-    x: base.x,
-    y: base.y.map((value) => value * nav),
-    measure: base.measure,
-    text: base.y.map((value) => formatSignedCurrency(value * nav, currency)),
-    hoverText: base.hoverText.map((text, index) => {
-      const value = base.y[index] ?? 0;
-      return `${text}<br>${formatSignedCurrency(value * nav, currency)}`;
-    })
+    bars: base.bars.map((bar) => ({
+      ...bar,
+      value: bar.value * nav,
+      start: bar.start * nav,
+      end: bar.end * nav,
+      formattedValue: formatSignedCurrency(bar.value * nav, currency)
+    })),
+    unit
   };
 }
 

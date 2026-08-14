@@ -126,7 +126,7 @@ export function ResultsPanel({
   // across the null→result transition (the old in-App version relied on the
   // zero-hooks mount-dispatcher loophole; same rendered output, safer order).
   const isPhone = useMediaQuery("(max-width: 640px)");
-  // Viewport-height bands: phone keeps the 320/-90°-ticks contract; short
+  // Viewport-height bands: phone keeps a dense 320px horizontal canvas; short
   // laptops drop to 360; tall monitors get 480 instead of wasting space.
   const isShortViewport = useMediaQuery("(max-height: 720px)");
   const isTallViewport = useMediaQuery("(min-height: 900px)");
@@ -157,10 +157,10 @@ export function ResultsPanel({
   // one lands; the non-null narrowing happens past the early return.
   //
   // Why memoize at all: `navInput` is App state, so a keystroke in the notional
-  // field re-rendered this whole tree — re-sorting every holding, rebuilding the
-  // 14-bar waterfall, and (because react-plotly.js compares props by reference)
-  // forcing a full Plotly re-plot per character. Note `mainAttribution`,
-  // `factorRows` and `readoutMethod` do not depend on nav at all.
+  // field re-rendered this whole tree — re-sorting every holding and rebuilding
+  // the waterfall per character. `chartNav` stays null in percent mode, so NAV
+  // edits cannot invalidate chart data until dollar display is active. Note
+  // `mainAttribution`, `factorRows` and `readoutMethod` do not depend on nav.
   const pending = envelope?.result ?? null;
   const currency = pending?.reporting_currency ?? "USD";
   // Shares (MTM) results carry an authoritative marked NAV (read-only); otherwise
@@ -168,6 +168,8 @@ export function ResultsPanel({
   const isMarked = Boolean(pending?.position_quantities);
   const nav = isMarked ? pending?.portfolio_nav ?? null : parseNav(navInput);
   const showDollars = nav != null && displayMode === "usd";
+  const chartNav = showDollars ? nav : null;
+  const maxWaterfallSteps = isPhone ? 9 : 14;
   const mainAttributionMemo = useMemo(
     () => (pending ? selectMainAttribution(pending) : null),
     [pending]
@@ -175,10 +177,24 @@ export function ResultsPanel({
   const attributionMethod = mainAttributionMemo?.method ?? null;
   const waterfallMemo = useMemo(() => {
     if (!pending || !attributionMethod) return null;
-    return showDollars && nav != null
-      ? buildWaterfallDataDollars(pending, attributionMethod, nav, currency, factorMeta, zoom)
-      : buildWaterfallData(pending, attributionMethod, factorMeta, zoom);
-  }, [pending, attributionMethod, showDollars, nav, currency, factorMeta, zoom]);
+    return chartNav != null
+      ? buildWaterfallDataDollars(
+          pending,
+          attributionMethod,
+          chartNav,
+          currency,
+          factorMeta,
+          zoom,
+          maxWaterfallSteps
+        )
+      : buildWaterfallData(
+          pending,
+          attributionMethod,
+          factorMeta,
+          zoom,
+          maxWaterfallSteps
+        );
+  }, [pending, attributionMethod, chartNav, currency, factorMeta, zoom, maxWaterfallSteps]);
   const factorRows = useMemo(
     () =>
       pending && attributionMethod
@@ -378,7 +394,6 @@ export function ResultsPanel({
             <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
             <WaterfallChart
               waterfall={waterfall}
-              showDollars={showDollars}
               chartHeight={chartHeight}
               isPhone={isPhone}
             />

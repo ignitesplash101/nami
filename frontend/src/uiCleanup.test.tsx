@@ -2,10 +2,18 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ScenarioPanel } from "./panels/ScenarioPanel";
 import { ResultsPanel } from "./results/ResultsPanel";
+import type { WaterfallData } from "./charts";
 import type { AccessResponse, ScenarioResult, ScenarioRunResponse } from "./types";
 
-vi.mock("./PlotLazy", () => ({
-  PlotLazy: () => <div data-testid="plot" />
+const { waterfallChartSpy } = vi.hoisted(() => ({
+  waterfallChartSpy: vi.fn<(props: { waterfall: WaterfallData }) => void>()
+}));
+
+vi.mock("./results/WaterfallChart", () => ({
+  WaterfallChart: (props: { waterfall: WaterfallData }) => {
+    waterfallChartSpy(props);
+    return <div data-testid="waterfall-chart" />;
+  }
 }));
 
 vi.mock("./api", async () => {
@@ -222,6 +230,43 @@ describe("first-screen UI cleanup", () => {
     const stressed = document.querySelector(".results-toolbar .nav-stressed");
     expect(stressed).not.toBeNull();
     expect(stressed).toHaveTextContent(/stressed/);
+  });
+
+  it("keeps percent waterfall data stable across NAV edits and rebuilds it for dollars", () => {
+    waterfallChartSpy.mockClear();
+    const factorMeta = {};
+    const envelope = envelopeFixture();
+    const panel = (navInput: string, displayMode: "pct" | "usd") => (
+      <ResultsPanel
+        envelope={envelope}
+        factorMeta={factorMeta}
+        displayMode={displayMode}
+        setDisplayMode={() => {}}
+        navInput={navInput}
+        setNavInput={() => {}}
+        valuationSort={{ key: "delta", dir: "asc" }}
+        setValuationSort={() => {}}
+        isRunning={false}
+        canDecompose={false}
+        isDecomposing={false}
+        decomposeProgress={null}
+        onDecompose={() => {}}
+        onOpenMethodology={() => {}}
+        canSave={false}
+        onSave={() => {}}
+      />
+    );
+
+    const { rerender } = render(panel("100000", "pct"));
+    const percentWaterfall = waterfallChartSpy.mock.lastCall?.[0].waterfall;
+    rerender(panel("250000", "pct"));
+    const editedPercentWaterfall = waterfallChartSpy.mock.lastCall?.[0].waterfall;
+    expect(editedPercentWaterfall).toBe(percentWaterfall);
+
+    rerender(panel("250000", "usd"));
+    const dollarWaterfall = waterfallChartSpy.mock.lastCall?.[0].waterfall;
+    expect(dollarWaterfall).not.toBe(percentWaterfall);
+    expect(dollarWaterfall?.unit).toEqual({ kind: "currency", currency: "USD" });
   });
 
   it("keeps result actions separate from value and display controls", () => {
