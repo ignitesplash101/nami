@@ -38,13 +38,17 @@ The cache (GCS, 7-day TTL, [`app/data/cache.py`](../app/data/cache.py)) still ab
 
 **Standing cost: the daily pre-warm.** [`.github/workflows/prewarm.yml`](../.github/workflows/prewarm.yml) runs [`scripts/prewarm_samples.py`](../scripts/prewarm_samples.py) at 21:30 UTC on weekdays, warming every sample combination just after the 16:00 ET as-of rollover. Measured effect: a cold combination takes ~55s, a warm one ~0.4s. Cost is **~$1.30 per trading day (~$27/month)** and it is genuinely additional — on a day nobody visits a given combination, that combination's warm is wasted. Trim it with the workflow's `limit` input or by shrinking the sample sets.
 
-**Admin cost ceiling**: not bounded by code. The admin passcode is the gate. If the passcode leaks, abuse is bounded only by Vertex AI quotas (see below).
+**Admin cost ceiling**: admin calls use the same paid-run and estimated-cost breakers.
+The passcode expands access to arbitrary books, adjustments, and multi-call theme
+sensitivity, so a leak can consume that daily allowance much faster than visitor traffic.
+Rotate a leaked passcode immediately; the breaker and billing alerts are the backstops.
 
 ---
 
 ## Defense-in-depth (GCP Console steps — user action)
 
-Even with the above, two GCP-level controls add belt-and-braces protection.
+The billing alert below adds an independent fire alarm. Vertex's current throughput
+model is documented separately because it is not an editable spend cap.
 
 ### 1. Monthly billing budget with email alerts (2 min)
 
@@ -67,21 +71,20 @@ admin activity, check cache health first.
 
 (The `gcloud billing budgets create` CLI requires JSON body parameters that the simple flag form doesn't accept; the Console form is faster and more reliable.)
 
-### 2. Vertex AI request-quota cap (3 min)
+### 2. Vertex AI Dynamic Shared Quota (not a spend cap)
 
-Caps the number of Gemini requests per minute / per day at the project level. If hit, requests fail with `429 Too Many Requests` — billing never accumulates beyond the cap.
+Gemini 3.8 Flash pay-as-you-go uses
+[Dynamic Shared Quota](https://cloud.google.com/vertex-ai/generative-ai/docs/resources/throughput-quota),
+which has no predefined per-model request limit to lower in the Quotas console. The
+Service Usage API likewise exposes no `gemini-3.8-flash` quota bucket for this project
+(verified 2026-09-03). A `429 Resource Exhausted` response means shared capacity is
+temporarily busy; it is not evidence that a project-owned daily cap stopped spend.
 
-1. Open https://console.cloud.google.com/iam-admin/quotas?project=nami-497405
-2. Filter: `Service: Vertex AI API`
-3. Find the relevant quota for `gemini-3.8-flash` (typical name: `Generate content requests per minute per project per base model`). Quotas are **per base model** — an override set for `gemini-3.7-flash` does NOT cover `gemini-3.8-flash`; re-create it after a model upgrade.
-4. Select → **EDIT QUOTAS** → request override → set a low limit (e.g. `60 per minute`, `5000 per day`)
-5. Submit
-
-Recommended starting caps (room for legitimate use, no room for runaway):
-- Requests per minute: `60` (enough for streaming UI + a few simultaneous users)
-- Requests per day: `1000` (a hard ~$27/day worst case at ~$0.027 per cache-miss-grade call — aligned with the in-app $25/day cost breaker)
-
-If you ever legitimately need more, raise the cap from the same page in 30 seconds.
+Do not describe a legacy `Generate content requests per minute per project per base
+model` override as protection for 3.8. The enforceable spend controls for this deployment
+are the in-app daily breaker, authentication gates, cache/single-flight behavior, and the
+billing alert above. Workloads that require reserved capacity can evaluate Provisioned
+Throughput, but that is a capacity purchase rather than a hard billing ceiling.
 
 ### 3. Admin-passcode hygiene
 
@@ -99,7 +102,7 @@ Cloud Run will roll the revision and existing admin cookies will be invalidated 
 
 ## What is NOT mitigated
 
-- **Gemini unit-price changes**: Google can change Gemini 3.8 Flash pricing unilaterally. The quota cap above bounds *units*, not *dollars per unit*. The in-app estimator's prices live in `app/config.py` (`PRICE_INPUT_PER_MTOK` / `PRICE_OUTPUT_PER_MTOK` overridable via env). They intentionally use the $1.50/$7.50 rates that begin after the introductory period ends on 2026-12-31; thinking tokens are booked at the output rate. Re-check both defaults whenever Google reprices the model.
+- **Gemini unit-price changes**: Google can change Gemini 3.8 Flash pricing unilaterally. Dynamic Shared Quota does not bound units or dollars. The in-app estimator's prices live in `app/config.py` (`PRICE_INPUT_PER_MTOK` / `PRICE_OUTPUT_PER_MTOK` overridable via env). They intentionally use the $1.50/$7.50 rates that begin after the introductory period ends on 2026-12-31; thinking tokens are booked at the output rate. Re-check both defaults whenever Google reprices the model.
 - **Cache infrastructure failure**: if the GCS bucket becomes unwritable, every request becomes a cache miss. The billing alert catches this within 24 hrs.
 - **Side-channel cost**: yfinance is free but rate-limited; Firestore reads/writes are sub-cent at this scale; Cloud Run egress on free-tier-adjacent volumes. Negligible.
 
@@ -112,4 +115,4 @@ Cloud Run will roll the revision and existing admin cookies will be invalidated 
 | Anonymous visitor spam Gemini → $1000 bill | Paid-run and estimated-cost breakers cap daily exposure | Code (budget gates + GCS cache) |
 | Admin passcode leak | Rotate passcode in Secret Manager | Operator action |
 | Logic bug bypasses gate | Monthly budget alert at $20 | GCP billing budget (Console) |
-| Pricing change / cache outage | Vertex AI per-minute and per-day quota cap | GCP quotas (Console) |
+| Pricing change / cache outage | Conservative in-app cost breaker plus billing alerts | Code + GCP Billing |
