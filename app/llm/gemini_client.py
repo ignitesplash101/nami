@@ -86,6 +86,11 @@ def _is_timeout_error(exc: Exception) -> bool:
     """True for request-timeout failures anywhere in the genai/httpx stack."""
     if isinstance(exc, TimeoutError):
         return True
+    # The Vertex API reports a server-side generation deadline through the SDK's
+    # generic ServerError, not an httpx timeout type. Treat HTTP 504 and its
+    # canonical status as the same retryable timeout contract.
+    if getattr(exc, "code", None) == 504 or getattr(exc, "status", None) == "DEADLINE_EXCEEDED":
+        return True
     try:
         import httpx
     except ImportError:  # pragma: no cover — httpx ships with google-genai

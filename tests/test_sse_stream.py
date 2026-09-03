@@ -9,6 +9,7 @@ import time
 
 import httpx
 import pytest
+from google.genai.errors import ServerError
 
 from app.api import main as api_main
 from app.llm.gemini_client import GeminiClient, _is_timeout_error
@@ -60,6 +61,18 @@ def test_is_timeout_error_variants() -> None:
     assert _is_timeout_error(TimeoutError())
     assert _is_timeout_error(httpx.ReadTimeout("deadline"))
     assert _is_timeout_error(httpx.ConnectTimeout("deadline"))
+    assert _is_timeout_error(
+        ServerError(
+            504,
+            {
+                "error": {
+                    "code": 504,
+                    "message": "Deadline expired before operation could complete.",
+                    "status": "DEADLINE_EXCEEDED",
+                }
+            },
+        )
+    )
     assert not _is_timeout_error(ValueError("not a timeout"))
 
 
