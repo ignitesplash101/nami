@@ -2,7 +2,7 @@
 
 Result is cached separately under prefix='decomposition_cache' so the same scenario on
 the same day with the same portfolio reuses the split — narrative decomposition is
-LLM-driven and not deterministic across runs even at temperature=0.
+LLM-driven and not deterministic across runs.
 """
 
 from __future__ import annotations

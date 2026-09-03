@@ -22,7 +22,7 @@ disclaimer is enforced in `app/utils/disclaimers.py` and rendered on every page.
 
 - **Python 3.12** + **uv**; **FastAPI** backend at `app/api/main.py`
 - **React + TypeScript + Vite + React-owned SVG/D3 scales** frontend under `frontend/`
-- **GCP** — Vertex AI (`gemini-3.7-flash`, region `global`), Cloud Storage
+- **GCP** — Vertex AI (`gemini-3.8-flash`, region `global`), Cloud Storage
   (cache), Firestore (persistence), Cloud Run + Cloud Build (deploy, region
   `asia-northeast1` — the region split matters; see deploy-ops).
 
@@ -110,7 +110,7 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–40 shipped (most recently Phase 40: a hardened dual-layer workbench with
-a responsive React-owned D3/SVG waterfall and multi-engine release gates).
+Phases 0–41 shipped (most recently Phase 41: the Gemini 3.8 Flash runtime upgrade
+with request-contract hardening and live semantic verification).
 The full append-only log — one dated entry per phase with scope and rationale —
 lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

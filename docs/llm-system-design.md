@@ -24,13 +24,13 @@ The orchestrator runs Call 1 with the pre-fetched event registry, then *parallel
 
 ## 2. Why grounding and `response_schema` can't share a call
 
-Documented in [`app/llm/gemini_client.py`](../app/llm/gemini_client.py) docstring lines 1–9: when Gemini Flash (observed on 3.5 Flash) receives both a `tools=[google_search]` config and a `response_schema=...` config, **it frequently honors the schema and skips the search tool**. The result is valid JSON with no `grounding_metadata` — i.e., the narrative looks current but isn't actually sourced. The split is retained unchanged on Gemini 3.7 Flash.
+Documented in [`app/llm/gemini_client.py`](../app/llm/gemini_client.py) docstring lines 1–9: when Gemini Flash (observed on 3.5 Flash) receives both a `tools=[google_search]` config and a `response_schema=...` config, **it frequently honors the schema and skips the search tool**. The result is valid JSON with no `grounding_metadata` — i.e., the narrative looks current but isn't actually sourced. The split is retained unchanged on Gemini 3.8 Flash.
 
 The fix is the Call 2a / Call 2b split:
 - **Call 2a** runs with `tools=[google_search]` and *no* schema → forces a real search → returns free text + citations
 - **Call 2b** runs with the schema and *no* tools → forces structured extraction → returns the typed `ShockProposalOutput`
 
-Both calls run with the same `temperature=0` and the orchestrator stitches them back together via `model_copy(update={"narrative": narrative})`. The pipeline raises `RuntimeError` if Call 2a returns empty citations — no fallback, no silent ungrounded path ([`gemini_client.py:132–136`](../app/llm/gemini_client.py)).
+Both calls omit deprecated sampling parameters; schema-constrained calls may use the supported `LOW`, `MEDIUM`, or `HIGH` thinking levels. The orchestrator stitches them back together via `model_copy(update={"narrative": narrative})`. The pipeline raises `RuntimeError` if Call 2a returns empty citations — no fallback, no silent ungrounded path ([`gemini_client.py`](../app/llm/gemini_client.py)).
 
 This is documented in code, not just docs. Reviewers can grep for the assertion.
 
@@ -63,13 +63,13 @@ The full version history is in the file header. Highlights:
 - v9 → v10: factor-universe breadth. Four new factors enter the LLM payload — `EFA` (developed ex-US equities), `HYG` (high-yield credit), `GLD` (gold), `SHY` (short-duration Treasuries), all decimal price returns with horizon-neutral descriptions — and rule 7's overlap enumeration gains `EFA`. The event registry grew 17 → 31 with four new tags (`technology`, `volatility`, `credit`, `disaster`); registry edits ride `events_version`, but the new factor descriptions alone require the prompt bump.
 - v10 → v11: grounded-narrative source quality. Google Search grounding now prefers official public-market sources, academic/institutional research, and major news, while discouraging broker marketing, retail/crypto sites, SEO explainers, and Wikipedia when stronger evidence exists. This is guidance, not an allowlist.
 
-ML-systems framing: this is *experiment versioning*. Same prompt + same model + same data + same code → byte-for-byte same output (modulo Gemini's own non-determinism, which `temperature=0` reduces but doesn't eliminate). Bump the version when any input to that contract changes.
+ML-systems framing: this is *experiment versioning*. The prompt, model, data, and code determine cache identity even though an uncached model call is not bit-deterministic. Bump the version when any input to that contract changes.
 
 ---
 
 ## 4. Semantic-only evals (no magnitude bounds)
 
-Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py). Three tests are network-gated on `RUN_NETWORK_TESTS=1`. At Gemini 3.7 Flash's post-promotion rates, the budget breaker conservatively estimates about $0.25 for the suite; billed token prices are half that through 2026-12-31. The assertions are deliberately *semantic*, not numeric:
+Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py). Three tests are network-gated on `RUN_NETWORK_TESTS=1`. At Gemini 3.8 Flash's post-promotion rates, the budget breaker conservatively estimates about $0.25 for the suite; billed token prices are half that through 2026-12-31. The assertions are deliberately *semantic*, not numeric:
 
 | test | assertion |
 |---|---|
@@ -79,7 +79,7 @@ Live-LLM tests live in [`tests/test_live_evals.py`](../tests/test_live_evals.py)
 
 Why no magnitude bounds? Three reasons:
 1. **News drifts.** Same scenario text two months apart returns different grounded narratives because Google Search results have changed. The numbers ride that drift.
-2. **Gemini is not bit-deterministic** even at `temperature=0`. Same input can produce slightly different floats across runs and across model patch versions.
+2. **Gemini is not bit-deterministic.** Same input can produce slightly different floats across runs and across model patch versions.
 3. **The deterministic invariants live elsewhere.** [`app/llm/validation.py::validate_shock_proposal`](../app/llm/validation.py) and the offline `tests/test_validation.py` suite enforce: every factor name is in `FACTORS`, no duplicates, no hallucinated tickers, factor shocks with envelope `count ≥ 3` stay inside `[p10, p90]`. The retry loop in `propose_shocks_with_retry` re-asks Gemini once with the violation list embedded; on second failure it raises.
 
 So the offline suite holds *structure* (codified contracts) while the network-gated suite holds *mechanism* (does the LLM's understanding of pandemics still link to pandemic analogs?). Together they let the snapshot in [`docs/backtest_results.md`](backtest_results.md) be an honest dated record rather than a stable benchmark.
@@ -122,7 +122,7 @@ Tests: [`tests/test_scenario_backdating.py`](../tests/test_scenario_backdating.p
 
 Every saved scenario (Firestore `saved_scenarios/{id}`) stores a full `ScenarioReproducibility` block inline ([`app/api/main.py::_build_reproducibility`](../app/api/main.py)):
 
-- `model_id` (e.g. `gemini-3.7-flash`)
+- `model_id` (e.g. `gemini-3.8-flash`)
 - `prompt_version` (current `PROMPT_VERSION`)
 - `factor_universe_version` (hash of `FACTORS` dict)
 - `events_version` (hash of `historical_events.yaml`)
@@ -142,4 +142,4 @@ What this buys: a scenario saved today can be re-rendered a year later from the 
 
 - **Attribution as ML interpretability.** The 4 attribution maps in [`app/factors/attribution.py`](../app/factors/attribution.py) treat the linear factor model `R_p = Σ β_i · w_i · F` as a multivariate function and apply Shapley credit allocation. The product split is deliberate: **Scenario shocks** is the production risk view, **Group totals** is the risk-committee view, and `Naive algebra` plus `Full conditional diagnostic` stay in advanced diagnostics. The backend grouped map remains factor-level after within-group redistribution; the UI waterfall sums it into true Market / Sector / Style / Macro totals and keeps factor detail in the table. The "Conditional Shapley" name follows Aas et al. (2021) and Janzing et al. (2020) — credit is allocated under the *historical conditional distribution* of factor returns, computed via `shap.LinearExplainer((coefs, intercept), masker=shap.maskers.Impute(background))`. This is not a causal decomposition. The full diagnostic can credit unshocked factors through correlation; it never drives the headline readout. Periphery remains outside factor Shapley and is surfaced as ticker-level idiosyncratic contribution when gross periphery is material.
 
-- **Theme-sensitivity Shapley** ([`app/llm/narrative_shapley.py`](../app/llm/narrative_shapley.py)) is fixed-context scenario-theme sensitivity: a scenario is decomposed into N=2..4 sub-narratives, then re-run on 2^N − 1 subsets in parallel (4-worker `ThreadPoolExecutor`), then Shapley-aggregated. Each subset **pins the source scenario's analog set and uses the analog-only narrative path (no Google re-grounding)** — only the shock proposal varies per fragment, so `v(S)` is deterministic. It measures the marginal shock each theme adds *within the original analog context*; illustrative, not causal risk attribution. Framed honestly in the UI as "Experimental:".
+- **Theme-sensitivity Shapley** ([`app/llm/narrative_shapley.py`](../app/llm/narrative_shapley.py)) is fixed-context scenario-theme sensitivity: a scenario is decomposed into N=2..4 sub-narratives, then re-run on 2^N − 1 subsets in parallel (4-worker `ThreadPoolExecutor`), then Shapley-aggregated. Each subset **pins the source scenario's analog set and uses the analog-only narrative path (no Google re-grounding)** — only the shock proposal varies per fragment. This removes analog-selection and current-news drift, but uncached model calls remain stochastic; warm-cache repeats are reproducible, and the Shapley arithmetic is deterministic only for a fixed payoff map. It measures the marginal shock each theme adds *within the original analog context*; illustrative, not causal risk attribution. Framed honestly in the UI as "Experimental:".

@@ -4,9 +4,9 @@ Decomposes a scenario into N sub-narratives (2 ≤ N ≤ 4) and computes the exa
 value of each under the payoff v(S) := total_pnl(run_scenario(" ".join(S))). Each subset
 run is **fixed-context**: it reuses the SOURCE scenario's analog set (`pinned_event_ids`)
 and the analog-only narrative path (no Google re-grounding), so the only thing varying
-across subsets is the shock proposal for that fragment text. This makes v(S) deterministic
-(modulo temperature) and reproducible — versus re-selecting analogs + re-grounding per
-subset, which was noisy and news-dependent.
+across subsets is the shock proposal for that fragment text. This removes analog-selection
+and current-news drift, but an uncached shock proposal can still vary between model calls.
+Warm-cache repeats are reproducible.
 
 This is decomposition SENSITIVITY, not a causal decomposition: it measures the marginal
 shock each theme adds WITHIN the original analog context. Frame it as illustrative in UI
@@ -87,9 +87,9 @@ def compute_narrative_shapley(
 
     # Fixed-context attribution: pin the SOURCE scenario's analog set across every
     # subset and skip per-subset Google re-grounding, so the only thing that varies
-    # is the shock proposal for that sub-narrative text. This makes the payoff
-    # v(S) deterministic (vs. re-selecting analogs + re-grounding per subset). Falls
-    # back to per-subset selection if the source carried no event ids (old cache).
+    # is the shock proposal for that sub-narrative text. This removes context/news
+    # drift but not model-call stochasticity. Falls back to per-subset selection if
+    # the source carried no event ids (old cache).
     pinned_ids = original_result.selected_event_ids or None
 
     def _run_one(mask: int) -> float:
@@ -110,7 +110,8 @@ def compute_narrative_shapley(
     # callback fires from the main thread (Streamlit's `st.progress` is not safe to
     # call from worker threads; the FastAPI SSE/WebSocket replacement has the same
     # requirement). `subset_pnls` is keyed by mask, not by completion order, so the
-    # downstream Shapley math is deterministic regardless of how the pool drained.
+    # downstream Shapley math is deterministic for a fixed payoff map regardless
+    # of how the pool drained.
     progress_lock = threading.Lock()
     done = 0
     with ThreadPoolExecutor(max_workers=max_workers) as pool:

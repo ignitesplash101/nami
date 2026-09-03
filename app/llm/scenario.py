@@ -763,8 +763,8 @@ def run_scenario(
     effective_as_of = resolve_effective_market_date(requested_as_of, today_fn=lambda: live_as_of)
     is_backdated = effective_as_of < live_as_of
     # Pinned-analog runs (narrative-decomposition subsets) skip analog selection and
-    # the live Google-Search grounding so subset payoffs are deterministic. They
-    # share the analog-only narrative path with backdated runs.
+    # live Google-Search grounding, removing context/news drift while leaving model
+    # calls stochastic. They share the analog-only narrative path with backdated runs.
     use_analog_only = is_backdated or pinned_event_ids is not None
     progress = progress or _noop
 
@@ -908,7 +908,7 @@ def run_scenario(
         progress("analogs", "start")
         if pinned_event_ids is not None:
             # Fixed-context decomposition: reuse the source scenario's analog set
-            # verbatim (no LLM re-selection) so subset payoffs are deterministic.
+            # verbatim so subset payoffs do not drift through LLM re-selection.
             selected_ids = list(pinned_event_ids)
             selected_events = [
                 AnalogSelection(

@@ -92,7 +92,7 @@
 ## What these cases ARE evidence of
 
 - **Pipeline integrity end-to-end on a backdated path**: vintage-controlled analog filtering by `end_date <= as_of` works (the COVID case correctly excluded `covid-crash-2020` from eligible; the 2022 case correctly included it). Google Search is correctly disabled in `analog_only` mode (all three returned zero citations, matching `narrative_mode = "analog_only"`).
-- **Reproducibility**: re-running [`scripts/run_case_studies.py`](../scripts/run_case_studies.py) at `temperature=0` against a warm cache returns byte-for-byte identical results. The cache key incorporates `PROMPT_VERSION` so a future prompt bump would invalidate these snapshots cleanly.
+- **Reproducibility**: re-running [`scripts/run_case_studies.py`](../scripts/run_case_studies.py) against a warm cache returns byte-for-byte identical results; an uncached model call may vary. The cache key incorporates `PROMPT_VERSION` so a future prompt bump would invalidate these snapshots cleanly.
 - **Mechanism-level analog selection**: Case 2 picked the right reference events; Case 3 picked the right banking-stress family.
 - **Periphery-ticker plausibility**: COVID picked XOM/GE/AAPL/JPM (energy, industrials, supply-chain, financials); 2022 picked the FAANG+ stack; SVB picked defensives. All thematically defensible. This is a concentration-visibility check, not proof that idiosyncratic magnitudes are calibrated.
 

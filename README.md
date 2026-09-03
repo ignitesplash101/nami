@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/ignitesplash101/nami/actions/workflows/ci.yml/badge.svg)](https://github.com/ignitesplash101/nami/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](pyproject.toml)
-[![Vertex AI](https://img.shields.io/badge/Vertex_AI-Gemini_3.7_Flash-4285F4.svg)](docs/llm-system-design.md)
+[![Vertex AI](https://img.shields.io/badge/Vertex_AI-Gemini_3.8_Flash-4285F4.svg)](docs/llm-system-design.md)
 
 **波** — an evidence-aware scenario explorer for equity portfolios.
 
@@ -72,14 +72,14 @@ validation surfaces, analyst workflows, and production controls behind the demo.
 
 - **Python 3.12** + **FastAPI** backend
 - **React + TypeScript + Vite + React-owned SVG/D3 scales** frontend (`frontend/`)
-- **Vertex AI / Gemini 3.7 Flash** for the LLM calls (3 sub-calls per scenario)
+- **Vertex AI / Gemini 3.8 Flash** for the LLM calls (3 sub-calls per scenario)
 - **yfinance** for historical price data, cached in **Google Cloud Storage** (parquet) with 24-hour TTL
 - **GCS** also holds the scenario response cache (JSON, 7-day TTL — the de-dup layer)
 - **Firestore** (added Phase 11) for saved scenarios, named portfolios, dated snapshots, plus daily usage/budget counters, the auth-throttle, and the audit log
 - **slowapi** for per-IP rate limiting; optional **Sentry** for error tracking (no-op unless `SENTRY_DSN` is set)
 - **Cloud Run** for the deployed app, with **Secret Manager** for the admin passcode and **Cloud Build** (`nami-main-push` trigger) for CI/CD
 
-Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.7 Flash) in `global` (verified for this project on 2026-08-14; do not move it to a regional endpoint without a live preflight).
+Region split: Cloud Run + GCS + Firestore + Artifact Registry in `asia-northeast1`; Vertex AI (Gemini 3.8 Flash) in `global` (verified for this project on 2026-09-03; do not move it to a regional endpoint without a live preflight).
 
 ## Visitor vs admin
 
@@ -199,7 +199,7 @@ Then push to main and the trigger handles the rest.
 
 - **Attribution has product tiers.** The headline uses **Scenario shocks** when available; **Group totals** is the secondary risk-committee view. Periphery is a separate idiosyncratic overlay and material gross periphery is surfaced by ticker in the waterfall. `Naive algebra` and `Full conditional diagnostic` are advanced diagnostics only. Full conditional is data-dependent correlation credit under the historical conditional distribution, not causal attribution.
 - **Backdating is data-vintage-controlled, not model-vintage-controlled.** Events, factor history, and prices are strictly filtered to `≤ as_of`. The LLM's parametric knowledge is NOT — it still "knows" about COVID even when as_of is 2018. The UI banner makes this honest.
-- **`temperature=0` everywhere.** Same scenario + same portfolio + same effective as-of date + same prompt version + same model = same shocks, byte-for-byte cached.
+- **Sampling parameters are omitted.** Gemini 3.8 Flash ignores deprecated temperature/top-p/top-k controls, so nami relies on schema constraints and supported thinking levels; identical requests are served byte-for-byte from the scenario cache after the first run.
 - **Two cache-invalidation levers.** `PROMPT_VERSION` (currently v11) bumps with any change to prompt semantics OR `ScenarioResult` shape; the `regression_spec` cache-key component (estimator id + lookback + alpha + min_obs) self-invalidates on any engine-math or regression-config change. Post-cache overlays (mark-to-market, benchmark/active return) and display-only fields bump neither — they're attached after retrieval and never persisted.
 - **Shocks are episode total returns; betas are weekly.** The extraction prompt defines a shock as the cumulative move over the full stress episode (the selected analogs set the implied horizon) and the linear engine applies weekly betas to it under an explicit horizon-invariance assumption — documented honestly in `docs/methodology.md` ("Shock horizon and units"), including the no-clamp-below-−100% policy with its warning diagnostic.
 - **Sample portfolios are cap-weighted from a frozen, dated snapshot.** `app/data/sample_portfolio_weights.json` holds committed cap-weights + sector/country tags, regenerated offline by `scripts/refresh_sample_weights.py`. The runtime never scrapes, so weights can't drift and poison the cache.

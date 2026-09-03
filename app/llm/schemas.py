@@ -98,8 +98,9 @@ class NarrativeShapleyResult(BaseModel):
 
     Fixed-context shock attribution — each subset PINS the source scenario's analog
     set and uses the analog-only narrative path (no Google re-grounding), so only the
-    shock proposal varies per fragment. Deterministic and illustrative, not a causal
-    decomposition of the original scenario.
+    shock proposal varies per fragment. This removes context/news drift, but uncached
+    model calls remain stochastic. Illustrative, not a causal decomposition of the
+    original scenario.
     """
 
     model_config = ConfigDict(extra="forbid")

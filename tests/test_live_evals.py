@@ -1,4 +1,4 @@
-"""Live-LLM evaluation tests. Stochastic over news/search drift even with temperature=0.
+"""Live-LLM evaluation tests. Stochastic over news/search and model drift.
 
 These are NOT deterministic backtests — they hit real Gemini + Google Search. Use semantic
 assertions only (tag membership, ordering, presence-of-citation). Run-to-run output WILL

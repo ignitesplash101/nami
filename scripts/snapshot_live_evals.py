@@ -4,7 +4,7 @@ Runs the same 3 scenarios as tests/test_live_evals.py (current-day market_date,
 Google Search grounding active) and dumps the full result payload to JSON so the
 maintainer can populate the markdown snapshot table.
 
-Budget estimate: ~$0.08 per scenario × 3 = ~$0.25 at Gemini 3.7 Flash's
+Budget estimate: ~$0.08 per scenario × 3 = ~$0.25 at Gemini 3.8 Flash's
 post-promotion rates, including thinking tokens. Billed token prices are half those
 rates through 2026-12-31. Cache hits on identical scenario_text + portfolio + NYSE day
 make repeat runs free.
@@ -92,7 +92,6 @@ def _provenance() -> dict:
         "factor_universe_version": factor_universe_version(),
         "events_version": events_version(),
         "nami_engine_version": NAMI_ENGINE_VERSION,
-        "llm_temperature": config.llm_temperature,
         "structured_thinking_level": config.structured_thinking_level,
     }
 

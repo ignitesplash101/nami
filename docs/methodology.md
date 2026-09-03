@@ -510,7 +510,7 @@ evidence and is preserved byte-for-byte).
 
 **Why the split?** Gemini Flash on Vertex AI honors `response_schema` faithfully but
 frequently skips invoking `google_search` when both are passed in one config (observed on
-3.5 Flash; nami keeps the split on 3.7 Flash). The result is valid JSON with no grounding
+3.5 Flash; nami keeps the split on 3.8 Flash). The result is valid JSON with no grounding
 metadata — i.e., the narrative *looks* current but isn't actually sourced. We refuse to
 return that. Splitting into two sub-calls guarantees the
 narrative is grounded (2a) and the structured output is well-formed (2b).
@@ -720,9 +720,10 @@ self-contained sub-narratives and assigns each its exact Shapley value over the 
 
 **Fixed context.** Each subset run **pins the source scenario's analog set** and uses the
 **analog-only narrative path (no Google re-grounding)** — so the only thing that varies
-across subsets is the shock proposal for that fragment's text. This makes `v(S)`
-deterministic and reproducible (modulo temperature + cache), versus the earlier design
-that re-selected analogs and re-grounded per subset (noisy, news-dependent).
+across subsets is the shock proposal for that fragment's text. This removes
+analog-selection and current-news drift, but an uncached shock proposal can still vary
+between model calls. Warm-cache repeats are reproducible; the Shapley arithmetic is
+deterministic only for a fixed subset-payoff map.
 
 **What it measures — and doesn't.** This is *theme sensitivity*: the marginal
 shock each theme adds **within the original analog context**. It is NOT a causal
@@ -734,12 +735,12 @@ When a portfolio value is set, each contribution is also shown in dollars
 
 **UX + cost.** Served over SSE (`/api/scenarios/decompose-stream`) so the UI shows
 "X / Y subset runs". Cost: `2^N − 1` runs (empty subset is the hardcoded zero) — N=4 is
-15 runs plus the decomposition call. Applying Gemini 3.7 Flash's post-promotion
+15 runs plus the decomposition call. Applying Gemini 3.8 Flash's post-promotion
 $1.50/$7.50 rates to the measured 2026-07-26 token usage (~$0.06–$0.10 per cache-miss
 run) gives roughly **$0.4**, in the $0.15–$0.80 band
 [`docs/cost-controls.md`](cost-controls.md) quotes — the previously printed $0.015 was a
 2.5-Flash-era figure that survived the repricing. N is capped at 4 (N=5 = 31 runs, too
-long for a synchronous UX). Actual Gemini 3.7 Flash token prices are half those rates
+long for a synchronous UX). Actual Gemini 3.8 Flash token prices are half those rates
 through 2026-12-31.
 
 Both Shapley sums (factor-level and theme-level) satisfy the **efficiency axiom**
@@ -750,14 +751,15 @@ news-drift variance the theme-sensitivity sum previously carried.
 
 ## Reproducibility & caching
 
-- `temperature=0` on every Gemini call.
+- Deprecated sampling parameters are omitted; optional structured-call reasoning uses
+  only the supported `LOW`, `MEDIUM`, or `HIGH` thinking levels.
 - The scenario response is keyed by SHA256 of:
   ```
   scenario_text.strip().lower()
   + sorted(portfolio_holdings)
   + portfolio_key                  # "us_tech_growth" / "custom" / ...
   + market_date.isoformat()
-  + vertex_model_id                # gemini-3.7-flash
+  + vertex_model_id                # gemini-3.8-flash
   + PROMPT_VERSION                 # bumped for any prompt OR schema change
   + factor_universe_version()      # 12-char hash of FACTORS dict
   + events_version()               # 12-char hash of historical_events.yaml
@@ -851,7 +853,7 @@ severity of the LLM-proposed, envelope-banded shocks.
   survivorship apply. The backdated-mode banner discloses this in-product, with the
   snapshot date.
 - **Not deterministic in narrative wording.** Shocks are reproducible by cache hash;
-  narrative text varies slightly across runs even at `temperature=0`.
+  narrative text varies slightly across uncached runs.
 - **Not investment advice.** Period.
 
 ---

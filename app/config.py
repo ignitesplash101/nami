@@ -14,8 +14,7 @@ class Config:
     vertex_ai_location: str
     gcs_bucket: str
     google_application_credentials: str | None = None
-    vertex_model_id: str = "gemini-3.7-flash"
-    llm_temperature: float = 0.0
+    vertex_model_id: str = "gemini-3.8-flash"
     # Thinking level for the SCHEMA-CONSTRAINED Gemini calls only (analog selection,
     # shock extraction, shock edit, decomposition). None = leave the server default
     # alone. The grounded narrative is deliberately never capped — it is the one call
@@ -47,7 +46,7 @@ class Config:
     daily_llm_run_cap: int = 500
     daily_llm_cost_cap_usd: float = 25.0
     # Vertex list prices (USD per 1M tokens) for the daily-budget breaker — cost
-    # ESTIMATION/budgeting only, not billing. Gemini 3.7 Flash has $0.75/$3.75
+    # ESTIMATION/budgeting only, not billing. Gemini 3.8 Flash has $0.75/$3.75
     # introductory pricing through 2026-12-31; these intentionally keep its
     # $1.50/$7.50 post-promotion rates so the breaker fails closed after expiry.
     # Output covers response AND thinking tokens.
@@ -61,6 +60,13 @@ def _split_origins(raw: str | None) -> tuple[str, ...]:
     return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
 
 
+def _thinking_level(env_name: str, model_id: str) -> str | None:
+    value = os.getenv(env_name) or None
+    if model_id == "gemini-3.8-flash" and value not in {None, "LOW", "MEDIUM", "HIGH"}:
+        raise ValueError(f"{env_name} for gemini-3.8-flash must be one of LOW, MEDIUM, HIGH")
+    return value
+
+
 def load_config() -> Config:
     required = ("GOOGLE_CLOUD_PROJECT", "VERTEX_AI_LOCATION", "GCS_BUCKET")
     missing = [v for v in required if not os.getenv(v)]
@@ -70,15 +76,16 @@ def load_config() -> Config:
             "Copy .env.example to .env and populate the required values."
         )
 
+    vertex_model_id = os.getenv("VERTEX_MODEL_ID", "gemini-3.8-flash")
+
     return Config(
         google_cloud_project=os.environ["GOOGLE_CLOUD_PROJECT"],
         vertex_ai_location=os.environ["VERTEX_AI_LOCATION"],
         gcs_bucket=os.environ["GCS_BUCKET"],
         google_application_credentials=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-        vertex_model_id=os.getenv("VERTEX_MODEL_ID", "gemini-3.7-flash"),
-        llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
-        structured_thinking_level=os.getenv("STRUCTURED_THINKING_LEVEL") or None,
-        selection_thinking_level=os.getenv("SELECTION_THINKING_LEVEL") or None,
+        vertex_model_id=vertex_model_id,
+        structured_thinking_level=_thinking_level("STRUCTURED_THINKING_LEVEL", vertex_model_id),
+        selection_thinking_level=_thinking_level("SELECTION_THINKING_LEVEL", vertex_model_id),
         market_data_cache_ttl_hours=int(os.getenv("MARKET_DATA_CACHE_TTL_HOURS", "24")),
         llm_cache_ttl_days=int(os.getenv("LLM_CACHE_TTL_DAYS", "7")),
         beta_lookback_weeks=int(os.getenv("BETA_LOOKBACK_WEEKS", "156")),

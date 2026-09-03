@@ -108,7 +108,6 @@ class GeminiClient:
             http_options=_types.HttpOptions(api_version="v1", timeout=GEMINI_CALL_TIMEOUT_MS),
         )
         self._model = config.vertex_model_id
-        self._temperature = config.llm_temperature
         # Applied to the SCHEMA-CONSTRAINED calls only (analog selection, shock
         # extraction, shock edit, decomposition) — never to the grounded narrative,
         # which is the one call whose job is actually synthesis. None means "leave
@@ -175,7 +174,6 @@ class GeminiClient:
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=DECOMPOSITION_PROMPT,
-                temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=DecompositionOutput,
                 thinking_config=self._structured_thinking,
@@ -191,7 +189,6 @@ class GeminiClient:
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=ANALOG_SELECTION_PROMPT,
-                temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=AnalogSelectionOutput,
                 thinking_config=self._selection_thinking,
@@ -291,7 +288,6 @@ class GeminiClient:
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=ANALOG_GROUNDED_NARRATIVE_PROMPT,
-                temperature=self._temperature,
                 # NO tools= — Google Search must not be invoked for backdated runs.
             ),
         )
@@ -316,7 +312,6 @@ class GeminiClient:
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=GROUNDED_NARRATIVE_PROMPT,
-                temperature=self._temperature,
                 tools=[self._types.Tool(google_search=self._types.GoogleSearch())],
             ),
         )
@@ -345,7 +340,6 @@ class GeminiClient:
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=SHOCK_EDIT_PROMPT,
-                temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=ShockEditPatch,
                 thinking_config=self._structured_thinking,
@@ -376,7 +370,6 @@ class GeminiClient:
             contents=user_msg,
             config=self._types.GenerateContentConfig(
                 system_instruction=SHOCK_EXTRACTION_PROMPT,
-                temperature=self._temperature,
                 response_mime_type="application/json",
                 response_schema=ShockProposalOutput,
                 thinking_config=self._structured_thinking,
