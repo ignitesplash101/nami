@@ -294,10 +294,15 @@ def compute_envelope(
 
 def events_version(path: Path | None = None) -> str:
     """Short (12-char) hash of the events registry file contents. Used in the scenario
-    cache key so any edit to the YAML invalidates cached responses. Process-cached."""
+    cache key so any edit to the YAML invalidates cached responses. Process-cached.
+
+    Line endings are normalized before hashing: a Windows checkout with
+    `core.autocrlf` materializes the YAML with CRLF, and hashing raw bytes gave
+    local runs a different registry version (cache keys, artifact provenance)
+    from the LF bytes the deployed service hashes."""
     return _events_version_cached(path or DEFAULT_REGISTRY_PATH)
 
 
 @functools.lru_cache(maxsize=8)
 def _events_version_cached(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]

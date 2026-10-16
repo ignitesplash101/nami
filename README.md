@@ -25,6 +25,8 @@ The name *nami* (波) is Japanese for "wave" — markets move in waves, factor s
 - **[System design](docs/llm-system-design.md)** — grounded interpretation, structured extraction, versioning, and semantic evals
 - **[Validation](docs/engine-replay-validation.md)** — modeled-versus-realized tracking across the event and sample-book matrix
 - **[Backdated case studies](docs/backdated-case-studies.md)** — known regimes replayed with explicit no-look-ahead controls
+- **[Completion study](docs/completion-study.md)** — what a scenario's unnamed factors should do, measured on 85 historical pairs with no language model
+- **[Shock calibration](docs/shock-calibration.md)** — the model's shock sizes against history, backdated and leave-one-out
 - **[Feature tour](docs/feature-tour.md)** — portfolio analytics, evidence surfaces, workflow, accessibility, and operations
 
 ---
@@ -197,6 +199,7 @@ Then push to main and the trigger handles the rest.
 
 ## Design choices worth knowing
 
+- **The scenario layer is measured, not assumed.** Fed each event's realized factor moves, the engine tracks realized book returns with r 0.98. Fed the language model's backdated, leave-one-out shocks, the same engine reaches r 0.20, because the shocks come out at about a quarter of the realized size. Two pre-registered studies ([completion](docs/completion-study.md), [shock calibration](docs/shock-calibration.md)) establish three things. Completing a scenario's unnamed factors by covariance is necessary whenever it names only a few. The model's magnitudes still beat history-only magnitudes. And the remaining gap is shock size. Production is unchanged until the methodology rebuild those results support.
 - **Attribution has product tiers.** The headline uses **Scenario shocks** when available; **Group totals** is the secondary risk-committee view. Periphery is a separate idiosyncratic overlay and material gross periphery is surfaced by ticker in the waterfall. `Naive algebra` and `Full conditional diagnostic` are advanced diagnostics only. Full conditional is data-dependent correlation credit under the historical conditional distribution, not causal attribution.
 - **Backdating is data-vintage-controlled, not model-vintage-controlled.** Events, factor history, and prices are strictly filtered to `≤ as_of`. The LLM's parametric knowledge is NOT — it still "knows" about COVID even when as_of is 2018. The UI banner makes this honest.
 - **Sampling parameters are omitted.** Gemini 3.8 Flash ignores deprecated temperature/top-p/top-k controls, so nami relies on schema constraints and supported thinking levels; identical requests are served byte-for-byte from the scenario cache after the first run.

@@ -1,0 +1,1687 @@
+{
+  "summary": {
+    "n_runs": 88,
+    "n_failed": 4,
+    "n_pairs_scored": 56,
+    "spent_usd": 6.575661,
+    "variants": [
+      {
+        "variant": "L0_headline",
+        "n": 56,
+        "mae": 0.1374771484761721,
+        "bias": -0.04695097361226897,
+        "sign_hit_rate": 0.75,
+        "pearson_r": 0.20215036676686302
+      },
+      {
+        "variant": "L0",
+        "n": 56,
+        "mae": 0.13752419026718313,
+        "bias": -0.04196198505523877,
+        "sign_hit_rate": 0.7321428571428571,
+        "pearson_r": 0.18971421466195598
+      },
+      {
+        "variant": "L1",
+        "n": 56,
+        "mae": 0.1373402641303968,
+        "bias": -0.043174701371549475,
+        "sign_hit_rate": 0.7142857142857143,
+        "pearson_r": 0.2134052141646716
+      },
+      {
+        "variant": "L2",
+        "n": 56,
+        "mae": 0.15994163843277892,
+        "bias": -0.052743180063774854,
+        "sign_hit_rate": 0.6785714285714286,
+        "pearson_r": -0.00170319679427566
+      },
+      {
+        "variant": "L3",
+        "n": 56,
+        "mae": 0.14946739549682292,
+        "bias": -0.031804661301859764,
+        "sign_hit_rate": 0.7678571428571429,
+        "pearson_r": 0.1960568980817019
+      },
+      {
+        "variant": "full_replay",
+        "n": 56,
+        "mae": 0.034617484639649095,
+        "bias": -0.01708371807821963,
+        "sign_hit_rate": 0.9464285714285714,
+        "pearson_r": 0.9803224694205906
+      }
+    ],
+    "g4_passed": true,
+    "g4_detail": "L1 (model magnitudes, completed) MAE 13.73% vs L2 (analog-median magnitudes, completed) MAE 15.99% over 56 pairs",
+    "spread": {
+      "pairs_with_repeats": 14,
+      "median_headline_sd": 0.012830651542020345,
+      "max_headline_sd": 0.14718091125092253,
+      "max_shock_count_range": 15
+    },
+    "factor_layer": {
+      "median_cosine_to_realized": 0.6740134257358179,
+      "median_severity_ratio": 0.2680069109056893
+    },
+    "paired": [
+      {
+        "a": "L1",
+        "b": "L2",
+        "n": 56,
+        "mean_abs_error_diff": -0.022601374302382123,
+        "ci95_low": -0.03889795454185193,
+        "ci95_high": -0.007535545621992247,
+        "share_a_closer": 0.6071428571428571
+      },
+      {
+        "a": "L1",
+        "b": "L3",
+        "n": 56,
+        "mean_abs_error_diff": -0.012127131366426127,
+        "ci95_low": -0.024664549089833548,
+        "ci95_high": -0.0010578644789481604,
+        "share_a_closer": 0.5357142857142857
+      },
+      {
+        "a": "L0_headline",
+        "b": "L1",
+        "n": 56,
+        "mean_abs_error_diff": 0.00013688434577530106,
+        "ci95_low": -0.008779192784200087,
+        "ci95_high": 0.0091612517671644,
+        "share_a_closer": 0.5
+      },
+      {
+        "a": "L0_headline",
+        "b": "L3",
+        "n": 56,
+        "mean_abs_error_diff": -0.011990247020650826,
+        "ci95_low": -0.027725407299021187,
+        "ci95_high": 0.00141106000427122,
+        "share_a_closer": 0.5
+      }
+    ],
+    "challenger_legacy_half": [
+      {
+        "case_id": "ai-capex-shock-2025:defensive_mix",
+        "region": "north_america",
+        "horizon": 5,
+        "legacy_pnl": 0.0869517927832753,
+        "realized_pnl": 0.043971970383475036
+      },
+      {
+        "case_id": "ai-capex-shock-2025:japan_equity",
+        "region": "japan",
+        "horizon": 5,
+        "legacy_pnl": -0.01350038494836556,
+        "realized_pnl": 0.005293776472475504
+      },
+      {
+        "case_id": "ai-capex-shock-2025:msci_world",
+        "region": "generic",
+        "horizon": 5,
+        "legacy_pnl": -0.06123044047055264,
+        "realized_pnl": -0.02061778068626635
+      },
+      {
+        "case_id": "ai-capex-shock-2025:us_tech_growth",
+        "region": "north_america",
+        "horizon": 5,
+        "legacy_pnl": -0.07780581665308914,
+        "realized_pnl": -0.047258325711198056
+      },
+      {
+        "case_id": "covid-crash-2020:defensive_mix",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.0013980205167067519,
+        "realized_pnl": -0.20053506599816134
+      },
+      {
+        "case_id": "covid-crash-2020:japan_equity",
+        "region": "japan",
+        "horizon": 21,
+        "legacy_pnl": -0.08070306465065043,
+        "realized_pnl": -0.27553479228535516
+      },
+      {
+        "case_id": "covid-crash-2020:msci_world",
+        "region": "generic",
+        "horizon": 21,
+        "legacy_pnl": -0.10541220861857815,
+        "realized_pnl": -0.29500278373609384
+      },
+      {
+        "case_id": "covid-crash-2020:us_tech_growth",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.1141552040545348,
+        "realized_pnl": -0.2989375189733691
+      },
+      {
+        "case_id": "covid-liquidity-2020:defensive_mix",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.0411886506421769,
+        "realized_pnl": 0.3367088493371609
+      },
+      {
+        "case_id": "covid-liquidity-2020:japan_equity",
+        "region": "japan",
+        "horizon": 63,
+        "legacy_pnl": 0.01052788805185006,
+        "realized_pnl": 0.46019405021696946
+      },
+      {
+        "case_id": "covid-liquidity-2020:msci_world",
+        "region": "generic",
+        "horizon": 63,
+        "legacy_pnl": 0.0062643088934028765,
+        "realized_pnl": 0.9280412366007681
+      },
+      {
+        "case_id": "covid-liquidity-2020:us_tech_growth",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.09921295554272581,
+        "realized_pnl": 1.140943274316465
+      },
+      {
+        "case_id": "evergrande-2021:defensive_mix",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": 0.005532087989043827,
+        "realized_pnl": -0.041867553811887136
+      },
+      {
+        "case_id": "evergrande-2021:japan_equity",
+        "region": "japan",
+        "horizon": 21,
+        "legacy_pnl": 0.003468033109972936,
+        "realized_pnl": -0.061318001054222186
+      },
+      {
+        "case_id": "evergrande-2021:msci_world",
+        "region": "generic",
+        "horizon": 21,
+        "legacy_pnl": -0.0848240829440231,
+        "realized_pnl": -0.048244657301314234
+      },
+      {
+        "case_id": "evergrande-2021:us_tech_growth",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.09976141773551361,
+        "realized_pnl": -0.06328506548026953
+      },
+      {
+        "case_id": "fed-pivot-rally-2023:defensive_mix",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.029400080200563575,
+        "realized_pnl": 0.0579741646756232
+      },
+      {
+        "case_id": "fed-pivot-rally-2023:japan_equity",
+        "region": "japan",
+        "horizon": 63,
+        "legacy_pnl": 0.14121430629418302,
+        "realized_pnl": 0.13443928631099245
+      },
+      {
+        "case_id": "fed-pivot-rally-2023:msci_world",
+        "region": "generic",
+        "horizon": 63,
+        "legacy_pnl": 0.17708691879085312,
+        "realized_pnl": 0.17348722445431963
+      },
+      {
+        "case_id": "fed-pivot-rally-2023:us_tech_growth",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": 0.31943937365835595,
+        "realized_pnl": 0.20505077217537873
+      },
+      {
+        "case_id": "higher-for-longer-2023:defensive_mix",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.061043288115448235,
+        "realized_pnl": -0.006655796108169758
+      },
+      {
+        "case_id": "higher-for-longer-2023:japan_equity",
+        "region": "japan",
+        "horizon": 63,
+        "legacy_pnl": -0.06807414840211992,
+        "realized_pnl": -0.0766182321939667
+      },
+      {
+        "case_id": "higher-for-longer-2023:msci_world",
+        "region": "generic",
+        "horizon": 63,
+        "legacy_pnl": -0.13904219412802482,
+        "realized_pnl": -0.08202395867923205
+      },
+      {
+        "case_id": "higher-for-longer-2023:us_tech_growth",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.16437158432301643,
+        "realized_pnl": -0.0977651316051089
+      },
+      {
+        "case_id": "inflation-ukraine-2022:defensive_mix",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": 0.0023838179019122965,
+        "realized_pnl": 0.004019864667659877
+      },
+      {
+        "case_id": "inflation-ukraine-2022:japan_equity",
+        "region": "japan",
+        "horizon": 63,
+        "legacy_pnl": -0.008668330932457375,
+        "realized_pnl": -0.21388010159545628
+      },
+      {
+        "case_id": "inflation-ukraine-2022:msci_world",
+        "region": "generic",
+        "horizon": 63,
+        "legacy_pnl": -0.06950096820779873,
+        "realized_pnl": -0.25294251844695104
+      },
+      {
+        "case_id": "inflation-ukraine-2022:us_tech_growth",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.14134853111479811,
+        "realized_pnl": -0.3425830954406141
+      },
+      {
+        "case_id": "rates-tantrum-2021:defensive_mix",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.03894989529853061,
+        "realized_pnl": -0.03683081748245089
+      },
+      {
+        "case_id": "rates-tantrum-2021:japan_equity",
+        "region": "japan",
+        "horizon": 21,
+        "legacy_pnl": -0.0025639863031839925,
+        "realized_pnl": -0.024675604340744367
+      },
+      {
+        "case_id": "rates-tantrum-2021:msci_world",
+        "region": "generic",
+        "horizon": 21,
+        "legacy_pnl": -0.040967586857993725,
+        "realized_pnl": -0.07409264843144442
+      },
+      {
+        "case_id": "rates-tantrum-2021:us_tech_growth",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.09903829352408003,
+        "realized_pnl": -0.11440704530109166
+      },
+      {
+        "case_id": "svb-banking-2023:defensive_mix",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": 0.023797069156406395,
+        "realized_pnl": 0.09051707698359666
+      },
+      {
+        "case_id": "svb-banking-2023:japan_equity",
+        "region": "japan",
+        "horizon": 21,
+        "legacy_pnl": -0.08537361650146368,
+        "realized_pnl": -0.004059186086362547
+      },
+      {
+        "case_id": "svb-banking-2023:msci_world",
+        "region": "generic",
+        "horizon": 21,
+        "legacy_pnl": -0.07371174138815116,
+        "realized_pnl": 0.0816164179387829
+      },
+      {
+        "case_id": "svb-banking-2023:us_tech_growth",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.04449019475152708,
+        "realized_pnl": 0.10100095470587218
+      },
+      {
+        "case_id": "trade-war-reescalation-2019:defensive_mix",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.03390440806175703,
+        "realized_pnl": 0.03302210356209638
+      },
+      {
+        "case_id": "trade-war-reescalation-2019:japan_equity",
+        "region": "japan",
+        "horizon": 63,
+        "legacy_pnl": -0.05535074577734238,
+        "realized_pnl": 0.011082058449258175
+      },
+      {
+        "case_id": "trade-war-reescalation-2019:msci_world",
+        "region": "generic",
+        "horizon": 63,
+        "legacy_pnl": -0.15918447310196393,
+        "realized_pnl": -0.048707414026694894
+      },
+      {
+        "case_id": "trade-war-reescalation-2019:us_tech_growth",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.19607049628943313,
+        "realized_pnl": -0.0669053458951497
+      },
+      {
+        "case_id": "uk-gilt-crisis-2022:defensive_mix",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": 0.01193214133089904,
+        "realized_pnl": 0.07214096585728053
+      },
+      {
+        "case_id": "uk-gilt-crisis-2022:japan_equity",
+        "region": "japan",
+        "horizon": 21,
+        "legacy_pnl": -0.038273408480463775,
+        "realized_pnl": 0.013741364778983212
+      },
+      {
+        "case_id": "uk-gilt-crisis-2022:msci_world",
+        "region": "generic",
+        "horizon": 21,
+        "legacy_pnl": -0.05750956815113741,
+        "realized_pnl": -0.011195084180424263
+      },
+      {
+        "case_id": "uk-gilt-crisis-2022:us_tech_growth",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": -0.06274581197511357,
+        "realized_pnl": -0.051313150754775605
+      },
+      {
+        "case_id": "us-tariffs-2025:defensive_mix",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.029226088431826638,
+        "realized_pnl": -0.025669708957845094
+      },
+      {
+        "case_id": "us-tariffs-2025:japan_equity",
+        "region": "japan",
+        "horizon": 63,
+        "legacy_pnl": -0.14124597049571508,
+        "realized_pnl": 0.11082673269928434
+      },
+      {
+        "case_id": "us-tariffs-2025:msci_world",
+        "region": "generic",
+        "horizon": 63,
+        "legacy_pnl": -0.11547554671035493,
+        "realized_pnl": 0.09384394927047558
+      },
+      {
+        "case_id": "us-tariffs-2025:us_tech_growth",
+        "region": "north_america",
+        "horizon": 63,
+        "legacy_pnl": -0.15307302484608096,
+        "realized_pnl": 0.1284961749667999
+      },
+      {
+        "case_id": "vaccine-rotation-2020:defensive_mix",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": 0.07129427228881899,
+        "realized_pnl": 0.05324871461168885
+      },
+      {
+        "case_id": "vaccine-rotation-2020:japan_equity",
+        "region": "japan",
+        "horizon": 21,
+        "legacy_pnl": 0.3189426601089598,
+        "realized_pnl": 0.13672167092362783
+      },
+      {
+        "case_id": "vaccine-rotation-2020:msci_world",
+        "region": "generic",
+        "horizon": 21,
+        "legacy_pnl": 0.3372123109531935,
+        "realized_pnl": 0.06067494399493573
+      },
+      {
+        "case_id": "vaccine-rotation-2020:us_tech_growth",
+        "region": "north_america",
+        "horizon": 21,
+        "legacy_pnl": 0.10611041269459877,
+        "realized_pnl": 0.04175334728575498
+      },
+      {
+        "case_id": "yen-carry-unwind-2024:defensive_mix",
+        "region": "north_america",
+        "horizon": 5,
+        "legacy_pnl": -0.008284490889255666,
+        "realized_pnl": -0.00428932558708655
+      },
+      {
+        "case_id": "yen-carry-unwind-2024:japan_equity",
+        "region": "japan",
+        "horizon": 5,
+        "legacy_pnl": -0.003585201688334972,
+        "realized_pnl": -0.1932625169235362
+      },
+      {
+        "case_id": "yen-carry-unwind-2024:msci_world",
+        "region": "generic",
+        "horizon": 5,
+        "legacy_pnl": -0.02980220805031904,
+        "realized_pnl": -0.07469333762234752
+      },
+      {
+        "case_id": "yen-carry-unwind-2024:us_tech_growth",
+        "region": "north_america",
+        "horizon": 5,
+        "legacy_pnl": -0.05444994267255325,
+        "realized_pnl": -0.09614553709707362
+      }
+    ],
+    "model_ids": [
+      "gemini-3.8-flash"
+    ],
+    "prompt_versions": [
+      "v11"
+    ],
+    "generated_at": "2026-10-16T13:34:06+00:00"
+  },
+  "pairs": [
+    {
+      "event_id": "ai-capex-shock-2025",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.043971970383475036,
+      "modeled": {
+        "L0_headline": 0.0869517927832753,
+        "L0": 0.08695179278327532,
+        "L1": 0.09600542713276579,
+        "L2": 0.059565437479598006,
+        "L3": 0.09538587360122543,
+        "full_replay": 0.027772945393217285
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        9,
+        9
+      ],
+      "cosine_to_realized": 0.6999762811237314,
+      "severity_ratio": 1.6787268997135885
+    },
+    {
+      "event_id": "ai-capex-shock-2025",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.005293776472475504,
+      "modeled": {
+        "L0_headline": -0.01350038494836556,
+        "L0": -0.005675424873416093,
+        "L1": -0.02828307188465362,
+        "L2": -0.016408670290674603,
+        "L3": 0.010951531607271506,
+        "full_replay": -0.042419270036840005
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        9,
+        9
+      ],
+      "cosine_to_realized": 0.02008166810488595,
+      "severity_ratio": 0.04613137350854755
+    },
+    {
+      "event_id": "ai-capex-shock-2025",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.02061778068626635,
+      "modeled": {
+        "L0_headline": -0.06123044047055264,
+        "L0": -0.048630661189137135,
+        "L1": -0.09232369377578313,
+        "L2": -0.043123547641924935,
+        "L3": -0.02856670278530916,
+        "full_replay": -0.02641185523309426
+      },
+      "headline_spread": 0.027779853325314213,
+      "shock_count_range": [
+        9,
+        12
+      ],
+      "cosine_to_realized": 0.24233392404175627,
+      "severity_ratio": 0.2238635671418409
+    },
+    {
+      "event_id": "ai-capex-shock-2025",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.047258325711198056,
+      "modeled": {
+        "L0_headline": -0.07780581665308914,
+        "L0": -0.06631958837149209,
+        "L1": -0.11577652567988388,
+        "L2": -0.1280536883453689,
+        "L3": -0.07937035449985792,
+        "full_replay": -0.04796462855058425
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        9,
+        9
+      ],
+      "cosine_to_realized": 0.004259647298658029,
+      "severity_ratio": 0.009927555414113947
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": -0.20053506599816134,
+      "modeled": {
+        "L0_headline": -0.0013980205167067519,
+        "L0": -0.001398020516706757,
+        "L1": -0.041383887979746195,
+        "L2": -0.07040689993714914,
+        "L3": -0.05358480711244924,
+        "full_replay": -0.1940882805353622
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        13,
+        13
+      ],
+      "cosine_to_realized": 0.915373822458628,
+      "severity_ratio": 0.11595933743103268
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.27553479228535516,
+      "modeled": {
+        "L0_headline": -0.08070306465065043,
+        "L0": -0.07616166397832438,
+        "L1": -0.06544526101197173,
+        "L2": -0.1068714485941599,
+        "L3": -0.058713628477299766,
+        "full_replay": -0.2943599037853824
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        13,
+        13
+      ],
+      "cosine_to_realized": 0.9220727495576175,
+      "severity_ratio": 0.1172314063779582
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.29500278373609384,
+      "modeled": {
+        "L0_headline": -0.10541220861857815,
+        "L0": -0.10047737210651346,
+        "L1": -0.07893322776787103,
+        "L2": -0.07163585460375288,
+        "L3": -0.0675583533954605,
+        "full_replay": -0.3233666664026112
+      },
+      "headline_spread": 0.018036964772115215,
+      "shock_count_range": [
+        12,
+        19
+      ],
+      "cosine_to_realized": 0.9252357072537474,
+      "severity_ratio": 0.12449178106460193
+    },
+    {
+      "event_id": "covid-crash-2020",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.2989375189733691,
+      "modeled": {
+        "L0_headline": -0.1141552040545348,
+        "L0": -0.11288473802808555,
+        "L1": -0.06934599847330941,
+        "L2": -0.05165172906107315,
+        "L3": -0.06462577124912315,
+        "full_replay": -0.33619913146113023
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.9365459700904255,
+      "severity_ratio": 0.12294863611125649
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.3367088493371609,
+      "modeled": {
+        "L0_headline": -0.0411886506421769,
+        "L0": -0.03464485418720374,
+        "L1": -0.023693605676203162,
+        "L2": -0.03425507030521093,
+        "L3": -0.003388084552767073,
+        "full_replay": 0.28305667117571187
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.6620450344845643,
+      "severity_ratio": 0.08578728045658832
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.46019405021696946,
+      "modeled": {
+        "L0_headline": 0.01052788805185006,
+        "L0": 0.002496242850445223,
+        "L1": -0.014398544703949724,
+        "L2": -0.13749184259741104,
+        "L3": 0.0005806205631083521,
+        "full_replay": 0.3435410639092575
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.5607068129639561,
+      "severity_ratio": 0.050911505864100835
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": 0.9280412366007681,
+      "modeled": {
+        "L0_headline": 0.0062643088934028765,
+        "L0": 0.005644649273425269,
+        "L1": -0.0013349475195351516,
+        "L2": -0.12308962260434514,
+        "L3": -0.005502846792792349,
+        "full_replay": 0.7300635251485715
+      },
+      "headline_spread": 0.010683202920768547,
+      "shock_count_range": [
+        19,
+        26
+      ],
+      "cosine_to_realized": 0.3248770942665175,
+      "severity_ratio": 0.03677808319749071
+    },
+    {
+      "event_id": "covid-liquidity-2020",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": 1.140943274316465,
+      "modeled": {
+        "L0_headline": -0.09921295554272581,
+        "L0": -0.09527456307381219,
+        "L1": -0.07019944610067272,
+        "L2": -0.14583998956290292,
+        "L3": -0.022377282506037655,
+        "full_replay": 0.8680300050766635
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": -0.5799743289869703,
+      "severity_ratio": -0.09587734726398292
+    },
+    {
+      "event_id": "evergrande-2021",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": -0.041867553811887136,
+      "modeled": {
+        "L0_headline": 0.005532087989043827,
+        "L0": 0.0020965409873150128,
+        "L1": -0.017807697147758508,
+        "L2": -0.061491192098882305,
+        "L3": -0.07813677427646006,
+        "full_replay": -0.04353683536653354
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.5683631458841395,
+      "severity_ratio": 0.9810407140386401
+    },
+    {
+      "event_id": "evergrande-2021",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.061318001054222186,
+      "modeled": {
+        "L0_headline": 0.003468033109972936,
+        "L0": 0.01265822731188366,
+        "L1": -0.05466169347589554,
+        "L2": -0.03654614592049693,
+        "L3": -0.1749020499441019,
+        "full_replay": -0.03457081814700326
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        17,
+        17
+      ],
+      "cosine_to_realized": 0.5530971683546737,
+      "severity_ratio": 0.947137436713262
+    },
+    {
+      "event_id": "evergrande-2021",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.048244657301314234,
+      "modeled": {
+        "L0_headline": -0.0848240829440231,
+        "L0": -0.08442705476695267,
+        "L1": -0.08186957392814026,
+        "L2": -0.0721223554411321,
+        "L3": -0.07273144359106547,
+        "full_replay": -0.039353742767023345
+      },
+      "headline_spread": 0.05282478965947772,
+      "shock_count_range": [
+        18,
+        24
+      ],
+      "cosine_to_realized": 0.5776029591365054,
+      "severity_ratio": 0.9940030277385257
+    },
+    {
+      "event_id": "evergrande-2021",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.06328506548026953,
+      "modeled": {
+        "L0_headline": -0.09976141773551361,
+        "L0": -0.09639371354065397,
+        "L1": -0.07451115612807391,
+        "L2": -0.08713550515227458,
+        "L3": -0.04132014837663793,
+        "full_replay": -0.045100029977067524
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.5672887858557515,
+      "severity_ratio": 0.9964176311576081
+    },
+    {
+      "event_id": "fed-pivot-rally-2023",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.0579741646756232,
+      "modeled": {
+        "L0_headline": -0.029400080200563575,
+        "L0": -0.034749722510404486,
+        "L1": 0.12879605967398008,
+        "L2": 0.0631586887922857,
+        "L3": 0.12304729074835495,
+        "full_replay": 0.07056374360170568
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        8,
+        8
+      ],
+      "cosine_to_realized": 0.5477376795895338,
+      "severity_ratio": 0.28205504497312434
+    },
+    {
+      "event_id": "fed-pivot-rally-2023",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.13443928631099245,
+      "modeled": {
+        "L0_headline": 0.14121430629418302,
+        "L0": 0.13680628990274876,
+        "L1": 0.13680628990274876,
+        "L2": 0.05591313685005049,
+        "L3": 0.1469248440207754,
+        "full_replay": 0.13992328517821734
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.8409686817525935,
+      "severity_ratio": 0.7275507604311257
+    },
+    {
+      "event_id": "fed-pivot-rally-2023",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": 0.17348722445431963,
+      "modeled": {
+        "L0_headline": 0.17708691879085312,
+        "L0": 0.17411929600194623,
+        "L1": 0.17411929600194623,
+        "L2": 0.054938846479926244,
+        "L3": 0.1724662870888498,
+        "full_replay": 0.17044177947425918
+      },
+      "headline_spread": 0.14718091125092253,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.7229327375145544,
+      "severity_ratio": 0.7907676388152021
+    },
+    {
+      "event_id": "fed-pivot-rally-2023",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": 0.20505077217537873,
+      "modeled": {
+        "L0_headline": 0.31943937365835595,
+        "L0": 0.3113640084729081,
+        "L1": 0.3113640084729081,
+        "L2": 0.046786921603456655,
+        "L3": 0.27024257760733394,
+        "full_replay": 0.19986592476028092
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.828763633835015,
+      "severity_ratio": 0.7698955295752052
+    },
+    {
+      "event_id": "higher-for-longer-2023",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": -0.006655796108169758,
+      "modeled": {
+        "L0_headline": -0.061043288115448235,
+        "L0": -0.05458915934331272,
+        "L1": -0.05458915934331272,
+        "L2": -0.1036936901765198,
+        "L3": -0.05806801857986143,
+        "full_replay": -0.04859522303707908
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.7550556126123984,
+      "severity_ratio": 0.7974214667726981
+    },
+    {
+      "event_id": "higher-for-longer-2023",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.0766182321939667,
+      "modeled": {
+        "L0_headline": -0.06807414840211992,
+        "L0": -0.06505810644443712,
+        "L1": -0.06505810644443712,
+        "L2": -0.07348168962874053,
+        "L3": -0.06955559671851186,
+        "full_replay": -0.16848470709738525
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.7650547344556115,
+      "severity_ratio": 0.7936566420530669
+    },
+    {
+      "event_id": "higher-for-longer-2023",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.08202395867923205,
+      "modeled": {
+        "L0_headline": -0.13904219412802482,
+        "L0": -0.1319283926767161,
+        "L1": -0.1268101858935036,
+        "L2": -0.09670596947571475,
+        "L3": -0.13518868271115228,
+        "full_replay": -0.09939754872372075
+      },
+      "headline_spread": 0.003989869977050969,
+      "shock_count_range": [
+        11,
+        26
+      ],
+      "cosine_to_realized": 0.7043769418505188,
+      "severity_ratio": 0.7096287754291091
+    },
+    {
+      "event_id": "higher-for-longer-2023",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.0977651316051089,
+      "modeled": {
+        "L0_headline": -0.16437158432301643,
+        "L0": -0.15707398447878576,
+        "L1": -0.15158777819643154,
+        "L2": -0.12188135170521353,
+        "L3": -0.17636150216100804,
+        "full_replay": -0.1126387820637411
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        12,
+        12
+      ],
+      "cosine_to_realized": 0.6353348457096393,
+      "severity_ratio": 0.5883247251448672
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.004019864667659877,
+      "modeled": {
+        "L0_headline": 0.0023838179019122965,
+        "L0": 0.011949005582015742,
+        "L1": 0.010314988970088047,
+        "L2": -0.02539214807819326,
+        "L3": 0.005390171119239401,
+        "full_replay": -0.055380986415216736
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        18,
+        18
+      ],
+      "cosine_to_realized": 0.650031456699959,
+      "severity_ratio": 0.18202686478016214
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.21388010159545628,
+      "modeled": {
+        "L0_headline": -0.008668330932457375,
+        "L0": -0.008668330932457379,
+        "L1": 0.002533424620088748,
+        "L2": -0.006115476413489251,
+        "L3": 0.01689836126717118,
+        "full_replay": -0.12808435456350922
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        11,
+        11
+      ],
+      "cosine_to_realized": 0.6859818169870714,
+      "severity_ratio": 0.18748692733926664
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.25294251844695104,
+      "modeled": {
+        "L0_headline": -0.06950096820779873,
+        "L0": -0.06192067422568937,
+        "L1": -0.07130037453962365,
+        "L2": -0.05940894184804051,
+        "L3": -0.05263372151868453,
+        "full_replay": -0.29845649305355854
+      },
+      "headline_spread": 0.004887635307005981,
+      "shock_count_range": [
+        9,
+        21
+      ],
+      "cosine_to_realized": 0.7163252283361111,
+      "severity_ratio": 0.19510774872163544
+    },
+    {
+      "event_id": "inflation-ukraine-2022",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.3425830954406141,
+      "modeled": {
+        "L0_headline": -0.14134853111479811,
+        "L0": -0.12475737791520781,
+        "L1": -0.12772007162631824,
+        "L2": -0.10301610814163879,
+        "L3": -0.09213957743800277,
+        "full_replay": -0.3821055498363087
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        11,
+        11
+      ],
+      "cosine_to_realized": 0.6968954556691671,
+      "severity_ratio": 0.1897431491073954
+    },
+    {
+      "event_id": "rates-tantrum-2021",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": -0.03683081748245089,
+      "modeled": {
+        "L0_headline": -0.03894989529853061,
+        "L0": -0.033600252988689745,
+        "L1": -0.033512256582793554,
+        "L2": -0.030117647086050404,
+        "L3": -0.030187219879872128,
+        "full_replay": -0.021650925021797676
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        25,
+        25
+      ],
+      "cosine_to_realized": 0.8929079368856769,
+      "severity_ratio": 0.5205472080261428
+    },
+    {
+      "event_id": "rates-tantrum-2021",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.024675604340744367,
+      "modeled": {
+        "L0_headline": -0.0025639863031839925,
+        "L0": -0.0013069548741293392,
+        "L1": -0.0013069548741293392,
+        "L2": -0.056100974885961497,
+        "L3": -0.005140556704903758,
+        "full_replay": -0.05597595314417002
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.9199437686189054,
+      "severity_ratio": 0.554254689662166
+    },
+    {
+      "event_id": "rates-tantrum-2021",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.07409264843144442,
+      "modeled": {
+        "L0_headline": -0.040967586857993725,
+        "L0": -0.034830005011999274,
+        "L1": -0.03465979586302869,
+        "L2": 0.013312368735978616,
+        "L3": -0.006886722327443352,
+        "full_replay": -0.08820376463698272
+      },
+      "headline_spread": 0.01090272196003225,
+      "shock_count_range": [
+        12,
+        26
+      ],
+      "cosine_to_realized": 0.8619512266766941,
+      "severity_ratio": 0.5657899898269854
+    },
+    {
+      "event_id": "rates-tantrum-2021",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.11440704530109166,
+      "modeled": {
+        "L0_headline": -0.09903829352408003,
+        "L0": -0.09286389304594625,
+        "L1": -0.09149113706040028,
+        "L2": 0.011066765805203002,
+        "L3": -0.007867778962238465,
+        "full_replay": -0.13215406391681248
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        15,
+        15
+      ],
+      "cosine_to_realized": 0.9182090524485697,
+      "severity_ratio": 0.5875414236622072
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.09051707698359666,
+      "modeled": {
+        "L0_headline": 0.023797069156406395,
+        "L0": 0.023797069156406385,
+        "L1": -0.044813962797104936,
+        "L2": -0.04832147800136809,
+        "L3": 0.013227058202535997,
+        "full_replay": 0.0800447638006361
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        10,
+        10
+      ],
+      "cosine_to_realized": -0.10522552021918834,
+      "severity_ratio": -0.17640341855584377
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.004059186086362547,
+      "modeled": {
+        "L0_headline": -0.08537361650146368,
+        "L0": -0.07390405163254374,
+        "L1": -0.1103187647255284,
+        "L2": -0.3095189538750593,
+        "L3": -0.09284397799956812,
+        "full_replay": -0.018005014146120036
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": -0.23634417196159788,
+      "severity_ratio": -0.3319390267168283
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": 0.0816164179387829,
+      "modeled": {
+        "L0_headline": -0.07371174138815116,
+        "L0": -0.07338891196132825,
+        "L1": -0.07417612226606592,
+        "L2": -0.03630234648659277,
+        "L3": -0.11447086132144361,
+        "full_replay": 0.06026697764156308
+      },
+      "headline_spread": 0.03615376238242408,
+      "shock_count_range": [
+        11,
+        26
+      ],
+      "cosine_to_realized": -0.2151865581048135,
+      "severity_ratio": -0.29121121749056283
+    },
+    {
+      "event_id": "svb-banking-2023",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": 0.10100095470587218,
+      "modeled": {
+        "L0_headline": -0.04449019475152708,
+        "L0": -0.044490194751527073,
+        "L1": -0.0502937378885018,
+        "L2": -0.017500590418641455,
+        "L3": -0.15871205864939933,
+        "full_replay": 0.07160133962880444
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        9,
+        9
+      ],
+      "cosine_to_realized": -0.12444507600168768,
+      "severity_ratio": -0.14289819655327762
+    },
+    {
+      "event_id": "trade-war-reescalation-2019",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.03302210356209638,
+      "modeled": {
+        "L0_headline": -0.03390440806175703,
+        "L0": -0.03390440806175702,
+        "L1": -0.030548259738246424,
+        "L2": -0.03054628010643403,
+        "L3": -0.017504836774872266,
+        "full_replay": 0.0967442378411448
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        18,
+        18
+      ],
+      "cosine_to_realized": 0.8132750779036751,
+      "severity_ratio": 1.258770795819321
+    },
+    {
+      "event_id": "trade-war-reescalation-2019",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.011082058449258175,
+      "modeled": {
+        "L0_headline": -0.05535074577734238,
+        "L0": -0.04330300561215805,
+        "L1": -0.04330300561215805,
+        "L2": -0.06950838662255648,
+        "L3": -0.06950838662255648,
+        "full_replay": 0.019137150766053546
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.8087577515278076,
+      "severity_ratio": 1.291568977603635
+    },
+    {
+      "event_id": "trade-war-reescalation-2019",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.048707414026694894,
+      "modeled": {
+        "L0_headline": -0.15918447310196393,
+        "L0": -0.1488367620573028,
+        "L1": -0.13804802423491852,
+        "L2": -0.12318171577135313,
+        "L3": -0.12851262043060663,
+        "full_replay": -0.02060938168297668
+      },
+      "headline_spread": 0.01475858112400844,
+      "shock_count_range": [
+        25,
+        26
+      ],
+      "cosine_to_realized": 0.803879111388842,
+      "severity_ratio": 1.2820476182012495
+    },
+    {
+      "event_id": "trade-war-reescalation-2019",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.0669053458951497,
+      "modeled": {
+        "L0_headline": -0.19607049628943313,
+        "L0": -0.17820941212746205,
+        "L1": -0.17820941212746205,
+        "L2": -0.1611803354639736,
+        "L3": -0.1611803354639736,
+        "full_replay": -0.03904579898439753
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.810273413086837,
+      "severity_ratio": 1.290871951686423
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.07214096585728053,
+      "modeled": {
+        "L0_headline": 0.01193214133089904,
+        "L0": 0.008320726055200124,
+        "L1": -0.02295409576437671,
+        "L2": -0.035215818316534246,
+        "L3": -0.0179576976098817,
+        "full_replay": 0.0603496434864334
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        13,
+        13
+      ],
+      "cosine_to_realized": -0.35268877475545407,
+      "severity_ratio": -0.6291509042805338
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.013741364778983212,
+      "modeled": {
+        "L0_headline": -0.038273408480463775,
+        "L0": -0.02834705211908232,
+        "L1": -0.02515447155381811,
+        "L2": -0.0017759427292287112,
+        "L3": -0.018202913696937578,
+        "full_replay": -0.0026899299590520524
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        25,
+        25
+      ],
+      "cosine_to_realized": -0.4579162060157463,
+      "severity_ratio": -0.8711728079288871
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.011195084180424263,
+      "modeled": {
+        "L0_headline": -0.05750956815113741,
+        "L0": -0.057225812383356445,
+        "L1": -0.05487474794631225,
+        "L2": -0.10045524987418379,
+        "L3": -0.054424245540529055,
+        "full_replay": -0.008539929968882696
+      },
+      "headline_spread": 0.0012326710011307275,
+      "shock_count_range": [
+        19,
+        25
+      ],
+      "cosine_to_realized": -0.42332623858919355,
+      "severity_ratio": -0.8057285373531801
+    },
+    {
+      "event_id": "uk-gilt-crisis-2022",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.051313150754775605,
+      "modeled": {
+        "L0_headline": -0.06274581197511357,
+        "L0": -0.06274581197511357,
+        "L1": -0.04955299380716895,
+        "L2": -0.11687117814329905,
+        "L3": -0.05553122597816163,
+        "full_replay": -0.036281080578416884
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        11,
+        11
+      ],
+      "cosine_to_realized": -0.33448271754240166,
+      "severity_ratio": -0.594904488087522
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": -0.025669708957845094,
+      "modeled": {
+        "L0_headline": -0.029226088431826638,
+        "L0": -0.03453200690624844,
+        "L1": -0.03453200690624844,
+        "L2": -0.060693945288444476,
+        "L3": -0.0344878799135083,
+        "full_replay": -0.04626055378027819
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": -0.40148945000106967,
+      "severity_ratio": -1.0848045931012134
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.11082673269928434,
+      "modeled": {
+        "L0_headline": -0.14124597049571508,
+        "L0": -0.13430219762998344,
+        "L1": -0.116019489571416,
+        "L2": -0.08290176964631717,
+        "L3": -0.11299947997855911,
+        "full_replay": 0.11383905931886067
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        24,
+        24
+      ],
+      "cosine_to_realized": -0.39013929714465695,
+      "severity_ratio": -1.0490906432969036
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": 0.09384394927047558,
+      "modeled": {
+        "L0_headline": -0.11547554671035493,
+        "L0": -0.10732955002392712,
+        "L1": -0.10732955002392712,
+        "L2": -0.08905433348672491,
+        "L3": -0.10533357166734912,
+        "full_replay": 0.07816040615391998
+      },
+      "headline_spread": 0.005577155228385137,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": -0.40550177307501656,
+      "severity_ratio": -1.0848045931012134
+    },
+    {
+      "event_id": "us-tariffs-2025",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": 0.1284961749667999,
+      "modeled": {
+        "L0_headline": -0.15307302484608096,
+        "L0": -0.13921832596304073,
+        "L1": -0.09943940369485833,
+        "L2": -0.08369910322162476,
+        "L3": -0.12130319260936558,
+        "full_replay": 0.11392782793296603
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        18,
+        18
+      ],
+      "cosine_to_realized": -0.37326078022175496,
+      "severity_ratio": -0.9855458919051446
+    },
+    {
+      "event_id": "vaccine-rotation-2020",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": 0.05324871461168885,
+      "modeled": {
+        "L0_headline": 0.07129427228881899,
+        "L0": 0.09306341954969605,
+        "L1": 0.20227940854867993,
+        "L2": 0.1492120634008505,
+        "L3": 0.29845952858296865,
+        "full_replay": 0.012488452662044392
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        10,
+        10
+      ],
+      "cosine_to_realized": 0.3546011060013744,
+      "severity_ratio": 0.48563038647468787
+    },
+    {
+      "event_id": "vaccine-rotation-2020",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": 0.13672167092362783,
+      "modeled": {
+        "L0_headline": 0.3189426601089598,
+        "L0": 0.3214275332125883,
+        "L1": 0.3214275332125883,
+        "L2": 0.5366108830361391,
+        "L3": 0.5272061401724101,
+        "full_replay": 0.10078838511875925
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        26,
+        26
+      ],
+      "cosine_to_realized": 0.8039264715833883,
+      "severity_ratio": 1.8628104392436098
+    },
+    {
+      "event_id": "vaccine-rotation-2020",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": 0.06067494399493573,
+      "modeled": {
+        "L0_headline": 0.3372123109531935,
+        "L0": 0.34678624336383174,
+        "L1": 0.19663878330873508,
+        "L2": 0.3152091067781417,
+        "L3": 0.26494592576181986,
+        "full_replay": 0.04634982682594113
+      },
+      "headline_spread": 0.11295196758167146,
+      "shock_count_range": [
+        16,
+        26
+      ],
+      "cosine_to_realized": 0.7635578716276115,
+      "severity_ratio": 1.5963300509345795
+    },
+    {
+      "event_id": "vaccine-rotation-2020",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": 0.04175334728575498,
+      "modeled": {
+        "L0_headline": 0.10611041269459877,
+        "L0": 0.13015401679342606,
+        "L1": 0.13408326220718172,
+        "L2": 0.28299249504088775,
+        "L3": 0.23986787377875277,
+        "full_replay": 0.033704600327376655
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        8,
+        8
+      ],
+      "cosine_to_realized": 0.5944018722607383,
+      "severity_ratio": 0.7854447276571291
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "defensive_mix",
+      "n_samples": 1,
+      "realized_pnl": -0.00428932558708655,
+      "modeled": {
+        "L0_headline": -0.008284490889255666,
+        "L0": -0.008973754374577227,
+        "L1": -0.008234084522262108,
+        "L2": -0.013367732470782137,
+        "L3": -0.0065525158681084255,
+        "full_replay": -0.009475587238395023
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.9882205676340922,
+      "severity_ratio": 0.30446743905615103
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "japan_equity",
+      "n_samples": 1,
+      "realized_pnl": -0.1932625169235362,
+      "modeled": {
+        "L0_headline": -0.003585201688334972,
+        "L0": 0.021162488651429643,
+        "L1": -0.026015559487264323,
+        "L2": -0.02547174378910543,
+        "L3": -0.007429917857645152,
+        "full_replay": -0.030070545754720554
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        17,
+        17
+      ],
+      "cosine_to_realized": 0.9833821390057098,
+      "severity_ratio": 0.27902614808134735
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "msci_world",
+      "n_samples": 3,
+      "realized_pnl": -0.07469333762234752,
+      "modeled": {
+        "L0_headline": -0.02980220805031904,
+        "L0": -0.029575920315855677,
+        "L1": -0.023654499070011773,
+        "L2": -0.0049749345647628436,
+        "L3": -0.01790356317492597,
+        "full_replay": -0.08093480982370237
+      },
+      "headline_spread": 0.01054005402631369,
+      "shock_count_range": [
+        11,
+        19
+      ],
+      "cosine_to_realized": 0.9857702596929654,
+      "severity_ratio": 0.2569876737300313
+    },
+    {
+      "event_id": "yen-carry-unwind-2024",
+      "portfolio_key": "us_tech_growth",
+      "n_samples": 1,
+      "realized_pnl": -0.09614553709707362,
+      "modeled": {
+        "L0_headline": -0.05444994267255325,
+        "L0": -0.04925318222151316,
+        "L1": -0.03918157159834256,
+        "L2": -0.002311555855539333,
+        "L3": -0.019494367462469946,
+        "full_replay": -0.09944383806776903
+      },
+      "headline_spread": null,
+      "shock_count_range": [
+        19,
+        19
+      ],
+      "cosine_to_realized": 0.984356821465695,
+      "severity_ratio": 0.3099380414075704
+    }
+  ]
+}

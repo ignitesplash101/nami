@@ -10,7 +10,7 @@ Every endpoint that calls Vertex AI / Gemini is gated as follows in [app/api/mai
 
 | endpoint | visitor mode | admin mode | LLM cost per request |
 |---|---|---|---|
-| `POST /api/scenarios/run` | restricted to `SAMPLE_SCENARIOS` × `SAMPLE_PORTFOLIOS` only ([main.py:148–164](../app/api/main.py)) | free-text + custom portfolio + backdating allowed | ~$0.08 on cache miss; $0 on cache hit |
+| `POST /api/scenarios/run` | sample portfolios only, with a sample scenario OR custom scenario text (`_resolve_scenario_text` / `_resolve_portfolio` in [main.py](../app/api/main.py)); custom holdings and backdating are 403 | free-text + custom portfolio + backdating allowed | ~$0.08 on cache miss; $0 on cache hit |
 | `POST /api/scenarios/run-stream` | same gates via `_resolve_*` helpers | same as above | same |
 | `POST /api/scenarios/adjust-shocks` | **403** ([main.py:348–349](../app/api/main.py)) | one Gemini call | ~$0.015 |
 | `POST /api/scenarios/decompose` | **403** ([main.py:384–386](../app/api/main.py)) | 1 + 2^N − 1 Gemini calls (N=2..4) | ~$0.15–$0.80 (estimate) |

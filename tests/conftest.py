@@ -21,6 +21,22 @@ def _disable_rate_limit():
     limiter.enabled = previously
 
 
+@pytest.fixture(autouse=True)
+def _isolate_event_matrix_cache(monkeypatch):
+    """Keep every test off the persistent (GCS) event-matrix cache and the process memo.
+
+    With working local cloud credentials, `get_cached_event_returns_matrix` reads the real
+    30-day parquet, so scenario tests that stub the per-event fetch silently received real
+    event returns instead of their fixtures. CI has no credentials, which hid it.
+    """
+    from app.factors import warm_cache
+
+    warm_cache.clear()
+    monkeypatch.setattr(warm_cache, "get_event_matrix_cache", lambda: None)
+    yield
+    warm_cache.clear()
+
+
 @dataclass
 class InMemoryCache:
     """Drop-in `CacheProtocol` implementation for tests. Stores dicts in a plain dict.

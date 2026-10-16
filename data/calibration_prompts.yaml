@@ -1,0 +1,74 @@
+# Ex-ante scenario prompts for the Phase-42 shock-calibration study
+# (scripts/run_shock_calibration.py). Each prompt describes the TRIGGER as it
+# could have been written the trading day before the event began: mechanism and
+# direction only, no outcome magnitudes and no hindsight vocabulary.
+#
+# Kept apart from data/historical_events.yaml on purpose: editing this file must
+# not change `events_version`, which keys the scenario and event-matrix caches.
+#
+# Only events whose as-of date can estimate betas on the full 26-factor universe
+# are listed (on or after 2019-05). Earlier as-of dates fail in production because
+# the communication-services factor ETF has under 40 weeks of history before then.
+#
+# Leakage: the model knows how every one of these episodes ended. That biases the
+# study toward the model-driven variants, so "history beats the model" is the
+# robust direction of its comparison.
+
+trade-war-reescalation-2019: >-
+  Trade talks between the US and China collapse and the US raises tariffs on a
+  large slice of Chinese imports, with retaliation and a weaker yuan likely to
+  follow; markets price a drawn-out trade war rather than a single shock.
+covid-crash-2020: >-
+  A major exogenous shock to global travel and supply chains forces a
+  synchronous recession scare; equity markets repricing happens over weeks not
+  months, with cyclicals and travel-exposed names leading the drawdown.
+covid-liquidity-2020: >-
+  After a historic liquidity crash, the central bank announces open-ended asset
+  purchases and emergency credit facilities for corporate bonds, while fiscal
+  support is being negotiated; markets weigh a policy backstop against a deep
+  recession.
+vaccine-rotation-2020: >-
+  A large late-stage trial reports high efficacy for a vaccine against the
+  pandemic virus, raising hopes of reopening; investors reassess pandemic
+  winners versus beaten-down cyclicals and value stocks.
+rates-tantrum-2021: >-
+  Reflation expectations build on fiscal stimulus and reopening, pushing long
+  bond yields higher at speed while the central bank signals patience;
+  long-duration growth equities look exposed to a real-yield shock.
+evergrande-2021: >-
+  A heavily indebted Chinese property developer approaches default on its
+  bonds, raising fears of contagion through the Chinese property sector, credit
+  markets, and commodity demand.
+inflation-ukraine-2022: >-
+  Persistent above-target core inflation forces developed-market central banks
+  into a sustained tightening cycle over the next 12 months; duration-sensitive
+  growth equities derate sharply, defensives and value relatively spared.
+uk-gilt-crisis-2022: >-
+  A UK fiscal package of large unfunded tax cuts undermines confidence in
+  sterling and government bonds, forcing leveraged pension hedging strategies
+  to sell gilts into a falling market.
+svb-banking-2023: >-
+  Sudden loss of depositor confidence in select mid-size lenders triggers
+  deposit withdrawals and forced asset sales; large diversified banks
+  relatively spared, regional bank index leads losses.
+higher-for-longer-2023: >-
+  Heavy Treasury issuance and a central bank signalling rates will stay high for
+  longer push long-term yields steadily higher; rate-sensitive sectors and
+  long-duration equities face a slow de-rating.
+fed-pivot-rally-2023: >-
+  Inflation cools faster than expected and the central bank signals the hiking
+  cycle is over, with rate cuts in view; bond yields could fall sharply and
+  rate-sensitive laggards rebound.
+yen-carry-unwind-2024: >-
+  The Bank of Japan surprises with a rate hike as US growth data softens,
+  driving a sharp yen appreciation that forces leveraged yen-funded carry
+  trades to unwind across global markets.
+ai-capex-shock-2025: >-
+  A foreign lab releases a frontier-quality AI model trained at a fraction of
+  the expected cost, calling into question the scale of planned AI
+  infrastructure spending; semiconductor and data-center supply-chain names are
+  most exposed.
+us-tariffs-2025: >-
+  The US announces broad tariff increases on China and many other trading
+  partners, well beyond market expectations, with retaliation likely;
+  investors price a global trade war and higher recession risk.

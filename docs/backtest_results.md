@@ -2,7 +2,8 @@
 
 > ⚠️ **This is a dated snapshot, NOT a stable benchmark.**
 > The engine calls real Gemini with Google Search grounding. News drifts, search rankings
-> change, and the LLM is not bit-deterministic across months even with `temperature=0`.
+> change, and the LLM is not deterministic across runs (current requests omit sampling
+> parameters, which the 3.8 model ignores; older snapshots below record what they sent).
 > Re-run `RUN_NETWORK_TESTS=1 uv run pytest tests/test_live_evals.py -v` to refresh.
 
 ---

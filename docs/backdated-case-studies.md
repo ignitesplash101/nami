@@ -1,5 +1,7 @@
 # Backdated retrospective case studies
 
+> **Measured since (Phase 42):** [shock calibration](shock-calibration.md) runs the same backdated pipeline leave-one-out across 14 events × 4 books with repeated samples. The three cases below remain as narrative walk-throughs of the data path.
+
 > **These are not backtests.** nami is a scenario *explainer*, not a forecaster, and the framing of each prompt is a known source of label leakage — a user writing in 2026 about a "2020 pandemic resurgence" is implicitly drawing on what they learned from COVID. These case studies exercise nami's backdated, vintage-controlled data path on three well-known historical regimes where ground truth is observable, then compare nami's modeled stress P&L to the actual realized P&L over the same window. The intent is to show the *shape* of nami's outputs under reproducibility constraints, not to claim predictive accuracy.
 >
 > Three sources of label leakage are unavoidable in v1:
@@ -72,7 +74,7 @@
 | narrative mode | `analog_only` |
 | eligible analogs at as-of | 14 (above 12 plus `inflation-ukraine-2022`, `uk-gilt-crisis-2022`) |
 | analogs selected by LLM | `bnp-paribas-credit-2007`, `lehman-gfc-2008` |
-| modeled top factor | VIX (+24% shock, deliberately downweighted by validator from 47% mean because `count < 3`) |
+| modeled top factor | VIX (+24% shock vs a 47% analog mean; with `count < 3` the validator does not check the band, so the lower value is the model's own choice under the prompt's down-weighting instruction) |
 | **modeled total P&L (naive)** | **−1.75%** |
 | **modeled total P&L (Scenario shocks)** | **−1.17%** |
 | realized window | 2023-03-08 → 2023-05-08 (2 months) |

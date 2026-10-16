@@ -248,3 +248,13 @@ def test_registry_has_31_events_with_extended_tags():
     assert "volatility" in events["volmageddon-2018"].tags
     assert "credit" in events["evergrande-2021"].tags
     assert "disaster" in events["japan-earthquake-2011"].tags
+
+
+def test_events_version_ignores_line_endings(tmp_path: Path):
+    """A CRLF checkout (Windows core.autocrlf) must hash like the deployed LF bytes."""
+    body = "a: 1\nb: [x, y]\n"
+    lf = tmp_path / "lf.yaml"
+    crlf = tmp_path / "crlf.yaml"
+    lf.write_bytes(body.encode("utf-8"))
+    crlf.write_bytes(body.replace("\n", "\r\n").encode("utf-8"))
+    assert analogs.events_version(lf) == analogs.events_version(crlf)

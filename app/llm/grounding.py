@@ -16,9 +16,10 @@ def extract_citations(response: Any) -> list[Citation]:
 
     The genai SDK returns grounding metadata as a structured object containing
     `grounding_chunks` (each with a `web` field carrying `uri` and `title`) plus
-    `grounding_supports` and optionally `search_entry_point`. We preserve the
-    chunk-level metadata in `Citation.grounding_metadata` so the rendering layer
-    can satisfy Vertex's grounding-display requirements (Search Suggestions, etc.).
+    `grounding_supports` and optionally `search_entry_point`. Only the chunks are
+    read today: each chunk's metadata is kept in `Citation.grounding_metadata`;
+    the sentence-level `grounding_supports` and the Search Suggestions entry point
+    are neither stored nor rendered.
 
     Returns [] when no grounding metadata is present (the caller decides whether
     that's acceptable).

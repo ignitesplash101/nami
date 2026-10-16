@@ -110,7 +110,7 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–41 shipped (most recently Phase 41: the Gemini 3.8 Flash runtime upgrade
-with request-contract hardening and live semantic verification).
+Phases 0–42 shipped (most recently Phase 42: the scenario-layer evidence program —
+pre-registered completion and shock-calibration studies, no production behavior change).
 The full append-only log — one dated entry per phase with scope and rationale —
 lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

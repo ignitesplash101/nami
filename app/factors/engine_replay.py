@@ -151,7 +151,7 @@ def buy_and_hold_return_usd(
     return total
 
 
-def _fx_window_totals(tickers: Sequence[str], event: HistoricalEvent) -> dict[str, float]:
+def fx_window_totals(tickers: Sequence[str], event: HistoricalEvent) -> dict[str, float]:
     """Per-ticker FX total return over the event window (0.0 for USD listings).
 
     Uses the same pair/inversion maps as marking + fx conversion so realized
@@ -174,6 +174,35 @@ def _fx_window_totals(tickers: Sequence[str], event: HistoricalEvent) -> dict[st
     return {
         t: totals_by_major.get(m, 0.0) if m != "USD" else 0.0 for t, m in majors_by_ticker.items()
     }
+
+
+def vintage_ticker_returns(
+    portfolio: Portfolio, event: HistoricalEvent, config: Config
+) -> pd.DataFrame:
+    """USD weekly holding returns over the beta lookback ending before the event.
+
+    `end=event.start_date` is yfinance-exclusive, so data runs through the
+    trading day before the event — the same vintage as the factor fetch.
+    """
+    ticker_prices = fetch_weekly_prices(
+        portfolio.tickers,
+        end=event.start_date,
+        lookback_weeks=config.beta_lookback_weeks,
+    )
+    return convert_weekly_returns_to_usd(
+        compute_weekly_returns(ticker_prices), end=event.start_date
+    )
+
+
+def realized_book_return(portfolio: Portfolio, event: HistoricalEvent) -> float:
+    """The book's realized buy-and-hold USD return over the event window."""
+    realized_prices = fetch_daily_prices(
+        portfolio.tickers,
+        start=event.start_date,
+        end=event.end_date + timedelta(days=1),
+    )
+    fx_totals = fx_window_totals(portfolio.tickers, event)
+    return buy_and_hold_return_usd(realized_prices, portfolio.holdings, fx_totals)
 
 
 def _replay_pair(
@@ -203,7 +232,6 @@ def _replay_pair(
     if CASH_TICKER in portfolio.holdings:
         return _skip("cash sleeve not supported by the replay harness")
 
-    vintage_end = event.start_date  # yfinance-exclusive → data through the prior trading day
     vintage_factors, _ = select_vintage_factors(vintage_factor_returns)
     # Diff against the FULL universe, not just the fetched frame: an ETF that
     # didn't exist at the vintage never comes back as a column at all, and the
@@ -213,14 +241,7 @@ def _replay_pair(
         return _skip("no factor ETF has enough history at this vintage", dropped)
 
     try:
-        ticker_prices = fetch_weekly_prices(
-            portfolio.tickers,
-            end=vintage_end,
-            lookback_weeks=config.beta_lookback_weeks,
-        )
-        ticker_returns = convert_weekly_returns_to_usd(
-            compute_weekly_returns(ticker_prices), end=vintage_end
-        )
+        ticker_returns = vintage_ticker_returns(portfolio, event, config)
         betas, stats = estimate_betas_for_portfolio(
             portfolio,
             lookback_weeks=config.beta_lookback_weeks,
@@ -231,13 +252,7 @@ def _replay_pair(
 
         modeled, covered = analog_replay_pnl(portfolio, betas, event_returns)
 
-        realized_prices = fetch_daily_prices(
-            portfolio.tickers,
-            start=event.start_date,
-            end=event.end_date + timedelta(days=1),
-        )
-        fx_totals = _fx_window_totals(portfolio.tickers, event)
-        realized = buy_and_hold_return_usd(realized_prices, portfolio.holdings, fx_totals)
+        realized = realized_book_return(portfolio, event)
     except RuntimeError as exc:  # incl. InsufficientHistoryError / MarkingError subclasses
         return _skip(f"{type(exc).__name__}: {exc}", dropped, used=vintage_factors.shape[1])
 

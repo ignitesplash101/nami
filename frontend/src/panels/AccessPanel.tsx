@@ -55,7 +55,7 @@ export function AccessPanel({
       <p className="muted">
         {isAdmin
           ? "Unrestricted controls are enabled for this browser session."
-          : "Visitors can run sample scenarios on sample portfolios only."}
+          : "Visitors can run any scenario on the sample portfolios."}
       </p>
       {isAdmin ? (
         <button className="ghost-button" onClick={handleLock} disabled={busy}>

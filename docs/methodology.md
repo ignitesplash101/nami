@@ -278,7 +278,7 @@ standardize-then-rescale property.
 ## Historical analog matcher
 
 `app/factors/analogs.py` loads a curated registry of 31 historical market-stress events
-from [`data/historical_events.yaml`](../data/historical_events.yaml), spanning 2007–2025.
+from [`data/historical_events.yaml`](../data/historical_events.yaml), spanning 2000–2025.
 Each event has:
 
 - `id` — stable kebab-case identifier (e.g. `covid-crash-2020`)
@@ -840,6 +840,121 @@ severity of the LLM-proposed, envelope-banded shocks.
 
 ---
 
+## Scenario-layer evidence program (Phase 42)
+
+The engine is validated; the shock vector feeding it is not. Every full-pipeline
+backdated case so far understates the realized move by roughly 4× (one has the wrong
+sign; see [backdated case studies](backdated-case-studies.md)). Phase 42 measures
+*why* before anything changes, in two studies whose adoption gates were fixed in this
+section **before either study first ran**.
+
+**Hypothesis.** The understatement is mostly structural, not timidity in the language
+model. A factor the scenario does not name enters the P&L at exactly zero, and in a
+collinear basis of 26 raw ETFs a stock's market exposure is split across SPY and its
+sector ETF. "SPY −20%" with the sector left at zero therefore drops most of the move.
+
+**Candidate method (one idea).** A scenario states a few *anchor* moves `a`; the rest
+of the factor vector is completed by its conditional expectation under the vintage
+weekly covariance, `s_u = Σ_ua Σ_aa⁻¹ a`, with Ledoit–Wolf shrinkage of the
+correlations so Σ stays well-conditioned. Both blocks of Σ scale by the same horizon,
+so the completed moves are horizon-free; the residual `Σ_uu − Σ_ua Σ_aa⁻¹ Σ_au`,
+scaled by the horizon and joined with the single-name variance, gives one uncertainty
+band. In a market-plus-relative basis (each non-market equity factor replaced by
+`r_k − b_k·r_SPY`) the column span is unchanged, so P&L is invariant, while each
+contribution reads as "market move × your beta" plus "your tilts' relative moves".
+
+**Study 1 — completion, no language model** ([results](completion-study.md),
+`scripts/run_completion_study.py`). For every computable (event × sample book) pair,
+anchor on the event's own realized moves (SPY alone; SPY plus the seven macro factors;
+SPY plus the two or four most extreme other moves) and compare modeled factor P&L with
+the realized book return under six variants: zero-fill (production today), conditional
+completion, relative-basis zero-fill, relative-basis completion, completion with a
+stress-week covariance, and completion with rates as yield changes and VIX / oil /
+dollar as log changes. Pre-registered gates, averaged over the four anchor sets on the
+pairs where every gated variant exists:
+
+- **G1 (completion).** The better of raw- or relative-basis completion cuts mean MAE to
+  at most 75% of zero-fill's, without lowering mean Pearson r.
+- **G2 (relative basis).** Relative-basis completion stays within ±0.25pp MAE of
+  raw-basis completion, and the median bootstrap dispersion of the factor attribution
+  falls.
+- **G3 (units).** Yield-change / log units keep MAE within +0.10pp of relative-basis
+  completion.
+
+**Study 2 — the language model's magnitudes** (`scripts/run_shock_calibration.py`,
+capped at $10). Backdated, leave-one-out runs of the real pipeline on post-2019 events
+(earlier as-of dates cannot estimate betas; see the Phase 42 notes in the engine docs)
+compare the production headline, the model's named factors completed by covariance, the
+same anchors at analog-median magnitudes, and the pure analog mean. **G4:** the language
+model keeps setting magnitudes only if its completed shocks beat analog-median
+magnitudes on MAE. The model knows how these episodes ended, which favors the
+model-driven variants, so "history ≥ model" is the robust direction of that test.
+
+**Results (2026-10-16).** The full tables, per-pair rows, and provenance are in the two
+generated artifacts. What they show:
+
+- **Study 1: completion is necessary, and the anchors carry the answer.** This covers 85
+  event × book pairs, with no language model. Averaged over the four anchor sets:
+  - Zero-fill (production semantics) scores mean MAE 13.3% and Pearson r 0.51.
+  - Relative-basis completion scores MAE 5.1% and r 0.93.
+  - With only SPY anchored, completion reaches MAE 5.5%, against the engine's 3.3% upper
+    bound.
+
+  Gate verdicts:
+  - **G1 PASS.**
+  - **G2 FAIL as written.** Relative-basis completion beat raw-basis completion by
+    0.27pp. That falls outside the two-sided ±0.25pp tolerance set to confirm invariance,
+    because ridge and correlation shrinkage act differently in the two bases. The gate's
+    explainability clause passed decisively. Bootstrap attribution dispersion fell from
+    27.6% to 11.2%. The largest contributor stayed the same in 84% of resamples, against
+    56% in the raw basis, where SPY's variance inflation factor is 455.
+  - **G3 PASS.** Yield-change / log units score MAE 5.0% vs 5.1%. The transport problem
+    is real: the 2022 analog's 10Y move reads as +420bp at today's yield level, against
+    the +134bp that happened.
+
+  The single uncertainty band under-covers: ±1σ held 47–66% of realized outcomes
+  against a nominal 68%.
+- **Study 2: with the real model, the error sits in the shock sizes.** This covers 56
+  pairs from 84 paid runs, costing $6.58.
+  - **The engine is not the problem.** The production headline scores MAE 13.7% and r
+    0.20. Fed each event's realized factor vector, the same betas reach MAE 3.5% and
+    r 0.98.
+  - **Completing the model's shocks changes nothing.** The paired difference is +0.01pp,
+    and its interval spans zero. The model names 8–26 factors per run (median 19), so
+    the zero-hole is not what binds in practice.
+  - **Size binds.** The median projection of the model's shocks onto the realized vector
+    is 0.27, about a quarter of the realized move. The median cosine is 0.67, so the
+    direction is broadly right and the magnitude is not.
+  - **The targets are hard by construction.** Several windows run from an ex-post peak
+    to a trough, or include the reversal that ended the episode. That inflates the
+    absolute error but not the comparison between variants.
+  - **G4 PASS.** The model's magnitudes beat analog-median magnitudes by 2.3pp MAE
+    (95% paired-bootstrap interval 0.8–3.9pp). They beat the pure analog mean by 1.2pp
+    (0.1–2.5pp). That is the direction hindsight favors, so it is weak evidence, but it
+    is the evidence there is: history-only magnitudes did not win.
+  - **Run-to-run variation.** The same prompt's headline varied with a median standard
+    deviation of 1.3pp and a maximum of 14.7pp (`fed-pivot-rally-2023` × `msci_world`).
+
+**What changes and what does not.** Phase 42 changes no production behavior. The
+evidence supports a methodology rebuild that:
+- completes every scenario by covariance (G1)
+- states rates as yield changes and VIX / oil / dollar as log changes (G3)
+- keeps the language model setting anchor magnitudes (G4)
+
+The relative basis failed its pre-registered gate in the favorable direction and passed
+its explainability clause. Adopting it is a judgment call to make explicitly, not by
+re-scoring the gate. The history-only Quant V2 engine stays parked, because history-set
+magnitudes lost to the model's here. Its promotion script now has paired legacy records
+waiting for a quant-side run: `challenger_legacy_half` in
+`scripts/shock_calibration_output.json`.
+
+The finding that matters most is the severity gap. Whoever sets the numbers, the
+scenario layer, not the engine, explains almost none of the cross-event variation in
+outcomes. The headline should keep travelling with the analog replay range that brackets
+it.
+
+---
+
 ## What this is NOT
 
 - **Not a regulatory stress engine.** No Basel SA/IMA, no FRTB, no CCAR/DFAST. The phrase
@@ -852,8 +967,11 @@ severity of the LLM-proposed, envelope-banded shocks.
   cap-weight snapshot replayed onto the as-of date — point-in-time weight drift and
   survivorship apply. The backdated-mode banner discloses this in-product, with the
   snapshot date.
-- **Not deterministic in narrative wording.** Shocks are reproducible by cache hash;
-  narrative text varies slightly across uncached runs.
+- **Not deterministic across uncached runs.** A cached result is reproduced byte-for-byte,
+  but the cache freezes one draw rather than making the draw deterministic. Re-running the
+  same scenario uncached can name a different set of factors and land on a different
+  headline. Across repeated backdated runs the headline's standard deviation had a median
+  of 1.3pp and a maximum of 14.7pp (see [shock calibration](shock-calibration.md)).
 - **Not investment advice.** Period.
 
 ---
