@@ -49,8 +49,29 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByRole("button", { name: "Run hypothetical stress" }).click();
-    await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toBeVisible();
+    // A fresh result lands on the move → effect chart (Phase 43).
+    await expect(
+      page.getByRole("group", { name: "How the scenario reaches this portfolio" })
+    ).toBeVisible();
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      const overflow = await expectNoDocumentOverflow(page);
+      expect(
+        overflow.scrollWidth,
+        `${theme} move-effect chart at ${viewport.width}px: ${JSON.stringify(overflow.offenders)}`
+      ).toBeLessThanOrEqual(overflow.clientWidth + 1);
+      if (viewport.width <= 1079) {
+        expect(
+          await compactControlViolations(page),
+          `${theme} compact result controls at ${viewport.width}px`
+        ).toEqual([]);
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expectNoSeriousAccessibilityViolations(page);
 
+    await page.getByRole("radio", { name: "Waterfall" }).click();
+    await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toBeVisible();
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
       await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toHaveAttribute(
@@ -76,13 +97,60 @@ test("200% text scaling proxy keeps the page within the phone viewport", async (
   const api = await installApiMocks(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Run hypothetical stress" }).click();
-  await expect(page.getByRole("group", { name: "Contribution waterfall chart" })).toBeVisible();
+  await expect(
+    page.getByRole("group", { name: "How the scenario reaches this portfolio" })
+  ).toBeVisible();
   await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
 
   const overflow = await expectNoDocumentOverflow(page);
   expect(overflow.scrollWidth, JSON.stringify(overflow.offenders)).toBeLessThanOrEqual(
     overflow.clientWidth + 1
   );
+  expectCleanNetworkPolicy(api);
+});
+
+test("phone evidence and driver rows keep every value inside its card", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  const api = await installApiMocks(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+  await expect(
+    page.getByRole("group", { name: "How the scenario reaches this portfolio" })
+  ).toBeVisible();
+
+  // Regression: two-number range values used to overlap their label and run
+  // past the card edge while the document itself reported no overflow.
+  const escapes = await page.evaluate(() => {
+    // Measure the rendered TEXT (a Range), not the element box: a squeezed
+    // grid item keeps a tiny box while its text visibly spills out of it.
+    const textBox = (element: Element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return range.getBoundingClientRect();
+    };
+    const problems: string[] = [];
+    const block = document.querySelector(".evidence-block")!.getBoundingClientRect();
+    for (const row of document.querySelectorAll(".evidence-rows li:not(.evidence-axis)")) {
+      const label = textBox(row.querySelector(".evidence-row-label")!);
+      const value = textBox(row.querySelector(".evidence-row-value")!);
+      if (value.right > block.right + 1 || value.left < block.left - 1) {
+        problems.push(`value escapes card: ${row.textContent}`);
+      }
+      const overlaps =
+        value.left < label.right - 1 &&
+        label.left < value.right - 1 &&
+        value.top < label.bottom - 1 &&
+        label.top < value.bottom - 1;
+      if (overlaps) problems.push(`value overlaps label: ${row.textContent}`);
+    }
+    const chart = document.querySelector(".tx-chart")!.getBoundingClientRect();
+    for (const value of document.querySelectorAll(".tx-value")) {
+      const box = textBox(value);
+      if (box.right > chart.right + 1) problems.push(`driver value escapes: ${value.textContent}`);
+    }
+    return problems;
+  });
+  expect(escapes).toEqual([]);
   expectCleanNetworkPolicy(api);
 });
 
@@ -115,6 +183,7 @@ test("phone chart keeps its maximum-width tooltip inside the plot", async ({ pag
   await page.goto("/");
   await page.addStyleTag({ content: ".waterfall-tooltip { width: 240px !important; }" });
   await page.getByRole("button", { name: "Run hypothetical stress" }).click();
+  await page.getByRole("radio", { name: "Waterfall" }).click();
 
   const chart = page.getByTestId("waterfall-chart");
   const firstBar = page.locator("[data-waterfall-bar]").first();
@@ -173,6 +242,23 @@ test("@smoke run, chart, theme, fullscreen, and keyboard exit", async ({ page })
   await runButton.focus();
   await expect(runButton).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("group", { name: "How the scenario reaches this portfolio" })
+  ).toBeVisible();
+
+  // Move → effect rows are keyboard disclosures.
+  const firstRow = page.locator(".tx-row-button").first();
+  await firstRow.focus();
+  await page.keyboard.press("Enter");
+  await expect(firstRow).toHaveAttribute("aria-expanded", "true");
+
+  // The view switch is a radiogroup: Arrow keys move AND select.
+  await page.getByRole("radio", { name: "Move → effect" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Waterfall" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
   const chart = page.getByRole("group", { name: "Contribution waterfall chart" });
   await expect(chart).toBeVisible();
 
@@ -187,12 +273,12 @@ test("@smoke run, chart, theme, fullscreen, and keyboard exit", async ({ page })
   await page.keyboard.press("Enter");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
-  const fullscreen = page.getByRole("button", { name: "Expand contribution waterfall" });
+  const fullscreen = page.getByRole("button", { name: "Expand attribution chart" });
   await fullscreen.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog", { name: "contribution waterfall" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "attribution chart" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "contribution waterfall" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "attribution chart" })).toHaveCount(0);
   await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
   expectCleanNetworkPolicy(api);
 });
@@ -242,12 +328,12 @@ test("completed run lands on Drivers and fallback fullscreen exits before palett
   await expect(page.getByRole("tab", { name: "Drivers" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "What drove the P&L" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Expand contribution waterfall" }).click();
-  await expect(page.getByRole("dialog", { name: "contribution waterfall" })).toBeVisible();
+  await page.getByRole("button", { name: "Expand attribution chart" }).click();
+  await expect(page.getByRole("dialog", { name: "attribution chart" })).toBeVisible();
   await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
 
   await page.keyboard.press("Control+K");
-  await expect(page.getByRole("dialog", { name: "contribution waterfall" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "attribution chart" })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
   await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
   await page.getByRole("combobox", { name: "Command search" }).fill("Go to Your book");

@@ -131,6 +131,22 @@ export const scenarioEnvelope = {
       portfolio_idio_vol_weekly: 0.02,
       horizon_weeks: 1
     },
+    // Two-number replay values are the widest evidence text a phone must fit.
+    analog_replay: {
+      per_event: [
+        { event_id: "q4-trade-war-2018", replay_pnl: -0.186, n_factors_covered: 12, n_factors_total: 12 },
+        { event_id: "trade-war-2019", replay_pnl: -0.053, n_factors_covered: 12, n_factors_total: 12 },
+        { event_id: "tariffs-2025", replay_pnl: 0.114, n_factors_covered: 12, n_factors_total: 12 }
+      ],
+      min_pnl: -0.186,
+      median_pnl: -0.053,
+      max_pnl: 0.114
+    },
+    analog_event_returns: [
+      { event_id: "q4-trade-war-2018", window_calendar_days: 91, factor_returns: { SPY: -0.138, XLK: -0.178, VIX: 1.118 } },
+      { event_id: "trade-war-2019", window_calendar_days: 112, factor_returns: { SPY: -0.026, XLK: -0.018, VIX: 0.544 } },
+      { event_id: "tariffs-2025", window_calendar_days: 59, factor_returns: { SPY: 0.051, XLK: 0.11, VIX: -0.147 } }
+    ],
     benchmark_ticker: "SPY",
     active_return: -0.01
   },

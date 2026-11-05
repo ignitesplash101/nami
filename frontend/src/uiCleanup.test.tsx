@@ -258,6 +258,8 @@ describe("first-screen UI cleanup", () => {
     );
 
     const { rerender } = render(panel("100000", "pct"));
+    // The waterfall is the Drivers card's second view (Phase 43).
+    fireEvent.click(screen.getByRole("radio", { name: "Waterfall" }));
     const percentWaterfall = waterfallChartSpy.mock.lastCall?.[0].waterfall;
     rerender(panel("250000", "pct"));
     const editedPercentWaterfall = waterfallChartSpy.mock.lastCall?.[0].waterfall;

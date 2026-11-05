@@ -94,8 +94,12 @@ describe("numeric table system", () => {
     const header = screen.getByText("P&L contrib").closest("th");
     expect(header).toHaveClass("num");
     // "-6.00%" appears in several tables (factor contrib, name-level total) —
-    // every numeric occurrence must sit in a td.num cell.
-    const cells = screen.getAllByText("-6.00%").map((el) => el.closest("td"));
+    // every numeric occurrence INSIDE A TABLE must sit in a td.num cell. (The
+    // Drivers transmission chart prints the same value outside any table.)
+    const cells = screen
+      .getAllByText("-6.00%")
+      .filter((el) => el.closest("table"))
+      .map((el) => el.closest("td"));
     expect(cells.length).toBeGreaterThan(0);
     for (const cell of cells) {
       expect(cell).toHaveClass("num");

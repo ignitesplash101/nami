@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import type { ReactNode } from "react";
 import {
   buildAnalogReplayRows,
   buildEvidenceGauge,
@@ -48,6 +49,10 @@ export function EvidenceBlock({
       ? formatCurrency(nav * Math.abs(value), currency)
       : formatPercent(Math.abs(value));
   const tone = (value: number) => (value < 0 ? "down" : value > 0 ? "up" : "");
+  const fmtTick = (value: number) =>
+    showDollars && nav != null
+      ? compactCurrency(nav * value, currency)
+      : `${value > 0 ? "+" : ""}${Number((value * 100).toFixed(1))}%`;
   const replayRows = buildAnalogReplayRows(result, analogEvents);
   const ladder = result.severity_ladder;
   const band = result.pnl_uncertainty;
@@ -63,64 +68,52 @@ export function EvidenceBlock({
         <FullscreenButton controller={fs} surface="evidence and bounds" />
       </div>
 
-      <div className="evidence-gauge" aria-hidden="true">
-        <span className="evidence-track" />
-        {gauge.ladder ? (
-          <span
-            className="evidence-ladder-bar"
-            style={{
-              left: `${gauge.ladder.lowPct}%`,
-              width: `${Math.max(gauge.ladder.highPct - gauge.ladder.lowPct, 0.5)}%`
-            }}
-          />
-        ) : null}
-        {gauge.idio ? (
-          <span
-            className="evidence-idio-whisker"
-            style={{
-              left: `${gauge.idio.lowPct}%`,
-              width: `${Math.max(gauge.idio.highPct - gauge.idio.lowPct, 0.5)}%`
-            }}
-          />
-        ) : null}
-        {gauge.replay ? (
-          <>
-            <span className="evidence-replay-tick" style={{ left: `${gauge.replay.minPct}%` }} />
-            <span
-              className="evidence-replay-tick median"
-              style={{ left: `${gauge.replay.medianPct}%` }}
-            />
-            <span className="evidence-replay-tick" style={{ left: `${gauge.replay.maxPct}%` }} />
-          </>
-        ) : null}
-        <span className="evidence-base-tick" style={{ left: `${gauge.base.pct}%` }} />
-      </div>
-
       <ul className="evidence-rows">
         <li>
           <span className="evidence-row-label">
             <span className="evidence-swatch base" aria-hidden="true" /> Scenario (base)
           </span>
+          <EvidenceTrack zeroPct={gauge.zero.pct} basePct={gauge.base.pct}>
+            <span className="evidence-point" style={{ left: `${gauge.base.pct}%` }} />
+          </EvidenceTrack>
           <span className={`evidence-row-value ${tone(gauge.base.value)}`}>
             {fmt(gauge.base.value)}
           </span>
         </li>
-        {band ? (
+        {band && gauge.idio ? (
           <li>
             <span className="evidence-row-label">
               <span className="evidence-swatch idio" aria-hidden="true" /> ±1σ idio dispersion
             </span>
+            <EvidenceTrack zeroPct={gauge.zero.pct} basePct={gauge.base.pct}>
+              <span
+                className="evidence-whisker"
+                style={{
+                  left: `${gauge.idio.lowPct}%`,
+                  width: `${Math.max(gauge.idio.highPct - gauge.idio.lowPct, 0.5)}%`
+                }}
+              />
+            </EvidenceTrack>
             <span className="evidence-row-value">± {fmtAbs(band.band_1sigma)}</span>
           </li>
         ) : null}
-        {ladder ? (
-          <li>
+        {ladder && gauge.ladder ? (
+          <li className="is-range">
             <span className="evidence-row-label">
               <span className="evidence-swatch ladder" aria-hidden="true" /> Envelope bounds
               <span className="evidence-row-note">
                 {ladder.n_banded} banded{ladder.n_held > 0 ? ` · ${ladder.n_held} held` : ""}
               </span>
             </span>
+            <EvidenceTrack zeroPct={gauge.zero.pct} basePct={gauge.base.pct}>
+              <span
+                className="evidence-band"
+                style={{
+                  left: `${gauge.ladder.lowPct}%`,
+                  width: `${Math.max(gauge.ladder.highPct - gauge.ladder.lowPct, 0.5)}%`
+                }}
+              />
+            </EvidenceTrack>
             <span className="evidence-row-value">
               <span className={tone(ladder.worst_pnl)}>{fmt(ladder.worst_pnl)}</span>
               {" to "}
@@ -129,11 +122,33 @@ export function EvidenceBlock({
           </li>
         ) : null}
         {gauge.replay && replayRows ? (
-          <li>
+          <li className="is-range">
             <span className="evidence-row-label">
               <span className="evidence-swatch replay" aria-hidden="true" /> Analog replay
               <span className="evidence-row-note">{replayRows.length} analogs</span>
             </span>
+            <EvidenceTrack zeroPct={gauge.zero.pct} basePct={gauge.base.pct}>
+              <span
+                className="evidence-span"
+                style={{
+                  left: `${gauge.replay.minPct}%`,
+                  width: `${Math.max(gauge.replay.maxPct - gauge.replay.minPct, 0.5)}%`
+                }}
+              />
+              {replayRows.length > 2 ? (
+                <span className="evidence-median" style={{ left: `${gauge.replay.medianPct}%` }} />
+              ) : null}
+              {gauge.replay.events.map((event) => (
+                <span
+                  key={event.eventId}
+                  className="evidence-event"
+                  style={{ left: `${event.pct}%` }}
+                  title={`${
+                    replayRows.find((row) => row.eventId === event.eventId)?.name ?? event.eventId
+                  }: ${fmt(event.value)}`}
+                />
+              ))}
+            </EvidenceTrack>
             <span className="evidence-row-value">
               <span className={tone(gauge.replay.min)}>{fmt(gauge.replay.min)}</span>
               {replayRows.length > 2 ? (
@@ -142,6 +157,23 @@ export function EvidenceBlock({
               {" to "}
               <span className={tone(gauge.replay.max)}>{fmt(gauge.replay.max)}</span>
             </span>
+          </li>
+        ) : null}
+        {gauge.ticks.length ? (
+          <li className="evidence-axis" aria-hidden="true">
+            <span />
+            <span className="evidence-axis-ticks">
+              {gauge.ticks.map((tick) => (
+                <span
+                  key={tick.value}
+                  className={tick.value === 0 ? "is-zero" : undefined}
+                  style={{ left: `${tick.pct}%` }}
+                >
+                  {fmtTick(tick.value)}
+                </span>
+              ))}
+            </span>
+            <span />
           </li>
         ) : null}
       </ul>
@@ -176,4 +208,39 @@ export function EvidenceBlock({
       </p>
     </section>
   );
+}
+
+/** One shared-axis track: zero and the scenario base are drawn on every row so
+ * the eye can run a straight line from the point estimate through each range. */
+function EvidenceTrack({
+  zeroPct,
+  basePct,
+  children
+}: {
+  zeroPct: number;
+  basePct: number;
+  children: ReactNode;
+}) {
+  return (
+    <span className="evidence-track" aria-hidden="true">
+      <span className="evidence-track-axis" />
+      <span className="evidence-zero" style={{ left: `${zeroPct}%` }} />
+      {children}
+      <span className="evidence-base-guide" style={{ left: `${basePct}%` }} />
+    </span>
+  );
+}
+
+function compactCurrency(value: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      notation: "compact",
+      maximumFractionDigits: 1,
+      signDisplay: "exceptZero"
+    }).format(value);
+  } catch {
+    return `${currency} ${Math.round(value).toLocaleString("en-US")}`;
+  }
 }

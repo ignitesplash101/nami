@@ -57,9 +57,28 @@ export function RiskDiagnostics({
   factorMeta: FactorMetadataMap;
 }) {
   if (!diagnostics.length) return null;
+  // Warnings open by default; informational notes (typically correlation-credit
+  // audits of a method the main chart does not show) wait behind one summary
+  // line instead of pushing the chart below the fold.
+  const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+  const notes = diagnostics.length - warnings;
+  const summary = [
+    warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : null,
+    notes ? `${notes} informational note${notes === 1 ? "" : "s"}` : null
+  ]
+    .filter(Boolean)
+    .join(" and ");
   return (
-    <div className="risk-diagnostics" role="note" aria-label="Risk diagnostics">
-      <p className="eyebrow">Risk diagnostics</p>
+    <details
+      className={`risk-diagnostics${warnings ? " has-warning" : ""}`}
+      role="note"
+      aria-label="Risk diagnostics"
+      open={warnings > 0}
+    >
+      <summary>
+        <span className="risk-diagnostics-title">Model diagnostics</span>
+        <span className="risk-diagnostics-count">{summary}</span>
+      </summary>
       <ul>
         {diagnostics.map((diagnostic, index) => (
           <li key={`${diagnostic.kind}-${index}`} className={diagnostic.severity}>
@@ -83,6 +102,6 @@ export function RiskDiagnostics({
           </li>
         ))}
       </ul>
-    </div>
+    </details>
   );
 }

@@ -8,8 +8,11 @@ together without making the main README carry the full product inventory.
 
 Every completed run opens with a plain-language impact summary: modeled portfolio
 P&L, the largest driver, active return against the selected benchmark, and the
-amount of historical evidence behind the result. The waterfall then separates
-systematic factor contributions from material ticker-specific shocks.
+amount of historical evidence behind the result. The Drivers chart then shows, for
+every driver, how far the scenario moves it, what that driver actually did in each
+matched historical event, and what the move does to this portfolio; a contribution
+waterfall is one click away. Positions opens on the holdings that take the hit, with
+each name's weight, modeled move, and company-specific share.
 
 The page deliberately keeps the answer layer visible while deeper material is
 organized into Drivers, Positions, Story, Adjust, and Advanced views. A live

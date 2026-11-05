@@ -644,9 +644,20 @@ export interface EvidenceGaugeLayer {
 
 export interface EvidenceGauge {
   base: { value: number; pct: number };
+  /** Zero P&L on the shared axis — always inside the domain so gains and losses read at a glance. */
+  zero: { pct: number };
   idio: EvidenceGaugeLayer | null;
   ladder: (EvidenceGaugeLayer & { worst: number; best: number }) | null;
-  replay: { min: number; median: number; max: number; minPct: number; medianPct: number; maxPct: number } | null;
+  replay: {
+    min: number;
+    median: number;
+    max: number;
+    minPct: number;
+    medianPct: number;
+    maxPct: number;
+    events: { eventId: string; value: number; pct: number }[];
+  } | null;
+  ticks: { value: number; pct: number }[];
 }
 
 /** Shared-axis positions (0–100%) for the evidence layers around the base P&L.
@@ -659,7 +670,7 @@ export function buildEvidenceGauge(result: ScenarioResult): EvidenceGauge | null
   const replay = result.analog_replay ?? null;
   if (!unc && !ladder && !replay) return null;
 
-  const values = [base];
+  const values = [0, base];
   if (unc) values.push(base - unc.band_1sigma, base + unc.band_1sigma);
   if (ladder) values.push(ladder.worst_pnl, ladder.best_pnl);
   if (replay) values.push(replay.min_pnl, replay.max_pnl);
@@ -672,6 +683,7 @@ export function buildEvidenceGauge(result: ScenarioResult): EvidenceGauge | null
 
   return {
     base: { value: base, pct: pct(base) },
+    zero: { pct: pct(0) },
     idio: unc
       ? {
           low: base - unc.band_1sigma,
@@ -697,9 +709,17 @@ export function buildEvidenceGauge(result: ScenarioResult): EvidenceGauge | null
           max: replay.max_pnl,
           minPct: pct(replay.min_pnl),
           medianPct: pct(replay.median_pnl),
-          maxPct: pct(replay.max_pnl)
+          maxPct: pct(replay.max_pnl),
+          events: replay.per_event
+            .filter((entry) => Number.isFinite(entry.replay_pnl))
+            .map((entry) => ({
+              eventId: entry.event_id,
+              value: entry.replay_pnl,
+              pct: pct(entry.replay_pnl)
+            }))
         }
-      : null
+      : null,
+    ticks: niceTicks(lo, hi, 5).map((value) => ({ value, pct: pct(value) }))
   };
 }
 
@@ -722,4 +742,19 @@ export function summarizeNameTable(result: ScenarioResult): string {
   return `${entries.length} holding${entries.length === 1 ? "" : "s"} · worst ${worst[0]} ${formatPercent(
     worst[1]
   )}`;
+}
+
+/** Clean axis ticks (1/2/2.5/5 × 10^k steps) inside [lo, hi]. */
+export function niceTicks(lo: number, hi: number, target = 4): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return [];
+  const rough = (hi - lo) / Math.max(1, target);
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step =
+    [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((candidate) => candidate >= rough) ??
+    10 * magnitude;
+  const ticks: number[] = [];
+  for (let value = Math.ceil(lo / step) * step; value <= hi + step * 1e-9; value += step) {
+    ticks.push(Math.abs(value) < step * 1e-9 ? 0 : Number(value.toPrecision(12)));
+  }
+  return ticks;
 }

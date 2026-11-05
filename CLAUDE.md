@@ -110,7 +110,7 @@ REQUIRED keys populated. Template: `.env.example`.
 
 ## Phase status
 
-Phases 0–42 shipped (most recently Phase 42: the scenario-layer evidence program —
-pre-registered completion and shock-calibration studies, no production behavior change).
+Phases 0–43 shipped (most recently Phase 43: the move → effect Drivers chart, holdings
+chart, and shared-axis evidence rows — frontend only, no engine or prompt change).
 The full append-only log — one dated entry per phase with scope and rationale —
 lives in [docs/agents/phase-log.md](docs/agents/phase-log.md).

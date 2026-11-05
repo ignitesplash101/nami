@@ -15,7 +15,7 @@ import {
   summarizeFactorTable,
   summarizeNameTable
 } from "../charts";
-import type { AttributionZoom } from "../charts";
+import { buildHoldingImpactModel, buildTransmissionModel } from "../impact";
 import { downloadCsvZip } from "../csv";
 import { factorDescription } from "../factors";
 import { formatFxRate, formatMarkPrice, formatShares } from "../format";
@@ -31,15 +31,22 @@ import { fullscreenChartHeight, useFullscreen, useViewportHeight } from "../useF
 import { useMediaQuery } from "../useMediaQuery";
 import { RiskDiagnostics } from "./AttributionControl";
 import { ExposureBreakdown } from "./ExposureBreakdown";
+import { HoldingImpactChart } from "./HoldingImpactChart";
 import { MethodologyDiagnostics } from "./MethodologyDiagnostics";
 import { SortableTh } from "./primitives";
 import { ScenarioReadout } from "./ScenarioReadout";
+import { TransmissionChart } from "./TransmissionChart";
 import { WaterfallChart } from "./WaterfallChart";
 import type { FactorMetadataMap, ScenarioResult, ScenarioRunResponse } from "../types";
 
 /** Results sub-tabs: the answer band (readout, evidence, toolbar, NAV metric)
  * always renders ABOVE these; the tabs split only the drill layer. */
 export type ResultsTabKey = "drivers" | "positions" | "story" | "adjust" | "advanced";
+
+/** Drivers chart views. "transmission" (the default) pairs each driver's scenario
+ * move with its P&L effect; "waterfall" and "group" are the contribution bridge
+ * at factor and group zoom over the SAME attribution map. */
+export type DriversView = "transmission" | "waterfall" | "group";
 
 export type ValuationSortKey =
   | "ticker"
@@ -135,13 +142,15 @@ export function ResultsPanel({
   const [internalTab, setInternalTab] = useState<ResultsTabKey>("drivers");
   const activeTab = resultsTab ?? internalTab;
   const changeTab = onResultsTabChange ?? setInternalTab;
-  // One methodology, two zooms (Phase 31i): the main waterfall always shows
-  // the explicit conditional Shapley map (naive fallback for old payloads);
-  // "group" rolls the SAME numbers up, so the zooms reconcile by construction.
-  const [zoom, setZoom] = useState<AttributionZoom>("factor");
+  // One methodology, three views (Phase 31i, Phase 43): every Drivers view reads
+  // the explicit conditional Shapley map (naive fallback for old payloads); the
+  // waterfall's "group" zoom rolls the SAME numbers up, so views reconcile by
+  // construction.
+  const [driversView, setDriversView] = useState<DriversView>("transmission");
+  const zoom = driversView === "group" ? "group" : "factor";
   const waterfallCardRef = useRef<HTMLDivElement>(null);
   const waterfallFullscreen = useFullscreen(waterfallCardRef, {
-    surface: "contribution waterfall"
+    surface: "attribution chart"
   });
   // Hoisted ABOVE the early return with the other hooks (see the contract at the
   // top of this fn): it's `active`-gated, so calling it before we know an
@@ -195,6 +204,22 @@ export function ResultsPanel({
           maxWaterfallSteps
         );
   }, [pending, attributionMethod, chartNav, currency, factorMeta, zoom, maxWaterfallSteps]);
+  const transmissionMemo = useMemo(
+    () =>
+      pending && attributionMethod
+        ? buildTransmissionModel(
+            pending,
+            attributionMethod,
+            factorMeta,
+            envelope?.analog_events ?? null
+          )
+        : null,
+    [pending, attributionMethod, factorMeta, envelope]
+  );
+  const holdingMemo = useMemo(
+    () => (pending ? buildHoldingImpactModel(pending) : null),
+    [pending]
+  );
   const factorRows = useMemo(
     () =>
       pending && attributionMethod
@@ -266,6 +291,7 @@ export function ResultsPanel({
             </button>
           ) : null}
         </div>
+        <TransmissionPreview />
       </section>
     );
   }
@@ -278,6 +304,8 @@ export function ResultsPanel({
   const mainAttribution = mainAttributionMemo!;
   const waterfall = waterfallMemo!;
   const readoutMethod = readoutMethodMemo!;
+  const transmission = transmissionMemo;
+  const holding = holdingMemo;
   const toggleSort = (key: ValuationSortKey) =>
     setValuationSort(
       valuationSort.key === key
@@ -349,20 +377,27 @@ export function ResultsPanel({
                 <p className="eyebrow">Attribution</p>
                 <h3>What drove the P&amp;L</h3>
                 <p className="muted card-subtitle">
-                  Systematic contribution waterfall — explicit conditional Shapley
+                  {driversView === "transmission"
+                    ? "Each driver's scenario move, checked against matched historical events, and its effect on this portfolio"
+                    : "Systematic contribution waterfall — explicit conditional Shapley"}
                 </p>
               </div>
               <div className="card-heading-actions">
-                <ChoiceGroup<AttributionZoom>
+                <ChoiceGroup<DriversView>
                   ariaLabel="Attribution view"
-                  className="segmented"
-                  value={zoom}
-                  onChange={setZoom}
+                  className="segmented drivers-view"
+                  value={driversView}
+                  onChange={setDriversView}
                   options={[
                     {
-                      key: "factor",
-                      label: "By factor",
-                      title: "One bar per shocked factor"
+                      key: "transmission",
+                      label: "Move → effect",
+                      title: "Each driver's scenario move beside its effect on this portfolio"
+                    },
+                    {
+                      key: "waterfall",
+                      label: "Waterfall",
+                      title: "One bar per shocked factor, stacked into the total"
                     },
                     {
                       key: "group",
@@ -374,7 +409,7 @@ export function ResultsPanel({
                 />
                 <FullscreenButton
                   controller={waterfallFullscreen}
-                  surface="contribution waterfall"
+                  surface="attribution chart"
                 />
               </div>
             </div>
@@ -384,19 +419,37 @@ export function ResultsPanel({
                 naive algebra.
               </p>
             ) : null}
-            <button
-              type="button"
-              className="guide-link"
-              onClick={() => onOpenMethodology("factor-attribution")}
-            >
-              How the attribution works →
-            </button>
-            <RiskDiagnostics diagnostics={result.risk_diagnostics ?? []} factorMeta={factorMeta} />
-            <WaterfallChart
-              waterfall={waterfall}
-              chartHeight={chartHeight}
-              isPhone={isPhone}
-            />
+            {driversView === "transmission" && transmission ? (
+              <TransmissionChart
+                model={transmission}
+                showDollars={showDollars}
+                nav={nav}
+                currency={currency}
+                degraded={mainAttribution.degraded}
+                initialRows={
+                  waterfallFullscreen.isFullscreen ? transmission.rows.length : isPhone ? 6 : 8
+                }
+              />
+            ) : (
+              <WaterfallChart
+                waterfall={waterfall}
+                chartHeight={chartHeight}
+                isPhone={isPhone}
+              />
+            )}
+            <div className="drivers-foot">
+              <RiskDiagnostics
+                diagnostics={result.risk_diagnostics ?? []}
+                factorMeta={factorMeta}
+              />
+              <button
+                type="button"
+                className="guide-link"
+                onClick={() => onOpenMethodology("factor-attribution")}
+              >
+                How the attribution works →
+              </button>
+            </div>
           </div>
           <CollapsibleCard
             className="table-card"
@@ -444,6 +497,26 @@ export function ResultsPanel({
       label: "Positions",
       content: (
         <>
+          {holding ? (
+            <div className="result-card holding-card">
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">Positions</p>
+                  <h3>Which holdings take the hit</h3>
+                  <p className="muted card-subtitle">
+                    Each holding&apos;s effect on the portfolio, largest first
+                  </p>
+                </div>
+              </div>
+              <HoldingImpactChart
+                model={holding}
+                showDollars={showDollars}
+                nav={nav}
+                currency={currency}
+                initialRows={isPhone ? 6 : 10}
+              />
+            </div>
+          ) : null}
           <ExposureBreakdown result={result} />
           <CollapsibleCard
             className="table-card"
@@ -838,5 +911,50 @@ export function ResultsPanel({
         onChange={changeTab}
       />
     </section>
+  );
+}
+
+/** Number-free sketch of the Drivers chart for the empty state: teaches how a
+ * result reads (scenario move against matched events → effect on the book)
+ * before the first run. Decorative only — no values, so it can never be read
+ * as a forecast; hidden on phones, where the empty state stays one sentence. */
+function TransmissionPreview() {
+  const rows = [
+    { label: "Market", shock: 30, analogs: [18, 44, 62], range: [22, 58], effect: 78 },
+    { label: "Sector", shock: 38, analogs: [26, 52, 70], range: [30, 64], effect: 52 },
+    { label: "Macro", shock: 72, analogs: [20, 48, 66], range: [36, 62], effect: 26 }
+  ];
+  return (
+    <figure className="tx-preview" aria-hidden="true">
+      <div className="tx-preview-rows">
+        {rows.map((row) => (
+          <div key={row.label} className="tx-preview-row">
+            <span className="tx-preview-label">{row.label}</span>
+            <span className="tx-strip">
+              <span className="tx-strip-axis" />
+              <span
+                className="tx-strip-range"
+                style={{ left: `${row.range[0]}%`, width: `${row.range[1] - row.range[0]}%` }}
+              />
+              {row.analogs.map((pct) => (
+                <span key={pct} className="tx-strip-analog" style={{ left: `${pct}%` }} />
+              ))}
+              <span className="tx-strip-shock" style={{ left: `${row.shock}%` }} />
+            </span>
+            <span className="tx-bar-track">
+              <span className="tx-bar-zero" style={{ left: "100%" }} />
+              <span
+                className="tx-bar down"
+                style={{ left: `${100 - row.effect}%`, width: `${row.effect}%` }}
+              />
+            </span>
+          </div>
+        ))}
+      </div>
+      <figcaption>
+        Every run shows how the shock travels: the move on each market driver, what that driver
+        did in matched historical events, and what it does to this portfolio.
+      </figcaption>
+    </figure>
   );
 }

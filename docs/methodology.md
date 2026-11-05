@@ -378,8 +378,9 @@ pushed through the run's betas —
 — answering *"if this scenario plays out like that analog did, what does this book's
 factor model say?"* (`app/factors/shocks.py::analog_replay_pnl`, surfaced as
 `ScenarioResult.analog_replay` and rendered in the **Evidence & bounds** block directly
-under the Impact summary — min / median / max on a shared range gauge with the other
-uncertainty surfaces, with one row per analog behind a disclosure).
+under the Impact summary — every analog's replay as a dot with min / median / max, on one
+shared axis with the other uncertainty surfaces, with one row per analog behind a
+disclosure).
 
 Three properties make the replay range the honest companion to the headline number:
 
@@ -457,7 +458,7 @@ headline P&L is capped at the selected analogs' severity **by construction** —
 confident number can hide that cap. The severity ladder makes the evidence-base bound
 explicit: the **exact minimum and maximum engine P&L over the per-factor shock box**
 `[p10, p90]^K`, shown as worst / base / best in the **Evidence & bounds** block under
-the headline (on the same shared range gauge as the ±1σ band and the analog replay).
+the headline (on the same shared axis as the ±1σ band and the analog replay).
 
 Because portfolio P&L is linear in each factor's shock, the extremum over the box is
 attained at a vertex: each **banded** shock (envelope `count ≥ 3` with finite p10/p90 —
@@ -591,7 +592,7 @@ exactly ONE methodology at two zoom levels; the rest are audit diagnostics:
 
 | Surface | Backing field | Purpose |
 |---|---|---|
-| **Drivers waterfall — By factor / By group** | `by_factor_conditional_shapley_explicit` (the group zoom is the SAME map summed by factor group, client-side) | The production risk view. Only factors explicitly shocked by the scenario receive attribution; the two zooms reconcile by construction because they are the same numbers. |
+| **Drivers chart — Move → effect / Waterfall / By group** | `by_factor_conditional_shapley_explicit` (the group zoom is the SAME map summed by factor group, client-side) | The production risk view. Only factors explicitly shocked by the scenario receive attribution; all three views reconcile by construction because they are the same numbers. |
 | **Naive algebra** (admin diagnostics) | `by_factor_naive` | Audit/debug. The engine's direct formula; exact, but collinear factors show large offsetting bars. |
 | **Full conditional** (admin diagnostics) | `by_factor_conditional_shapley` | Quant diagnostic. Correlation credit under the full historical joint distribution; non-causal. |
 | **Grouped (full conditional)** (admin diagnostics) | `by_factor_conditional_shapley_grouped` | The legacy committee view, kept for comparison with the production rollup; inherits full-conditional correlation credit. |
@@ -599,6 +600,28 @@ exactly ONE methodology at two zoom levels; the rest are audit diagnostics:
 The impact summary and top-driver readout use the explicit map whenever it is
 available. Full conditional diagnostic never drives the headline. Old or degraded
 results without the explicit map fall back to naive algebra with an on-screen caption.
+
+### Reading the Move → effect view
+
+The default Drivers view puts the two halves of a factor stress side by side for every
+driver, largest effect first:
+
+- **Scenario move**: the shock applied to the factor, which is the same number for every
+  portfolio. Each row is drawn on that factor's own scale, beside its realized move in
+  each selected analog event (`analog_event_returns`, hollow dots) and the analogs'
+  p10–p90 envelope (shaded only when at least 3 events cover the factor, the same count
+  gate the adjustment sliders use). A row is marked *Beyond every matched event* when
+  the shock sits outside all of its analogs' realized moves. Single-name rows have no
+  analog history, so they share one scale with each other instead.
+- **Effect on your P&L**: the factor's contribution from the explicit map above (naive
+  algebra on degraded results), or weight × the single-name shock for a periphery row,
+  on one diverging scale shared by every row.
+
+The footer reconciles market drivers plus company-specific effects to the modeled total;
+a legacy payload that does not reconcile shows the gap as an explicit *Unreconciled*
+line. The move and the effect are deliberately different numbers and are never combined
+into one: under Shapley attribution a factor's effect is not its shock times a single
+beta, because correlated shocks share credit.
 
 ### Production risk view
 
@@ -679,7 +702,8 @@ diagnostics only to audit the math or investigate correlation leakage.
 
 `ScenarioResult.risk_diagnostics` is an optional warning list. It is deterministic
 post-processing, not an LLM judgment and not a shock rewrite. Old cached or saved
-results deserialize with an empty list.
+results deserialize with an empty list. Below the Drivers chart, warnings open by
+default; informational notes collapse behind one summary line.
 
 Diagnostics flag review points when:
 
