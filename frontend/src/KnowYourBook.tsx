@@ -209,6 +209,14 @@ function EventsBody({ replay }: { replay: EventsReplay }) {
         row.tags.join("|")
       ])
     );
+  // One shared diverging scale for the severity bars: zero sits where losses
+  // meet gains, so bar length compares across every event in the table.
+  const values = replay.per_event.map((row) => row.replay_pnl).filter(Number.isFinite);
+  const lo = Math.min(0, ...values);
+  const hi = Math.max(0, ...values);
+  const span = hi - lo || 1;
+  const pctOf = (value: number) => ((value - lo) / span) * 100;
+  const zeroPct = pctOf(0);
   return (
     <div className="know-book-body events-replay" aria-label="Historical event replay">
       <div className="know-book-subhead">
@@ -246,7 +254,21 @@ function EventsBody({ replay }: { replay: EventsReplay }) {
                 </td>
                 <td className="num">{row.window_calendar_days}</td>
                 <td className={`num ${row.replay_pnl < 0 ? "loss" : "gain"}`}>
-                  {formatPercent(row.replay_pnl)}
+                  <span className="replay-pnl">
+                    <span className="replay-pnl-track" aria-hidden="true">
+                      <span className="replay-pnl-zero" style={{ left: `${zeroPct}%` }} />
+                      {Number.isFinite(row.replay_pnl) ? (
+                        <span
+                          className={`replay-pnl-bar ${row.replay_pnl < 0 ? "down" : "up"}`}
+                          style={{
+                            left: `${Math.min(zeroPct, pctOf(row.replay_pnl))}%`,
+                            width: `${Math.max(Math.abs(pctOf(row.replay_pnl) - zeroPct), 0.5)}%`
+                          }}
+                        />
+                      ) : null}
+                    </span>
+                    <span className="replay-pnl-value">{formatPercent(row.replay_pnl)}</span>
+                  </span>
                 </td>
                 <td className="num">
                   {row.n_factors_covered}/{replay.n_factors}

@@ -9,7 +9,7 @@ export type Theme = "dark" | "light";
 
 const STORAGE_KEY = "nami-theme";
 /** Keep in sync with --bg in styles.css and the boot script in index.html. */
-const THEME_COLORS: Record<Theme, string> = { dark: "#0b1b2b", light: "#f4efe3" };
+const THEME_COLORS: Record<Theme, string> = { dark: "#0e1419", light: "#f3f4f0" };
 
 export function readTheme(): Theme {
   if (typeof document === "undefined") return "dark";

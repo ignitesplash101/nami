@@ -1,4 +1,3 @@
-import { ArrowRight } from "lucide-react";
 import type { RefObject } from "react";
 import { AsOfDatePicker } from "../AsOfDatePicker";
 import { ChoiceGroup } from "../ChoiceGroup";
@@ -49,10 +48,7 @@ export function ScenarioPanel({
   const scenarioChoice = scenarioDraftMode === "custom" ? customChoice : scenarioKey;
   return (
     <section className="scenario-card">
-      <div>
-        <p className="eyebrow">Scenario</p>
-        <h2>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h2>
-      </div>
+      <h2>{isAdmin ? "Author or seed a stress narrative" : "Explore a stress narrative"}</h2>
       {chipScenarios.length ? (
         <div className="scenario-chips-wrap">
           <ChoiceGroup
@@ -105,8 +101,7 @@ export function ScenarioPanel({
           />
         ) : null}
         <button className="primary-button" onClick={onRun} disabled={runDisabled}>
-          {isRunning ? "Running pipeline..." : "Run hypothetical stress"}{" "}
-          <ArrowRight size={16} />
+          {isRunning ? "Running pipeline..." : "Run hypothetical stress"}
         </button>
       </div>
     </section>

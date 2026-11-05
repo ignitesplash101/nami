@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { validatePortfolio } from "../api";
@@ -139,9 +139,15 @@ describe("PortfolioPanel holdings context", () => {
   it("renders a weight-ranked preview with coverage and remaining-count context", () => {
     renderSamplePanel();
 
-    expect(screen.getByText("ALPHA 20.0%")).toBeInTheDocument();
-    expect(screen.getByText("ZETA 20.0%")).toBeInTheDocument();
-    expect(screen.getByText("SECOND 10.0%")).toBeInTheDocument();
+    const rows = within(screen.getByRole("list", { name: "Largest holdings" })).getAllByRole(
+      "listitem"
+    );
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "ALPHA20.0%",
+      "ZETA20.0%",
+      "SECOND10.0%",
+      "FIRST5.0%"
+    ]);
     expect(screen.getByText("Top 4 · 55.0% of book")).toBeInTheDocument();
     expect(screen.queryByText(/more$/)).not.toBeInTheDocument();
   });

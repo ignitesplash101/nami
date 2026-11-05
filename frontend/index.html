@@ -8,7 +8,7 @@
       name="description"
       content="LLM-grounded hypothetical stress explorer for equity portfolios — analog-grounded narratives, factor shocks, honest uncertainty. Educational/research only."
     />
-    <meta name="theme-color" content="#0b1b2b" />
+    <meta name="theme-color" content="#0e1419" />
     <script>
       // Theme boot — runs before first paint so neither theme ever flashes.
       // Explicit choice (localStorage) wins; otherwise follow the OS setting.
@@ -26,7 +26,7 @@
           }
           document.documentElement.dataset.theme = t;
           var m = document.querySelector('meta[name="theme-color"]');
-          if (m) m.setAttribute("content", t === "light" ? "#f4efe3" : "#0b1b2b");
+          if (m) m.setAttribute("content", t === "light" ? "#f3f4f0" : "#0e1419");
         } catch (e) {
           document.documentElement.dataset.theme = "dark";
         }
@@ -48,7 +48,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Shippori+Mincho:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
     />
   </head>
   <body>

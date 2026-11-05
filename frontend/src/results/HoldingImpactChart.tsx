@@ -33,27 +33,27 @@ export function HoldingImpactChart({
   const anySingleName = model.rows.some((row) => row.singleNameSharePct > 0);
 
   return (
-    <div className="holding-chart" role="group" aria-label="Holdings ranked by effect on P&L">
-      <ol className="holding-rows">
+    <div className="holding-impact-chart" role="group" aria-label="Holdings ranked by effect on P&L">
+      <ol className="holding-impact-rows">
         {visible.map((row) => (
           <li
             key={row.ticker}
-            className="holding-row"
+            className="holding-impact-row"
             aria-label={`${row.ticker}: ${formatPercent(row.weight, 1)} of the book${
               row.ownMove != null ? `, modeled move ${signedPercent(row.ownMove, 1)}` : ""
             }; effect on P&L ${fmt(row.total)}`}
           >
-            <span className="holding-name" aria-hidden="true">
+            <span className="holding-impact-name" aria-hidden="true">
               <strong>{row.ticker}</strong>
-              <span className="holding-meta">
+              <span className="holding-impact-meta">
                 {formatPercent(row.weight, 1)} weight
                 {row.ownMove != null ? ` · moves ${signedPercent(row.ownMove, 1)}` : ""}
               </span>
             </span>
-            <span className="holding-track" aria-hidden="true">
-              <span className="holding-zero" style={{ left: `${model.zeroPct}%` }} />
+            <span className="holding-impact-track" aria-hidden="true">
+              <span className="holding-impact-zero" style={{ left: `${model.zeroPct}%` }} />
               <span
-                className={`holding-bar ${row.total < 0 ? "down" : "up"}`}
+                className={`holding-impact-bar ${row.total < 0 ? "down" : "up"}`}
                 style={{
                   left: `${row.bar.leftPct}%`,
                   width: `${Math.max(row.bar.widthPct, 0.4)}%`
@@ -61,22 +61,22 @@ export function HoldingImpactChart({
               >
                 {row.singleNameSharePct > 0 ? (
                   <span
-                    className="holding-bar-single"
+                    className="holding-impact-single"
                     style={{ width: `${row.singleNameSharePct}%` }}
                   />
                 ) : null}
               </span>
             </span>
-            <span className="holding-value" aria-hidden="true">
+            <span className="holding-impact-value" aria-hidden="true">
               {fmt(row.total)}
             </span>
           </li>
         ))}
       </ol>
-      <div className="holding-foot">
+      <div className="holding-impact-foot">
         {anySingleName ? (
           <span className="tx-key">
-            <span className="holding-key-single" aria-hidden="true" /> Company-specific part
+            <span className="holding-impact-key" aria-hidden="true" /> Company-specific part
           </span>
         ) : null}
         {hiddenCount > 0 || showAll ? (

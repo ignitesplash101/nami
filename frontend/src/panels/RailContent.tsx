@@ -5,7 +5,7 @@ import { PortfolioPanel } from "./PortfolioPanel";
 import type { HoldingRow, HoldingUnits, PortfolioMode } from "../holdings";
 import type { AccessResponse, SamplePortfolio } from "../types";
 
-/** The rail's shared content: brand block + access + portfolio setup. Rendered
+/** The rail's shared content: brand lockup + portfolio + access. Rendered
  * exactly once — inline <aside> on desktop OR inside RailDrawer on compact —
  * so the panels' local state never forks between two mounted copies. */
 export function RailContent({
@@ -50,13 +50,12 @@ export function RailContent({
   return (
     <>
       <div className="brand-block">
-        <span className="brand-glyph" aria-hidden="true">波</span>
-        <div className="brand-kicker">nami</div>
-        <div className="brand-title">Scenario Explorer</div>
-        <p>Equity portfolio shocks, analog-grounded narratives, factor attribution.</p>
-        <div className="brand-crest" aria-hidden="true" />
+        <span className="brand-seal" aria-hidden="true">波</span>
+        <div>
+          <div className="brand-title">nami</div>
+          <p>Hypothetical stress explorer</p>
+        </div>
       </div>
-      <AccessPanel access={access} onAccessChange={onAccessChange} passcodeInputRef={passcodeInputRef} />
       {access?.access_mode === "admin" && onOpenOperations ? (
         <button
           type="button"
@@ -84,6 +83,8 @@ export function RailContent({
         customBenchmark={customBenchmark}
         setCustomBenchmark={setCustomBenchmark}
       />
+      {/* Access sits last: the portfolio is the rail's subject; unlocking is rare. */}
+      <AccessPanel access={access} onAccessChange={onAccessChange} passcodeInputRef={passcodeInputRef} />
     </>
   );
 }

@@ -5,7 +5,7 @@ const STAGE_LABELS: Record<Exclude<SsePipelineStage, "done" | "error" | "cache_h
   market: "Fetching market data",
   analogs: "Selecting historical analogs",
   envelope: "Computing analog envelope",
-  narrative: "Grounding narrative (Google Search)",
+  narrative: "Grounding narrative in recent news",
   betas: "Estimating factor betas",
   attribution: "Computing attribution"
 };

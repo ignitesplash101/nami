@@ -374,7 +374,6 @@ export function ResultsPanel({
           <div className="result-card waterfall-card fullscreen-surface" ref={waterfallCardRef}>
             <div className="card-heading">
               <div>
-                <p className="eyebrow">Attribution</p>
                 <h3>What drove the P&amp;L</h3>
                 <p className="muted card-subtitle">
                   {driversView === "transmission"
@@ -501,7 +500,6 @@ export function ResultsPanel({
             <div className="result-card holding-card">
               <div className="card-heading">
                 <div>
-                  <p className="eyebrow">Positions</p>
                   <h3>Which holdings take the hit</h3>
                   <p className="muted card-subtitle">
                     Each holding&apos;s effect on the portfolio, largest first
@@ -558,7 +556,6 @@ export function ResultsPanel({
           </CollapsibleCard>
           {hasNav ? (
             <CollapsibleCard
-              eyebrow="Valuation"
               title="Position valuation — original → stressed"
               summary={
                 stressedNav != null
@@ -628,7 +625,6 @@ export function ResultsPanel({
       content: (
         <CollapsibleCard
           className="narrative"
-          eyebrow="Narrative"
           title="Narrative & analog evidence"
           summary={
             result.narrative.length > 90 ? `${result.narrative.slice(0, 89)}…` : result.narrative

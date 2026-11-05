@@ -34,6 +34,21 @@ describe("interactive target CSS contracts", () => {
   });
 });
 
+describe("class ownership contracts", () => {
+  it("keeps .holding-row owned by the custom-holdings editor alone", () => {
+    // Regression (Phase 43 → fixed Phase 44): the holdings chart reused
+    // `.holding-row`, so its chart grid, borders and phone grid-areas leaked
+    // into the admin editor's ticker/weight/remove rows.
+    const templates = Array.from(
+      styles.matchAll(/(?:^|\n)\s*\.holding-row\s*\{([^}]*)\}/g),
+      (match) => match[1].match(/grid-template-columns:\s*([^;]+);/)?.[1].trim() ?? "(none)"
+    );
+    expect(templates).toEqual(["minmax(0, 1fr) minmax(0, 0.8fr) 44px"]);
+    const chart = readFileSync("src/results/HoldingImpactChart.tsx", "utf8");
+    expect(chart).not.toMatch(/className=["`{][^"`}]*\bholding-row\b/);
+  });
+});
+
 describe("responsive composition contracts", () => {
   it("groups the compact setup trigger with the workbench title", () => {
     expect(app).toContain('className="topbar-nav-cluster"');

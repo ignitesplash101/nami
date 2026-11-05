@@ -309,19 +309,28 @@ function MiniHoldings({ holdings }: { holdings: Record<string, number> }) {
     return <p className="muted mini-holdings-empty">No holdings available.</p>;
   }
 
+  // Bars are relative to the largest weight so the ranking reads at a glance;
+  // the printed weight carries the exact value.
+  const largest = Math.max(...summary.rows.map((row) => row.weight), 0);
   return (
     <div className="mini-holdings">
       <p className="mini-holdings-summary">
         Top {summary.rows.length} · {formatPercent(summary.coverage, 1)} of book
       </p>
-      <div className="mini-holdings-list">
+      <ol className="mini-holdings-list" aria-label="Largest holdings">
         {summary.rows.map((row) => (
-          <span key={row.ticker}>
-            {row.ticker} {formatPercent(row.weight, 1)}
-          </span>
+          <li key={row.ticker}>
+            <span className="mini-holding-ticker">{row.ticker}</span>
+            <span className="mini-holding-bar" aria-hidden="true">
+              <span style={{ width: `${largest > 0 ? (row.weight / largest) * 100 : 0}%` }} />
+            </span>
+            <span className="mini-holding-weight">{formatPercent(row.weight, 1)}</span>
+          </li>
         ))}
-        {summary.remaining ? <span>+{summary.remaining} more</span> : null}
-      </div>
+      </ol>
+      {summary.remaining ? (
+        <p className="mini-holdings-more">+{summary.remaining} more</p>
+      ) : null}
     </div>
   );
 }

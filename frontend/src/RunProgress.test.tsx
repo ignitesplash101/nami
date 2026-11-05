@@ -19,7 +19,7 @@ describe("RunProgress", () => {
   });
 
   it("stageLabel maps pipeline stages and null-safes terminal events", () => {
-    expect(stageLabel("narrative")).toBe("Grounding narrative (Google Search)");
+    expect(stageLabel("narrative")).toBe("Grounding narrative in recent news");
     expect(stageLabel("done")).toBeNull();
     expect(stageLabel("error")).toBeNull();
   });

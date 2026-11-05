@@ -6,10 +6,13 @@
 /* ============================================================================
  * nami — dual-theme design system.
  *
- * An identity built around 波 (wave): a shock that PROPAGATES through a
- * portfolio, grounded in the Great Wave's actual print material.
- *   dark  = "Hokusai Deep": Prussian-indigo ground, warm rice-paper text.
- *   light = "Hokusai Air":  warm washi cream ground, Prussian-blue ink text.
+ * "Ink and indigo" (Phase 44): one flat paper ground, structure from type,
+ * space and hairlines, and indigo (ai-iro) as the only brand colour — it marks
+ * the scenario and the primary action. Vermilion and pine mean money (loss and
+ * gain) and are never decorative. Two faces: Shippori Mincho for the question
+ * and the answer, Instrument Sans for everything functional.
+ *   dark  = "Night": blue-black ground, cool paper-white text.
+ *   light = "Paper": cool off-white ground, sumi-ink text.
  * :root below is the dark base; :root[data-theme="light"] overrides every
  * color-bearing token. The boot script in index.html sets data-theme before
  * first paint, so there is NO prefers-color-scheme branch in CSS — one source
@@ -20,34 +23,35 @@
   color-scheme: dark;
 
   /* Surfaces */
-  --bg: #0b1b2b;          /* Prussian indigo ground */
-  --surface: #102537;     /* panel */
-  --surface-2: #16304a;   /* raised / hover / table header */
-  --sunken: #0a1722;      /* inset fields, segmented track */
-  --line: rgba(238, 242, 236, 0.12);
-  --line-strong: rgba(238, 242, 236, 0.2);
+  --bg: #0e1419;          /* blue-black ground */
+  --surface: #141c24;     /* panel */
+  --surface-2: #1b2631;   /* raised / hover / table header */
+  --sunken: #0b1015;      /* inset fields, segmented track */
+  --line: rgba(231, 236, 239, 0.09);
+  --line-strong: rgba(231, 236, 239, 0.17);
 
   /* Ink */
-  --text: #eef2ec;        /* warm rice-paper white */
-  --text-2: rgba(238, 242, 236, 0.8);
-  --muted: #93a7bd;       /* desaturated indigo-grey */
-  --ink: #07131f;         /* text ON accent fills */
+  --text: #e7ecef;        /* cool paper white */
+  --text-2: rgba(231, 236, 239, 0.8);
+  --muted: #8e9ca8;       /* desaturated indigo-grey */
+  --ink: #08121c;         /* text ON accent fills */
+  --on-accent: var(--ink); /* text ON the --accent CTA fill (white in light) */
 
   /* Semantics */
-  --up: #4cc38a;          /* P&L gain */
-  --down: #e8615a;        /* P&L loss (warm vermilion, distinct from CTA) */
-  --accent: #e9d8a6;      /* foam / sand — primary accent + CTA */
-  --accent-2: #7fb5d6;    /* wave-crest blue — totals, links, active state */
+  --up: #52c18c;          /* P&L gain */
+  --down: #ef7a62;        /* P&L loss (vermilion — money only, never decoration) */
+  --accent: #8fb6e8;      /* indigo — the primary action (CTA) fill */
+  --accent-2: #8fb6e8;    /* indigo — the scenario's marks, links, active state */
   --accent-2-ink: var(--ink);
-  --warn: #e6b566;        /* warnings / disclaimers / backdated banner */
-  --accent-ink: var(--accent); /* sand as FOREGROUND (text/icons); darker in light for contrast */
+  --warn: #e3b45e;        /* warnings / disclaimers / backdated banner */
+  --accent-ink: #a4c4ee; /* indigo as FOREGROUND (text/icons); darker in light for contrast */
 
   /* Tinted washes */
-  --accent-soft: rgba(233, 216, 166, 0.1);
-  --accent-2-soft: rgba(127, 181, 214, 0.12);
-  --up-soft: rgba(76, 195, 138, 0.12);
-  --down-soft: rgba(232, 97, 90, 0.1);
-  --warn-soft: rgba(230, 181, 102, 0.1);
+  --accent-soft: rgba(143, 182, 232, 0.1);
+  --accent-2-soft: rgba(143, 182, 232, 0.12);
+  --up-soft: rgba(82, 193, 140, 0.12);
+  --down-soft: rgba(239, 122, 98, 0.1);
+  --warn-soft: rgba(227, 180, 94, 0.08);
 
   /* Type scale — 1.25 major third at the wide end, FLUID between 360px and
      1440px viewports (Phase 31d) so headings interpolate instead of jumping
@@ -60,11 +64,11 @@
   --step-4: clamp(1.94rem, 1.773rem + 0.742vw, 2.441rem);
 
   /* Form */
-  --radius: 10px;
-  --radius-sm: 6px;
-  --elevation-card: 0 6px 22px rgba(0, 0, 0, 0.24);
-  --elevation-answer: 0 12px 36px rgba(0, 0, 0, 0.32);
-  --elevation-overlay: 0 20px 60px rgba(0, 0, 0, 0.45);
+  --radius: 14px;
+  --radius-sm: 9px;
+  --elevation-card: 0 1px 0 rgba(0, 0, 0, 0.22);
+  --elevation-answer: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --elevation-overlay: 0 24px 64px rgba(0, 0, 0, 0.5);
   --shadow: var(--elevation-card);
   --shadow-strong: var(--elevation-overlay);
 
@@ -107,50 +111,50 @@
   --analytics-table-min: 440px;
 
   /* Chart-only strokes. SVG fills consume the semantic tokens directly. */
-  --chart-grid: rgba(238, 242, 236, 0.08);
-  --chart-connector: rgba(233, 216, 166, 0.3);
-  --chart-zero: rgba(238, 242, 236, 0.38);
+  --chart-grid: rgba(231, 236, 239, 0.07);
+  --chart-connector: rgba(143, 182, 232, 0.35);
+  --chart-zero: rgba(231, 236, 239, 0.36);
   /* Transmission/holding charts (Phase 43): the analog p10–p90 band, the
      zero→shock stem, and the hollow analog-event ring. */
-  --chart-range: rgba(127, 181, 214, 0.16);
-  --chart-stem: rgba(127, 181, 214, 0.55);
-  --chart-analog: rgba(238, 242, 236, 0.62);
-  --chart-segment-wash: rgba(16, 37, 55, 0.55);
+  --chart-range: rgba(143, 182, 232, 0.16);
+  --chart-stem: rgba(143, 182, 232, 0.55);
+  --chart-analog: rgba(231, 236, 239, 0.6);
+  --chart-segment-wash: rgba(20, 28, 36, 0.55);
 
   /* Focus ring (double-ring reads on any surface) */
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 
   /* Fonts */
-  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-display: "Shippori Mincho", "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+  --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
   /* Purpose tints — formerly hard-coded literals; each has a light override. */
-  --wash-1: rgba(127, 181, 214, 0.1);   /* body radial wash (crest) */
-  --wash-2: rgba(233, 216, 166, 0.05);  /* body radial wash (sand) */
-  --rail-veil: rgba(8, 20, 32, 0.88);   /* rail translucent ground */
-  --panel-veil: rgba(16, 37, 55, 0.78); /* error banner / boundary panel */
-  --backdrop: rgba(4, 10, 18, 0.62);    /* drawer/dialog backdrop */
-  --tint-soft: rgba(238, 242, 236, 0.05);   /* chip/button resting wash */
-  --tint-strong: rgba(238, 242, 236, 0.1);  /* hover wash */
-  --tint-solid: rgba(238, 242, 236, 0.18);  /* progress dots, solid tint */
-  --card-sheen: linear-gradient(180deg, rgba(238, 242, 236, 0.07), rgba(238, 242, 236, 0.03));
-  --inset: rgba(10, 22, 34, 0.5);       /* inset panels (rows, lists, progress) */
-  --inset-soft: rgba(5, 18, 29, 0.28);  /* lighter inset (details summary) */
+  --wash-1: rgba(143, 182, 232, 0.05);   /* body radial wash (indigo, faint) */
+  --wash-2: rgba(143, 182, 232, 0);  /* second body wash (retired: transparent) */
+  --rail-veil: #11181f;   /* rail ground, one step off the page */
+  --panel-veil: #141c24; /* card / panel ground */
+  --backdrop: rgba(4, 8, 12, 0.62);    /* drawer/dialog backdrop */
+  --tint-soft: rgba(231, 236, 239, 0.045);   /* chip/button resting wash */
+  --tint-strong: rgba(231, 236, 239, 0.09);  /* hover wash */
+  --tint-solid: rgba(231, 236, 239, 0.18);  /* progress dots, solid tint */
+  --card-sheen: linear-gradient(transparent, transparent);
+  --inset: rgba(0, 0, 0, 0.18);       /* inset panels (rows, lists, progress) */
+  --inset-soft: rgba(0, 0, 0, 0.12);  /* lighter inset (details summary) */
   --code-block-bg: rgba(0, 0, 0, 0.3);
-  --code-chip-bg: rgba(255, 255, 255, 0.07);
-  --accent-2-line: rgba(127, 181, 214, 0.3);
-  --accent-2-line-strong: rgba(127, 181, 214, 0.5);
-  --accent-glow: rgba(233, 216, 166, 0.22); /* CTA hover shadow color */
+  --code-chip-bg: rgba(255, 255, 255, 0.06);
+  --accent-2-line: rgba(143, 182, 232, 0.3);
+  --accent-2-line-strong: rgba(143, 182, 232, 0.5);
+  --accent-glow: rgba(143, 182, 232, 0.2); /* CTA hover shadow color */
   /* Form fields. Dark: fields sit "sunken" below the panel. Light: fields
      must be LIGHTER than the cards around them or they read as tan slabs. */
-  --field: var(--sunken);
-  --field-line: var(--line);
-  --warn-line: rgba(230, 181, 102, 0.35);
-  --warn-text: #f5e2bf;
-  --down-line: rgba(232, 97, 90, 0.45);
-  --down-text: #f6bdb9;
-  --shadow-drawer: rgba(0, 0, 0, 0.4);  /* drawer edge shadow color */
+  --field: #0f161d;
+  --field-line: rgba(231, 236, 239, 0.14);
+  --warn-line: rgba(227, 180, 94, 0.3);
+  --warn-text: #f0d6a6;
+  --down-line: rgba(239, 122, 98, 0.42);
+  --down-text: #f7c0b3;
+  --shadow-drawer: rgba(0, 0, 0, 0.45);  /* drawer edge shadow color */
 
   /* Back-compat aliases — existing rules keep working unchanged. */
   --panel: var(--surface);
@@ -162,79 +166,80 @@
 }
 
 /* ============================================================================
- * "Hokusai Air" — the light theme. Same print, other side: Prussian-blue ink
- * on warm washi cream. Foreground tokens are darkened for AA contrast on the
- * cream ground (text ≥ 4.5:1, UI ≥ 3:1); the CTA stays sand-fill + ink-text
- * in both themes. Keep every color-bearing token from :root overridden here.
+ * "Paper" — the light theme: sumi ink on cool off-white paper (deliberately
+ * not cream). Foreground tokens are darkened for AA contrast (text ≥ 4.5:1,
+ * UI ≥ 3:1); the CTA is deep indigo with white text (--on-accent). Keep every
+ * color-bearing token from :root overridden here.
  * ========================================================================== */
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #f4efe3;          /* washi cream ground */
-  --surface: #fbf7ec;
-  --surface-2: #ece5d2;
-  --sunken: #e9e1cc;
-  --line: rgba(27, 58, 87, 0.18);
-  --line-strong: rgba(27, 58, 87, 0.34);
+  --bg: #f3f4f0;          /* cool paper ground */
+  --surface: #fdfdfb;
+  --surface-2: #eceee8;
+  --sunken: #e6e9e3;
+  --line: rgba(20, 34, 48, 0.1);
+  --line-strong: rgba(20, 34, 48, 0.2);
 
-  --text: #1b3a57;        /* warm Prussian ink */
-  --text-2: rgba(27, 58, 87, 0.82);
-  --muted: #52677c;
-  /* --ink stays near-black: text on sand fills reads in both themes */
+  --text: #142230;        /* sumi ink */
+  --text-2: rgba(20, 34, 48, 0.8);
+  --muted: #56657a;
+  /* --ink stays near-black: text on the light indigo tints in both themes */
 
-  --up: #1d7a4d;
-  --down: #b83a30;
-  --accent: #d9c07a;      /* deeper sand so the CTA fill reads on cream */
-  --accent-2: #2e6e97;    /* crest blue darkened to text-grade contrast */
-  --accent-2-ink: #fffdf6;
-  --warn: #7c5e14;
-  --accent-ink: #8a6a1c;
+  --up: #1f7a4f;
+  --down: #b8391f;
+  --accent: #1f4f8f;      /* deep indigo CTA fill (white text) */
+  --accent-2: #2a5ea6;    /* indigo darkened to text-grade contrast */
+  --accent-2-ink: #ffffff;
+  --on-accent: #ffffff;
+  --warn: #8a5b07;
+  --accent-ink: #1f4f8f;
 
-  --accent-soft: rgba(217, 192, 122, 0.2);
-  --accent-2-soft: rgba(46, 110, 151, 0.12);
-  --up-soft: rgba(29, 122, 77, 0.12);
-  --down-soft: rgba(184, 58, 48, 0.1);
-  --warn-soft: rgba(155, 116, 30, 0.12);
+  --accent-soft: rgba(31, 79, 143, 0.08);
+  --accent-2-soft: rgba(42, 94, 166, 0.1);
+  --up-soft: rgba(31, 122, 79, 0.1);
+  --down-soft: rgba(184, 57, 31, 0.08);
+  --warn-soft: rgba(138, 91, 7, 0.08);
 
-  --elevation-card: 0 6px 22px rgba(27, 58, 87, 0.13);
-  --elevation-answer: 0 12px 36px rgba(27, 58, 87, 0.18);
-  --elevation-overlay: 0 20px 60px rgba(27, 58, 87, 0.22);
+  --elevation-card: 0 1px 0 rgba(20, 34, 48, 0.04);
+  --elevation-answer: 0 18px 44px rgba(20, 34, 48, 0.1), 0 2px 6px rgba(20, 34, 48, 0.05);
+  --elevation-overlay: 0 24px 64px rgba(20, 34, 48, 0.2);
   --shadow: var(--elevation-card);
   --shadow-strong: var(--elevation-overlay);
 
-  --chart-grid: rgba(27, 58, 87, 0.1);
-  --chart-connector: rgba(138, 106, 28, 0.35);
-  --chart-zero: rgba(27, 58, 87, 0.46);
-  --chart-range: rgba(46, 110, 151, 0.13);
-  --chart-stem: rgba(46, 110, 151, 0.55);
-  --chart-analog: rgba(27, 58, 87, 0.6);
-  --chart-segment-wash: rgba(251, 247, 236, 0.55);
+  --chart-grid: rgba(20, 34, 48, 0.08);
+  --chart-connector: rgba(31, 79, 143, 0.35);
+  --chart-zero: rgba(20, 34, 48, 0.42);
+  --chart-range: rgba(42, 94, 166, 0.12);
+  --chart-stem: rgba(42, 94, 166, 0.55);
+  --chart-analog: rgba(20, 34, 48, 0.55);
+  --chart-segment-wash: rgba(253, 253, 251, 0.55);
 
-  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-ink);
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-2);
 
-  --wash-1: rgba(46, 110, 151, 0.08);
-  --wash-2: rgba(217, 192, 122, 0.14);
-  --rail-veil: rgba(251, 247, 236, 0.9);
-  --panel-veil: rgba(251, 247, 236, 0.86);
-  --backdrop: rgba(27, 58, 87, 0.35);
-  --tint-soft: rgba(27, 58, 87, 0.05);
-  --tint-strong: rgba(27, 58, 87, 0.1);
-  --tint-solid: rgba(27, 58, 87, 0.22);
-  --card-sheen: linear-gradient(180deg, rgba(27, 58, 87, 0.05), rgba(27, 58, 87, 0.02));
-  --inset: rgba(27, 58, 87, 0.06);
-  --inset-soft: rgba(27, 58, 87, 0.04);
-  --code-block-bg: rgba(27, 58, 87, 0.08);
-  --code-chip-bg: rgba(27, 58, 87, 0.08);
-  --accent-2-line: rgba(46, 110, 151, 0.4);
-  --accent-2-line-strong: rgba(46, 110, 151, 0.6);
-  --accent-glow: rgba(138, 106, 28, 0.25);
-  --warn-line: rgba(124, 94, 20, 0.4);
-  --warn-text: #6b5210;
-  --down-line: rgba(184, 58, 48, 0.45);
-  --down-text: #96271f;
-  --shadow-drawer: rgba(27, 58, 87, 0.28);
-  --field: #fffdf6;
-  --field-line: rgba(27, 58, 87, 0.28);
+  --wash-1: rgba(42, 94, 166, 0.05);
+  --wash-2: rgba(42, 94, 166, 0);
+  --rail-veil: #f8f9f6;
+  --panel-veil: #fdfdfb;
+  --backdrop: rgba(20, 34, 48, 0.32);
+  --tint-soft: rgba(20, 34, 48, 0.04);
+  --tint-strong: rgba(20, 34, 48, 0.08);
+  --tint-solid: rgba(20, 34, 48, 0.2);
+  --card-sheen: linear-gradient(transparent, transparent);
+  --inset: rgba(20, 34, 48, 0.04);
+  --inset-soft: rgba(20, 34, 48, 0.03);
+  --code-block-bg: rgba(20, 34, 48, 0.06);
+  --code-chip-bg: rgba(20, 34, 48, 0.07);
+  --accent-2-line: rgba(42, 94, 166, 0.32);
+  --accent-2-line-strong: rgba(42, 94, 166, 0.55);
+  --accent-glow: rgba(31, 79, 143, 0.22);
+  --warn-line: rgba(138, 91, 7, 0.3);
+  --warn-text: #6e4a06;
+  --down-line: rgba(184, 57, 31, 0.4);
+  --down-text: #932c16;
+  --shadow-drawer: rgba(20, 34, 48, 0.22);
+  --field: #ffffff;
+  --field-line: rgba(20, 34, 48, 0.2);
 }
 
 * {
@@ -249,6 +254,11 @@ body {
     var(--bg);
   color: var(--text);
   font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -326,7 +336,7 @@ button:disabled {
   overflow: auto;
   border-right: 1px solid var(--line);
   background: var(--rail-veil);
-  padding: 24px;
+  padding: 22px 20px 28px;
 }
 
 .workbench {
@@ -336,79 +346,81 @@ button:disabled {
   width: 100%;
   max-width: var(--workbench-max);
   margin-inline: auto;
-  padding: 24px 28px 48px;
+  padding: 26px 36px 56px;
 }
 
-/* --- Brand mark (the named instrument) --- */
+/* --- Brand lockup: the indigo seal (波 as a hanko) + wordmark. The seal is
+   indigo, never vermilion — red is reserved for losses. Decorative: the page
+   <h1> lives in the topbar so phones (rail in a drawer) still expose it. --- */
 .brand-block {
-  position: relative;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 18px;
+  margin-bottom: 22px;
   border-bottom: 1px solid var(--line);
-  padding-bottom: 22px;
-  margin-bottom: 18px;
 }
-.brand-glyph {
-  position: absolute;
-  top: 0;
-  right: 6px;
+.brand-seal {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-accent);
   font-family: var(--font-display);
-  font-size: 5.5rem;
+  font-weight: 800;
+  font-size: 1.4rem;
   line-height: 1;
-  color: var(--accent-2);
-  opacity: 0.1;
   pointer-events: none;
   user-select: none;
 }
-.brand-block .brand-kicker {
-  position: relative;
-}
-/* Branding, not a document heading — the page <h1> lives in the topbar so
- * phones (where the rail hides in a drawer) still expose a visible h1. */
 .brand-block .brand-title {
-  position: relative;
   margin: 0;
-  font-family: var(--font-display);
-  line-height: 1.08;
-  font-size: var(--step-4);
-  letter-spacing: -0.02em;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
 }
 .brand-block p {
-  position: relative;
+  margin: 2px 0 0;
   color: var(--muted);
   font-size: var(--step--1);
-  margin: 8px 0 0;
-}
-.brand-crest {
-  height: 8px;
-  margin-top: 16px;
-  /* Wave geometry as a mask + background-color so the crest themes with
-     --accent-ink instead of baking a sand literal into the data-URI. */
-  background-color: var(--accent-ink);
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q 12 -2 24 4 T 48 4' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='8' viewBox='0 0 48 8'%3E%3Cpath d='M0 4 Q 12 -2 24 4 T 48 4' fill='none' stroke='%23000' stroke-width='1.4'/%3E%3C/svg%3E");
-  -webkit-mask-repeat: repeat-x;
-  mask-repeat: repeat-x;
-  -webkit-mask-size: 48px 8px;
-  mask-size: 48px 8px;
-  opacity: 0.5;
+  line-height: 1.35;
 }
 
-.brand-kicker,
+/* Small context label above a heading — sentence case in the body face. Use
+   only when it adds information the heading does not (never as decoration). */
 .eyebrow {
-  margin: 0 0 6px;
-  color: var(--accent-2);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
+/* Two voices: the Mincho display face asks and answers (h1, h2, the answer
+   sentence); every functional heading inside a card is the body grotesk. */
 h1,
 h2,
 h3 {
   margin: 0;
+  line-height: 1.15;
+}
+h1,
+h2 {
   font-family: var(--font-display);
-  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+h3,
+h4 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 h1 {
@@ -417,7 +429,6 @@ h1 {
 
 h2 {
   font-size: var(--step-3);
-  letter-spacing: -0.01em;
 }
 
 h3 {
@@ -430,7 +441,7 @@ p {
 
 .muted {
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.9375rem;
 }
 
 .panel,
@@ -449,6 +460,22 @@ p {
 .panel {
   padding: 16px;
   margin-bottom: 16px;
+}
+.rail .panel,
+.rail-drawer-panel .panel {
+  padding: 0;
+  margin-bottom: 26px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+/* The inline rail already names the book; the topbar chip only earns its
+   place where the rail is a drawer. */
+@media (min-width: 1080px) {
+  .status-strip .portfolio-name {
+    display: none;
+  }
 }
 
 .panel-title,
@@ -483,16 +510,27 @@ p {
 .panel-title {
   justify-content: flex-start;
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+.panel-title svg {
+  color: var(--muted);
 }
 
-.access-panel {
-  border-color: var(--accent-2-line);
+/* Access is a quiet footer of the rail: a hairline above, muted copy. */
+.rail .access-panel,
+.rail-drawer-panel .access-panel {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.access-panel .muted {
+  font-size: var(--step--1);
+  margin: 6px 0 10px;
 }
 
 .topbar {
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 .topbar-nav-cluster {
   display: flex;
@@ -504,43 +542,56 @@ p {
  * the visual weight it had as an h2. */
 .topbar h1 {
   font-size: var(--step-3);
-  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
 .status-strip {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   margin-left: auto;
   justify-content: flex-end;
 }
 
-.status-strip span,
-.mini-holdings span {
+.status-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
   border: 1px solid var(--line);
-  background: var(--tint-soft);
-  color: var(--muted);
-  padding: 6px 9px;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
+  background: transparent;
+  color: var(--text-2);
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.status-strip .access-mode-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-2);
 }
 .status-strip .status-chip {
-  max-width: 320px;
+  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The disclaimer renders in full on every page; quiet, never hidden. */
 .notice {
   border-color: var(--warn-line);
   color: var(--warn-text);
-  padding: 12px 14px;
-  margin-bottom: 18px;
+  padding: 9px 14px;
+  margin-bottom: 20px;
   background: var(--warn-soft);
-  width: fit-content;
-  max-width: min(100%, 110ch);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  font-size: 0.875rem;
+  line-height: 1.45;
 }
 
 .error-banner,
@@ -557,9 +608,9 @@ label {
   display: grid;
   gap: 7px;
   margin: 12px 0;
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 600;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 input,
@@ -570,13 +621,15 @@ textarea {
   background: var(--field);
   color: var(--text);
   outline: none;
-  padding: 12px;
+  padding: 11px 12px;
   border-radius: var(--radius-sm);
-  transition: border-color var(--dur-fast) var(--ease);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
 
 textarea {
-  min-height: 150px;
+  min-height: 132px;
   resize: vertical;
 }
 
@@ -584,6 +637,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px var(--accent-2-soft);
 }
 
 /* Larger slider thumbs for touch + parity with desktop accent. */
@@ -615,49 +669,67 @@ input[type="range"]::-moz-range-thumb {
   justify-content: center;
   gap: 8px;
   min-height: 40px;
-  padding: 0 13px;
-  border-radius: var(--radius-sm);
+  padding: 0 16px;
+  border-radius: 10px;
   color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 500;
   transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
-/* Sand CTA on ink — fixes the old red-CTA-vs-red-loss semantic collision. */
+/* Indigo is the one action colour; red stays reserved for loss/error. */
 .primary-button {
   background: var(--accent);
-  color: var(--ink);
-  font-weight: 700;
+  color: var(--on-accent);
+  font-weight: 600;
+  padding: 0 20px;
 }
 .primary-button:not(:disabled):hover {
-  box-shadow: 0 6px 20px var(--accent-glow);
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--accent) 86%, var(--text));
+  box-shadow: 0 6px 18px var(--accent-glow);
 }
 
 .ghost-button,
 .unlock-row button {
-  border: 1px solid var(--line);
-  background: var(--tint-soft);
+  border: 1px solid var(--line-strong);
+  background: transparent;
 }
 .ghost-button:not(:disabled):hover,
 .unlock-row button:not(:disabled):hover {
   border-color: var(--line-strong);
-  background: var(--tint-strong);
+  background: var(--tint-soft);
 }
 
+/* Segmented control: a sunken track whose active option is a raised pill. */
 .segmented {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 4px;
-  padding: 4px;
+  gap: 2px;
+  padding: 3px;
   background: var(--sunken);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 12px;
   margin: 12px 0;
 }
 
 .segmented button {
+  min-height: 36px;
+  border-radius: 9px;
   background: transparent;
-  color: var(--text-2);
+  color: var(--muted);
+}
+.segmented button:not(:disabled):not(.active):hover {
+  color: var(--text);
+}
+/* Three or more options: flow on one row when there is room and wrap
+   naturally when there is not (the 2-column grid split them 2 + 1). */
+.segmented:not(.drivers-view):has(> :nth-child(3)) {
+  display: flex;
+  flex-wrap: wrap;
+}
+.segmented:not(.drivers-view):has(> :nth-child(3)) > button {
+  flex: 1 1 auto;
 }
 /* Three-way Drivers view switch: content-sized tracks keep it on one line. */
 .segmented.drivers-view {
@@ -672,8 +744,12 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .segmented button.active {
-  color: var(--accent-2-ink);
-  background: var(--accent-2);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 1px 2px var(--shadow-drawer);
+  font-weight: 600;
 }
 
 .unlock-row {
@@ -696,10 +772,48 @@ input[type="range"]::-moz-range-thumb {
   color: var(--muted);
 }
 .mini-holdings-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 7px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+.mini-holdings-list li {
+  display: grid;
+  grid-template-columns: 3.75rem minmax(0, 1fr) 3.1rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8125rem;
+}
+.mini-holding-ticker {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-holding-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tint-soft);
+  overflow: hidden;
+}
+.mini-holding-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-2);
+  opacity: 0.75;
+}
+.mini-holding-weight {
+  text-align: right;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.mini-holdings-more {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--step--1);
 }
 
 .upload-control {
@@ -751,15 +865,22 @@ input[type="range"]::-moz-range-thumb {
 }
 .holding-row-head span {
   color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .scenario-card {
-  padding: 18px;
-  margin-bottom: 18px;
+  padding: 24px 28px 22px;
+  margin-bottom: 20px;
+}
+.scenario-card h2 {
+  margin-bottom: 14px;
+}
+.scenario-text-input {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  padding: 14px 16px;
+  border-radius: 12px;
 }
 .compact-scenario-card {
   padding-bottom: 12px;
@@ -881,10 +1002,10 @@ input[type="range"]::-moz-range-thumb {
   background: transparent;
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
   padding: 12px 18px;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent;
   margin-bottom: -1px; /* the active underline sits ON the divider line */
   white-space: nowrap;
   min-height: 44px;
@@ -915,29 +1036,50 @@ input[type="range"]::-moz-range-thumb {
   animation: tab-busy-pulse 1.2s ease-in-out infinite;
 }
 
-/* Area tabs are the app's PRIMARY navigation — a filled pill-nav (active =
-   crest-on-ink, the app's segmented convention), visually distinct from the
-   quieter underline results tabs. */
+/* Two tab tiers, deliberately distinct (Phase 44 swapped their looks): area
+   tabs are the app's PRIMARY navigation — large underlined text on the page's
+   hairline; results tabs are a view switch inside the answer — a pill track
+   matching the segmented controls. Don't collapse them into one style. */
 .area-tabs .tablist {
-  border-bottom: none;
+  gap: 26px;
+}
+.area-tabs .tablist [role="tab"] {
+  font-size: 1rem;
+  padding: 12px 2px;
+  border-radius: 0;
+}
+.area-tabs .tablist [role="tab"]:hover {
+  background: transparent;
+}
+.area-tabs .tablist [role="tab"].active {
+  color: var(--text);
+  border-bottom-color: var(--accent-2);
+}
+.results-tabs .tablist {
+  width: max-content;
+  max-width: 100%;
+  gap: 2px;
+  padding: 3px;
   background: var(--sunken);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 4px;
-  gap: 4px;
-  width: max-content;
-  max-width: 100%;
 }
-.area-tabs .tablist [role="tab"] {
-  font-size: 0.95rem;
-  padding: 10px 22px;
+.results-tabs .tablist [role="tab"] {
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 0;
   border-radius: 9px;
-  border-bottom: none;
   margin-bottom: 0;
 }
-.area-tabs .tablist [role="tab"].active {
-  background: var(--accent-2);
-  color: var(--ink);
+.results-tabs .tablist [role="tab"]:hover {
+  background: transparent;
+}
+.results-tabs .tablist [role="tab"].active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 1px 2px var(--shadow-drawer);
 }
 .tab-panel {
   display: grid;
@@ -1108,13 +1250,18 @@ input[type="range"]::-moz-range-thumb {
 .results-answer-band {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--space-6);
   min-width: 0;
-  padding: var(--space-3);
-  border: 1px solid var(--line-strong);
-  border-radius: calc(var(--radius) + var(--space-1));
-  background: color-mix(in srgb, var(--surface) 88%, var(--bg));
+  padding: clamp(20px, 1.2rem + 1vw, 34px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
   box-shadow: var(--elevation-answer);
+}
+/* Readout and evidence share the band's surface; a hairline divides them. */
+.results-answer-band > .evidence-block {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line);
 }
 .results-answer-band > :only-child {
   grid-column: 1 / -1;
@@ -1180,20 +1327,22 @@ input[type="range"]::-moz-range-thumb {
 .metric small {
   display: block;
   color: var(--muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.76rem;
 }
 
 .metric strong {
   display: block;
   margin: 8px 0 4px;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: var(--step-2);
 }
 
 .result-card,
 .empty-results {
-  padding: 18px;
+  padding: 22px 24px;
 }
 
 .empty-results {
@@ -1361,8 +1510,9 @@ input[type="range"]::-moz-range-thumb {
 .exposure-bar-fill.pos {
   background: var(--accent-2);
 }
+/* Exposures are not money: a negative beta is muted ink, never loss-red. */
 .exposure-bar-fill.neg {
-  background: var(--down);
+  background: var(--chart-analog);
 }
 .exposure-bar-value {
   text-align: right;
@@ -1415,8 +1565,8 @@ input[type="range"]::-moz-range-thumb {
   margin: 0;
 }
 .collapsible-title {
-  font-family: var(--font-display);
-  font-size: 1.02rem;
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
   font-weight: 600;
 }
 .collapsible-summary {
@@ -1459,6 +1609,42 @@ input[type="range"]::-moz-range-thumb {
 }
 .events-replay td.gain {
   color: var(--up);
+}
+.replay-pnl {
+  display: inline-grid;
+  grid-template-columns: minmax(4rem, 9rem) 4.6rem;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  justify-content: end;
+}
+.replay-pnl-track {
+  position: relative;
+  display: block;
+  height: 14px;
+}
+.replay-pnl-zero {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--chart-zero);
+}
+.replay-pnl-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+}
+.replay-pnl-bar.down {
+  background: var(--down);
+  border-radius: 3px 0 0 3px;
+}
+.replay-pnl-bar.up {
+  background: var(--up);
+  border-radius: 0 3px 3px 0;
+}
+.replay-pnl-value {
+  text-align: right;
 }
 .events-replay-window {
   color: var(--muted);
@@ -1507,7 +1693,8 @@ input[type="range"]::-moz-range-thumb {
 .waterfall-category-label,
 .waterfall-value-label {
   fill: var(--muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -1556,7 +1743,8 @@ input[type="range"]::-moz-range-thumb {
 }
 .waterfall-tooltip span {
   color: var(--text-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-variant-numeric: tabular-nums;
 }
 .waterfall-fallback {
@@ -1709,7 +1897,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .tx-strip-zero,
 .tx-bar-zero,
-.holding-zero {
+.holding-impact-zero {
   position: absolute;
   top: 2px;
   bottom: 2px;
@@ -1743,7 +1931,7 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 0 2px var(--surface);
 }
 .tx-bar,
-.holding-bar {
+.holding-impact-bar {
   position: absolute;
   top: 50%;
   height: 12px;
@@ -1751,12 +1939,12 @@ input[type="range"]::-moz-range-thumb {
 }
 /* Rounded data-end, square at the zero baseline. */
 .tx-bar.down,
-.holding-bar.down {
+.holding-impact-bar.down {
   background: var(--down);
   border-radius: 4px 0 0 4px;
 }
 .tx-bar.up,
-.holding-bar.up {
+.holding-impact-bar.up {
   background: var(--up);
   border-radius: 0 4px 4px 0;
 }
@@ -1834,7 +2022,7 @@ input[type="range"]::-moz-range-thumb {
   font-size: var(--step-1);
 }
 .tx-legend,
-.holding-foot {
+.holding-impact-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1883,18 +2071,18 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Holdings ranked by effect on P&L (Positions tab). */
-.holding-chart {
+.holding-impact-chart {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
 }
-.holding-rows {
+.holding-impact-rows {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
 }
-.holding-row {
+.holding-impact-row {
   display: grid;
   grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 2fr) 6.4rem;
   column-gap: var(--space-5);
@@ -1902,48 +2090,48 @@ input[type="range"]::-moz-range-thumb {
   min-height: 44px;
   padding: var(--space-1) var(--space-3);
 }
-.holding-row + .holding-row {
+.holding-impact-row + .holding-impact-row {
   border-top: 1px solid var(--line);
 }
-.holding-name {
+.holding-impact-name {
   display: grid;
   gap: 1px;
   min-width: 0;
 }
-.holding-meta {
+.holding-impact-meta {
   color: var(--muted);
   font-size: var(--step--1);
   font-variant-numeric: tabular-nums;
 }
-.holding-track {
+.holding-impact-track {
   position: relative;
   height: 24px;
   min-width: 0;
 }
-.holding-bar {
+.holding-impact-bar {
   overflow: hidden;
 }
-.holding-bar-single {
+.holding-impact-single {
   position: absolute;
   top: 0;
   bottom: 0;
   background: var(--chart-segment-wash);
 }
-.holding-bar.down .holding-bar-single {
+.holding-impact-bar.down .holding-impact-single {
   left: 0;
   border-right: 2px solid var(--surface);
 }
-.holding-bar.up .holding-bar-single {
+.holding-impact-bar.up .holding-impact-single {
   right: 0;
   border-left: 2px solid var(--surface);
 }
-.holding-value {
+.holding-impact-value {
   text-align: right;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.holding-key-single {
+.holding-impact-key {
   display: inline-block;
   width: 22px;
   height: 10px;
@@ -1952,7 +2140,7 @@ input[type="range"]::-moz-range-thumb {
     linear-gradient(90deg, var(--chart-segment-wash) 0 50%, transparent 50%),
     var(--down);
 }
-.holding-foot .tx-more {
+.holding-impact-foot .tx-more {
   margin-left: auto;
 }
 
@@ -2027,7 +2215,7 @@ input[type="range"]::-moz-range-thumb {
     margin-left: 0;
     text-align: left;
   }
-  .holding-row {
+  .holding-impact-row {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "name value"
@@ -2035,13 +2223,13 @@ input[type="range"]::-moz-range-thumb {
     row-gap: 4px;
     padding: var(--space-2);
   }
-  .holding-name {
+  .holding-impact-name {
     grid-area: name;
   }
-  .holding-track {
+  .holding-impact-track {
     grid-area: track;
   }
-  .holding-value {
+  .holding-impact-value {
     grid-area: value;
   }
 }
@@ -2096,23 +2284,27 @@ table {
 th,
 td {
   border-bottom: 1px solid var(--line);
-  padding: 8px 9px;
+  padding: 10px 12px;
   text-align: left;
   vertical-align: top;
 }
 
+/* Quiet header: sentence-case muted labels on the card's own ground (opaque so
+   the sticky header still covers scrolled rows), one stronger rule beneath. */
 th {
   position: sticky;
   top: 0;
-  background: var(--panel-2);
-  color: var(--accent-2);
-  font-family: var(--font-mono);
-  font-size: 0.73rem;
-  text-transform: uppercase;
+  background: var(--panel-veil);
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-bottom-color: var(--line-strong);
 }
 
 /* Numeric columns: right-aligned lining tabular figures so magnitudes scan
-   down a column (IBM Plex Sans ships tabular figures). */
+   down a column (Instrument Sans ships tabular figures). */
 th.num,
 td.num {
   text-align: right;
@@ -2228,7 +2420,7 @@ a {
   border-bottom: 1px solid var(--line);
 }
 .drawer-header h2 {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: 0.95rem;
   letter-spacing: 0.04em;
   margin: 0;
@@ -2272,7 +2464,8 @@ a {
   border: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.7rem;
   border-radius: 12px;
   cursor: pointer;
@@ -2303,7 +2496,7 @@ a {
   border-bottom: none;
 }
 
-/* Worked example flagged as editorial "field notes" with a sand left-rule. */
+/* Worked example flagged as editorial "field notes" with an accent left-rule. */
 .methodology-example {
   border-left: 3px solid var(--accent);
   background: var(--accent-soft);
@@ -2401,7 +2594,8 @@ a {
   background: none;
   border: none;
   color: var(--muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.73rem;
   cursor: pointer;
   padding: 0;
@@ -2431,7 +2625,8 @@ a {
 .advanced-diagnostics summary {
   cursor: pointer;
   color: var(--muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.74rem;
 }
 .advanced-diagnostics p {
@@ -2467,8 +2662,10 @@ a {
   border: none;
   color: var(--accent-2);
   font: inherit;
+  font-weight: 500;
   cursor: pointer;
   padding: 0;
+  text-align: left;
   text-decoration: none;
 }
 .factor-link:hover {
@@ -2572,8 +2769,6 @@ a {
 .adjust-section-title {
   margin: 18px 0 4px;
   font-size: 0.8125rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-2);
 }
 /* Tunable slider rows flow multi-column on wide screens instead of one long
@@ -2637,7 +2832,8 @@ a {
   border-color: var(--down-line);
 }
 .kr-chip .kr-chip-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 .kr-chip .kr-chip-x {
@@ -2737,8 +2933,6 @@ a {
   margin: 0 0 8px 0;
   font-size: 0.8125rem;
   color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .adjustment-history ol {
   list-style: none;
@@ -2762,9 +2956,7 @@ a {
   padding: 1px 8px;
   border-radius: 999px;
   font-weight: 600;
-  text-transform: uppercase;
   font-size: 0.625rem;
-  letter-spacing: 0.05em;
 }
 .adjustment-history .time {
   color: var(--muted);
@@ -2774,7 +2966,8 @@ a {
   color: var(--text);
 }
 .adjustment-history .changes {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
 
@@ -2829,61 +3022,53 @@ a {
   min-width: 0;
 }
 .chip {
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
   border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 0.82rem;
+  padding: 7px 14px;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 .chip:hover {
   border-color: var(--accent-2);
+  color: var(--text);
 }
 .chip.active {
   border-color: var(--accent-2);
-  background: color-mix(in srgb, var(--accent-2) 18%, transparent);
-  color: var(--text);
+  background: var(--accent-2);
+  color: var(--accent-2-ink);
 }
 
 /* ============================================================================
  * Answer-first impact summary (Scenario readout)
  * ========================================================================== */
+/* The answer: a Mincho sentence over one hero figure. No card chrome of its
+   own — it sits flat on the answer band; direction is carried by the hero's
+   colour and sign, not by a coloured edge. */
 .scenario-readout {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  /* Soft top sheen, not a full surface-2 slab — at full strength the light
-     theme rendered this card as a tan block behind red numbers. */
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--surface-2) 55%, var(--surface)),
-    var(--surface)
-  );
-  border-radius: var(--radius);
-  padding: 18px 20px;
-  box-shadow: none;
-}
-.scenario-readout.up {
-  border-left-color: var(--up);
-}
-.scenario-readout.down {
-  border-left-color: var(--down);
+  min-width: 0;
 }
 .readout-eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.7rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--muted);
-  margin: 0 0 6px;
+  margin: 0 0 10px;
 }
 .readout-headline {
-  font-family: var(--font-display, inherit);
-  font-size: 1.18rem;
-  line-height: 1.4;
-  margin: 0 0 14px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.45rem, 1.1rem + 1vw, 2.05rem);
+  line-height: 1.32;
+  margin: 0 0 26px;
   color: var(--text);
-  max-width: var(--measure-prose);
+  max-width: 40ch;
+  text-wrap: pretty;
 }
 .readout-body {
   display: grid;
@@ -2901,7 +3086,7 @@ a {
    digits (tabular spacing reads loose at display sizes). */
 .readout-hero-value {
   font-family: var(--font-body);
-  font-size: clamp(2.25rem, 1.7rem + 1.6vw, 3.25rem);
+  font-size: clamp(2.5rem, 1.8rem + 2vw, 3.75rem);
   font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.02em;
@@ -2935,10 +3120,9 @@ a {
   gap: 2px;
 }
 .readout-metric-label {
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .readout-metric-value {
   font-variant-numeric: tabular-nums;
@@ -2961,14 +3145,10 @@ a {
  * uncertainty/range surface on a shared axis (±1σ idio, envelope bounds,
  * analog replay). It contextualizes the headline, never replaces it. */
 .evidence-block {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: var(--radius);
-  padding: 14px 20px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  box-shadow: none;
+  gap: 12px;
+  min-width: 0;
 }
 /* Carries the eyebrow + the fullscreen button; the eyebrow used to be the
    block's first free-standing child so it needed a wrapper row to share the
@@ -3562,7 +3742,8 @@ a {
   display: flex;
   justify-content: space-between;
   gap: var(--space-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
   margin: var(--space-2) 0 var(--space-1);
 }
@@ -3584,7 +3765,8 @@ a {
 }
 .ops-status-line {
   margin: var(--space-3) 0 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.76rem;
 }
 .ops-audit table {
@@ -3670,6 +3852,7 @@ a {
   .unlock-row button,
   .segmented button,
   .tablist [role="tab"],
+  .results-tabs .tablist [role="tab"],
   .kr-chip {
     min-height: 44px;
   }
@@ -3736,6 +3919,13 @@ a {
   }
   .topbar h1 {
     font-size: 1.35rem;
+    overflow-wrap: anywhere;
+  }
+  /* Zero flex-basis: the title cluster shares the first row with the icon
+     buttons and wraps its text, instead of claiming its one-line width and
+     pushing the icons onto a row of their own. */
+  .topbar-nav-cluster {
+    flex: 1 1 0;
   }
   /* Access and portfolio context, plus admin operations, already live in the
      rail drawer. Keep the phone topbar to navigation + theme + methodology. */
@@ -3961,7 +4151,8 @@ a {
   margin-bottom: 8px;
 }
 .nav-stressed {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 0.8rem;
   white-space: nowrap;
 }
@@ -4015,7 +4206,12 @@ a {
   }
   .results-answer-band {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: var(--space-5);
+    gap: var(--space-7);
+  }
+  .results-answer-band > .evidence-block {
+    padding: 0 0 0 var(--space-7);
+    border-top: 0;
+    border-left: 1px solid var(--line);
   }
   .results-tabs .tab-panel {
     grid-template-columns:
@@ -4346,8 +4542,6 @@ th.sortable.num button {
 .snap-list h4 {
   margin: 12px 0 8px 0;
   font-size: 0.8125rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 .snap-list ol {

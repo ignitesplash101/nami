@@ -496,7 +496,7 @@ export default function App() {
           : undefined,
       // Only thread as_of_date when admin chose a date EARLIER than the latest
       // close. The latest close (the default) means "live" — send undefined so
-      // the backend takes the grounded (Google Search) path.
+      // the backend takes the search-grounded path.
       as_of_date:
         asOfDate && asOfDate !== access.latest_market_date ? asOfDate : undefined
     };
@@ -853,7 +853,6 @@ export default function App() {
       <h2 id="library-area-heading" className="area-heading">Library</h2>
       <CollapsibleCard
         className="panel-shell"
-        eyebrow="Library"
         title="Saved scenarios"
         summary="browse, reopen, tag-filter"
       >
@@ -881,7 +880,6 @@ export default function App() {
 
       <CollapsibleCard
         className="panel-shell"
-        eyebrow="Library"
         title="Saved portfolios & snapshots"
         summary="named books · dated snapshots"
       >
@@ -964,7 +962,6 @@ export default function App() {
               <Menu size={18} />
             </button>
             <div>
-              <p className="eyebrow">What-if stress scenarios</p>
               <h1>Portfolio scenario explorer</h1>
             </div>
           </div>

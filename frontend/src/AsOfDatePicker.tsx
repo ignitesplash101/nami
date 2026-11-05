@@ -66,8 +66,8 @@ export function BackdatedModeBanner({
         ) : (
           <>.</>
         )}{" "}
-        Narrative is grounded in the selected analog events only (no Google
-        Search). <em>The LLM's parametric knowledge is not vintage-controlled</em>{" "}
+        Narrative is grounded in the selected analog events only (no live web
+        search). <em>The LLM's parametric knowledge is not vintage-controlled</em>{" "}
         and may reference concepts learned from post-as-of training data — treat the
         analog envelope and shock magnitudes as the canonical record; the narrative
         is illustrative.

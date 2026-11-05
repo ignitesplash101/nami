@@ -36,7 +36,7 @@ describe("theme", () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.dataset.theme = "dark";
-    themeColorMeta().setAttribute("content", "#0b1b2b");
+    themeColorMeta().setAttribute("content", "#0e1419");
   });
 
   afterEach(() => {
@@ -57,12 +57,12 @@ describe("theme", () => {
     act(() => result.current.toggleTheme());
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(localStorage.getItem("nami-theme")).toBe("light");
-    expect(themeColorMeta().getAttribute("content")).toBe("#f4efe3");
+    expect(themeColorMeta().getAttribute("content")).toBe("#f3f4f0");
 
     act(() => result.current.toggleTheme());
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(localStorage.getItem("nami-theme")).toBe("dark");
-    expect(themeColorMeta().getAttribute("content")).toBe("#0b1b2b");
+    expect(themeColorMeta().getAttribute("content")).toBe("#0e1419");
   });
 
   it("follows OS scheme changes only until the user chooses explicitly", () => {

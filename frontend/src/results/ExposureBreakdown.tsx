@@ -31,7 +31,6 @@ export function ExposureBreakdown({ result }: { result: ScenarioResult }) {
   return (
     <CollapsibleCard
       className="exposure-card"
-      eyebrow="Exposure"
       title={`${dimension === "sector" ? "Sector" : "Country"} breakdown`}
       summary={`${rows[0].tag} ${formatPercent(rows[0].weight, 1)} · ${rows.length} ${
         dimension === "sector" ? "sectors" : "countries"
